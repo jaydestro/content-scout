@@ -1,0 +1,14 @@
+# Seen links tracker (local state, not shared)
+reports/.seen-links.json
+
+# Generated images
+social-posts/images/
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor
+.vscode/*
+!.vscode/settings.json
