@@ -37,9 +37,8 @@ Type `/scout-onboard` and answer the questions. The onboard process will ask you
 5. **Influencers to monitor** -- high-signal accounts to watch for product mentions
 6. **Social post platforms** -- LinkedIn, X, Bluesky, YouTube
 7. **Brand assets** -- logos, colors, thumbnail theme
-8. **API keys** -- YouTube (free), Bluesky (free), X (paid)
-9. **Topic tags** -- canonical tags for categorizing content
-10. **Content filters** -- what to include and exclude
+8. **Topic tags** -- canonical tags for categorizing content
+9. **Content filters** -- what to include and exclude
 
 ### Step 4: Start scanning
 ```
@@ -220,16 +219,20 @@ examples/
 
 ---
 
-## API Keys Required
+## API Keys (Optional)
 
-| Service | Cost | How to Get |
-|---------|------|-----------|
-| YouTube Data API v3 | Free | Google Cloud Console -> APIs & Services -> Enable YouTube Data API v3 -> Create API Key |
-| Bluesky | Free | bsky.app/settings/app-passwords -> Add App Password |
-| X/Twitter | $200/mo (Basic) or free tier (limited) | developer.x.com -> Create app -> Bearer token |
-| Hacker News | None | Public Algolia API |
-| Reddit | None | Public JSON API (append `.json` to any URL) |
-| Stack Overflow | None | Public API v2.3 (300 req/day free) |
+All API keys are optional. Without them, the agent skips those sources and scans everything else.
+
+| Service | Cost | Without It | How to Get |
+|---------|------|-----------|------------|
+| YouTube Data API v3 | Free | YouTube scanning skipped -- community videos won't appear in reports | Google Cloud Console -> APIs & Services -> Enable YouTube Data API v3 -> Create API Key |
+| Bluesky | Free | Bluesky scanning skipped -- mentions and hashtag posts won't be tracked | bsky.app/settings/app-passwords -> Add App Password |
+| X/Twitter | $200/mo (Basic) or free tier (limited) | X/Twitter scanning skipped -- conversations and mentions won't be tracked | developer.x.com -> Create app -> Bearer token |
+| Hacker News | None | Always works | Public Algolia API |
+| Reddit | None | Always works | Public JSON API (append `.json` to any URL) |
+| Stack Overflow | None | Always works | Public API v2.3 (300 req/day free) |
+
+Blogs, GitHub, Stack Overflow, Reddit, Hacker News, Microsoft Learn, and Azure Updates all work without any API keys.
 
 ---
 

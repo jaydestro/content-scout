@@ -27,13 +27,37 @@ We need to exclude your team's own content so we only find community/external co
 - Any **other domains or authors** to exclude? *(optional — say "none")*
 
 ### Group 3 — Networks to Scan
-Which sources should we scan? Default is all. The user can disable any.
-- **Blogs:** Microsoft Tech Community, Dev.to, Medium, Hashnode, DZone, C# Corner, InfoQ, Influencer blogs (Baeldung, freeCodeCamp, CodeProject)
-- **Service updates:** Azure Updates, Microsoft Learn docs
-- **YouTube:** Community channels (requires API key)
-- **GitHub:** Community repos and projects
-- **Conversations:** Stack Overflow, Reddit, Hacker News, Bluesky, LinkedIn
-- Ask: "Which of these should we **disable**? (default: all enabled)"
+Present the full source list and ask: **"Select all, or pick the ones you want."**
+
+| # | Source | Auth Required |
+|---|--------|---------------|
+| 1 | Microsoft Tech Community | None |
+| 2 | Dev.to | None |
+| 3 | Medium | None |
+| 4 | Hashnode | None |
+| 5 | DZone | None |
+| 6 | C# Corner | None |
+| 7 | InfoQ | None |
+| 8 | Influencer blogs (Baeldung, freeCodeCamp, CodeProject) | None |
+| 9 | Azure Updates / What's New | None |
+| 10 | Microsoft Learn docs | None |
+| 11 | YouTube (community channels) | YouTube Data API v3 key (free) |
+| 12 | GitHub (community repos) | None |
+| 13 | Stack Overflow | None |
+| 14 | Reddit | None |
+| 15 | Hacker News | None |
+| 16 | Bluesky | App password (free) |
+| 17 | LinkedIn | None |
+
+Accept: "all" (default), a comma-separated list of numbers, or "all except {numbers}".
+
+**After selection, ask for API keys ONLY for selected sources that require them.** For each one, explain what the key unlocks, then let the user paste the key or say "skip". Skipped keys can always be added to the config file later.
+
+- If **YouTube** was selected: "YouTube requires a free API key. Without it, YouTube is skipped and community videos won't appear in reports. Paste your YouTube Data API v3 key, or say **skip**."
+- If **Bluesky** was selected: "Bluesky requires a free app password for authenticated search. Without it, Bluesky is skipped and mentions/hashtag posts won't be tracked. Paste your Bluesky handle and app password, or say **skip**."
+- If **X/Twitter** is selected for conversation tracking: "X requires a bearer token ($200/mo Basic or limited free tier). Without it, X is skipped and conversations/mentions on X won't be tracked. Paste your X bearer token, or say **skip**."
+
+If none of the selected sources require keys, skip the key prompts entirely and tell the user: "All your selected sources work without API keys — no setup needed."
 
 ### Group 4 — People to Watch (optional)
 Say "none" to skip this group entirely.
@@ -48,11 +72,8 @@ Say "none" to skip any of these. Defaults will be used.
 - What are the **brand colors**? (primary, accent — hex codes) *(optional — say "none" to use defaults)*
 - What **background theme** for thumbnails? (dark, light, gradient) *(optional — default: dark)*
 
-### Group 6 — API Keys (optional, can be added later)
-- **YouTube Data API v3 key** (required for YouTube scanning)
-- **Bluesky handle and app password** (required for Bluesky scanning)
-- **X/Twitter bearer token** (required for X scanning)
-- Tell the user: "You can skip these now and add them to the config file later."
+### Group 6 — (Removed — API keys are now collected inline in Group 3)
+Skip this group. API keys are prompted during network selection in Group 3, only for sources the user actually selected.
 
 ### Group 7 — Topic Tags (optional)
 - What **canonical topic tags** should we use to categorize content? These should cover the major feature areas and use cases. *(optional — say "none" and a starter set will be generated automatically)*
@@ -180,11 +201,15 @@ description: "Content Scout configuration for {Product Name}"
 - **Thumbnail theme:** {dark/light/gradient or "dark"}
 
 ## API Keys
-<!-- Add keys here when available. Do not commit secrets to public repos. -->
-- **YouTube Data API v3:** {key or "not configured"}
-- **Bluesky handle:** {handle or "not configured"}
-- **Bluesky app password:** {password or "not configured"}
-- **X Bearer token:** {token or "not configured"}
+<!-- All optional. Add keys here when available. Do not commit secrets to public repos. -->
+<!-- Without YouTube key: YouTube scanning is skipped (community videos won't appear in reports) -->
+<!-- Without Bluesky creds: Bluesky scanning is skipped (mentions and hashtag posts won't be tracked) -->
+<!-- Without X token: X/Twitter scanning is skipped (conversations and mentions won't be tracked) -->
+<!-- All other sources (blogs, GitHub, Stack Overflow, Reddit, Hacker News, MS Learn) work without keys -->
+- **YouTube Data API v3:** {key or "none"}
+- **Bluesky handle:** {handle or "none"}
+- **Bluesky app password:** {password or "none"}
+- **X Bearer token:** {token or "none"}
 
 ## Topic Tags (Canonical)
 <!-- All content items are tagged with 1-4 of these. If user said "none", auto-generate a starter set. -->
@@ -236,4 +261,4 @@ description: "Content Scout configuration for {Product Name}"
    - `/scout-post` — Generate social posts from a URL
    - `/scout-calendar` — Generate a posting calendar
    - `/scout-gaps` — Analyze content gaps
-4. If any API keys were skipped, remind them to add those before scanning YouTube/Bluesky/X.
+4. If any API keys were skipped during Group 3, remind the user which sources are disabled until keys are added to the config file.

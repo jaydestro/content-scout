@@ -93,11 +93,14 @@ description: "Content Scout configuration for Azure Cosmos DB"
 - **Thumbnail theme:** dark
 
 ## API Keys
-<!-- Add keys here when available. Do not commit secrets to public repos. -->
+<!-- All optional. Do not commit secrets to public repos. -->
+<!-- Without YouTube key: YouTube scanning is skipped (community videos won't appear in reports) -->
+<!-- Without Bluesky creds: Bluesky scanning is skipped (mentions and hashtag posts won't be tracked) -->
+<!-- Without X token: X/Twitter scanning is skipped (conversations and mentions won't be tracked) -->
 - **YouTube Data API v3:** YOUR_KEY_HERE
-- **Bluesky handle:** not configured
-- **Bluesky app password:** not configured
-- **X Bearer token:** not configured
+- **Bluesky handle:** none
+- **Bluesky app password:** none
+- **X Bearer token:** none
 
 ## Topic Tags (Canonical)
 <!-- All content items are tagged with 1-4 of these -->
