@@ -1,0 +1,36 @@
+# Contributing to Content Scout
+
+Contributions are welcome. Content Scout is a prompt-based agent — the "code" is the agent definition and prompt files in `.github/`.
+
+## How to Contribute
+
+1. **Fork the repo** and create a feature branch
+2. **Make your changes** to agent or prompt files
+3. **Test locally** by running the agent in VS Code with a test product config
+4. **Open a PR** with a clear description of what changed and why
+
+## What to Contribute
+
+- **New source integrations** — scanning logic for platforms not yet covered
+- **Quality filter improvements** — better scoring heuristics, fewer false positives/negatives
+- **Social post templates** — new framing angles, platform-specific formatting
+- **Onboarding improvements** — better defaults, smarter suggestions, smoother interview flow
+- **Subagent definitions** — standalone agent files for the subagent architecture
+- **Bug fixes** — if the agent produces incorrect output, broken reports, or bad dedup behavior
+
+## Guidelines
+
+- Keep agent and prompt files readable — they're specs, not code. Clarity matters.
+- Test with at least one product config before submitting.
+- Don't add integrations requiring external services beyond what's already supported without discussion first.
+- Follow the existing file structure and naming conventions.
+- PR descriptions should explain the *why*, not just the *what*.
+
+## Reporting Issues
+
+Open an issue if:
+- A source is consistently unreachable or returns bad data
+- The quality filter is too aggressive or too permissive
+- Social posts violate the style guidelines
+- Onboarding is missing a question that should be there
+- The report format needs a new section or column

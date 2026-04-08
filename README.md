@@ -211,6 +211,11 @@ social-posts/
 └── images/
     └── {YYYY-MM}/                          # Thumbnail images per month
         └── {N}-{platform}-{slug}.png
+examples/
+├── example-config.md                       # Sample product configuration
+├── example-report.md                       # Sample monthly content report
+├── example-social-posts.md                 # Sample generated social posts
+└── example-posting-calendar.md             # Sample 2-week posting calendar
 ```
 
 ---
@@ -225,3 +230,88 @@ social-posts/
 | Hacker News | None | Public Algolia API |
 | Reddit | None | Public JSON API (append `.json` to any URL) |
 | Stack Overflow | None | Public API v2.3 (300 req/day free) |
+
+---
+
+## Subagent Architecture
+
+Content Scout can dispatch work to specialized subagents during `scout-scan` for parallelism and focus. The main agent orchestrates; subagents handle source-specific scanning.
+
+| Subagent | Responsibility | Sources |
+|----------|---------------|---------|
+| `scout-scan-blogs` | Blog & article scanning | Tech Community, Dev.to, Medium, Hashnode, DZone, C# Corner, InfoQ, influencer blogs |
+| `scout-scan-youtube` | YouTube search | YouTube Data API v3 (requires API key) |
+| `scout-scan-github` | Community repo discovery | GitHub search API, README validation, SDK detection |
+| `scout-scan-conversations` | Conversation tracking | Stack Overflow, Reddit, Hacker News, Bluesky, LinkedIn |
+| `scout-scan-official` | Official updates | Azure Updates, Microsoft Learn (via MCP tools) |
+| `scout-post-generator` | Social post generation | Processes the merged report into platform-specific posts |
+
+### How It Works
+
+1. Main agent loads config and determines the time window
+2. Dispatches subagents in parallel for each source group
+3. Collects and merges all results
+4. Deduplicates against `.seen-links.json`
+5. Applies quality filter, numbers items, tags with canonical topics
+6. Saves report, dispatches post generator, updates dedup tracker
+
+If subagents aren't available, the main agent runs everything sequentially. The subagent architecture is an optimization, not a requirement.
+
+---
+
+## Examples
+
+The [`examples/`](examples/) folder contains sample outputs using Azure Cosmos DB as the product:
+
+| File | What It Shows |
+|------|--------------|
+| [example-config.md](examples/example-config.md) | A completed product configuration with all fields filled in |
+| [example-report.md](examples/example-report.md) | A monthly content report with 18 items across all sections |
+| [example-social-posts.md](examples/example-social-posts.md) | Generated LinkedIn and X posts with multiple framing angles |
+| [example-posting-calendar.md](examples/example-posting-calendar.md) | A 2-week posting schedule with platform-specific timing |
+
+These are illustrative — URLs, authors, and content are fictional but follow the exact format the agent produces.
+
+---
+
+## About
+
+Content Scout is a GitHub Copilot agent that automates content discovery and social media promotion for developer products. It continuously scans the public web — blogs, YouTube, GitHub, forums, social platforms, and documentation — for community-created content about your product, then generates ready-to-post social media content from what it finds. Think of it as a research assistant that reads the internet for you and drafts your social posts.
+
+Built for developer advocacy and product marketing teams who need to:
+
+- **Stay aware** of what the community is saying, building, and publishing about their product
+- **Amplify community voices** by sharing the best external content on official channels
+- **Maintain posting consistency** without spending hours each week on content research
+- **Identify gaps** in community coverage to inform content strategy
+- **Track sentiment** across forums and social platforms without manual monitoring
+
+It runs as a GitHub Copilot agent inside VS Code — no infrastructure to deploy, no services to maintain. Configuration lives in your repo as markdown. Reports are human-readable files you can review, edit, and version control. Social posts are copy-paste ready with fenced code blocks.
+
+### Design Principles
+
+- **Quality over quantity** — strict relevancy filtering means every item in a report is worth reading
+- **Community-first** — excludes official team content to spotlight external voices
+- **No black boxes** — reports are readable markdown with direct links to every source
+- **Configurable** — every source, filter, and preference is set in a single config file
+- **Incremental** — dedup tracking means you can scan monthly without duplicates accumulating
+- **Standards-compliant** — all social posts follow Microsoft Social Media Standards for Developer Accounts
+
+### Who It's For
+
+- Product managers tracking community engagement and content velocity
+- Developer advocates maintaining social presence across LinkedIn and X
+- DevRel teams running content programs and identifying community champions
+- Anyone managing a developer product who wants to know what the community is building and writing
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute, what to work on, and how to report issues.
+
+---
+
+## License
+
+MIT

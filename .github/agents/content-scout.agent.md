@@ -176,7 +176,7 @@ Every content item MUST be tagged with one or more topic tags from the config fi
 
 ## Report Format
 
-Generate the report with this structure. **Every content item gets a sequential number (#1, #2, #3...)** across all sections.
+Generate the report with this structure. **Every content item gets a sequential number (#1, #2, #3...)** across all sections. Each numbered item links to its social posts.
 
 ```markdown
 # {Product Name} -- Content Report: {Month Year}
@@ -184,38 +184,42 @@ Generate the report with this structure. **Every content item gets a sequential 
 **Generated:** {date}
 **Period:** {start_date} to {end_date}
 **Last updated:** {date}
+**Social posts:** [{YYYY-MM}-social-posts.md](../social-posts/{YYYY-MM}-social-posts.md)
+**Posting calendar:** [{YYYY-MM}-posting-calendar.md](../social-posts/{YYYY-MM}-posting-calendar.md)
 
 ## Summary
 - **Total items found:** {count}
 - **Breakdown by source:** ...
 
 ## Official Announcements & Updates
-| # | Date | Title | Source | Tags | Link |
-|---|------|-------|--------|------|------|
+| # | Date | Title | Source | Tags | Link | Posts |
+|---|------|-------|--------|------|------|-------|
+| 1 | ... | ... | ... | ... | ... | [posts](#1) |
 
 ## Blog Posts & Articles
-| # | Date | Title | Author | Source | Tags | Link |
-|---|------|-------|--------|--------|------|------|
+| # | Date | Title | Author | Source | Tags | Link | Posts |
+|---|------|-------|--------|--------|------|------|-------|
+| 3 | ... | ... | ... | ... | ... | ... | [posts](#3) |
 
 ## Videos & Presentations
-| # | Date | Title | Channel | Tags | Link |
-|---|------|-------|---------|------|------|
+| # | Date | Title | Channel | Tags | Link | Posts |
+|---|------|-------|---------|------|------|-------|
 
 ## SDK Releases & GitHub Activity
-| # | Date | Item | Repo/Source | Tags | Link |
-|---|------|------|-------------|------|------|
+| # | Date | Item | Repo/Source | Tags | Link | Posts |
+|---|------|------|-------------|------|------|-------|
 
 ## Documentation Updates
-| # | Date | Title | Type | Tags | Link |
-|---|------|-------|------|------|------|
+| # | Date | Title | Type | Tags | Link | Posts |
+|---|------|-------|------|------|------|-------|
 
 ## Community Content
-| # | Date | Title | Author | Source | Tags | Link |
-|---|------|-------|--------|--------|------|------|
+| # | Date | Title | Author | Source | Tags | Link | Posts |
+|---|------|-------|--------|--------|------|------|-------|
 
 ## Social Media Highlights
-| # | Date | Summary | Platform | Tags | Link |
-|---|------|---------|----------|------|------|
+| # | Date | Summary | Platform | Tags | Link | Posts |
+|---|------|---------|----------|------|------|-------|
 
 ## Conversations & Mentions (tracked, not for social posts)
 | Date | Platform | Summary | Sentiment | Tags | Engagement? | Link |
@@ -315,22 +319,40 @@ These standards are **mandatory** for all generated posts.
 For each content item, generate:
 - At least 3 options per enabled social platform (each with different framing angle)
 - At least 1 "link in first comment" option for LinkedIn with thumbnail spec
-- All post bodies wrapped in fenced code blocks (` ```text ``` `) for copy button
+- All post bodies wrapped in fenced code blocks (` ```text ``` `) for easy copy button
+- For "link in first comment" options: the post body and the first comment (containing the link) MUST be in **separate** fenced code blocks so each gets its own copy button
 
-### Thumbnail Specs
+### Cross-Linking
 
-When needed, include:
+Every social post item MUST link back to its report entry:
+- Start each item heading with `## #{N}` (matching the report item number)
+- Include a back-link: `**Report entry:** [#{N} — {title}](../reports/{YYYY-MM}-content.md#{anchor})`
+- Include the original content URL as `**Source:** {url}`
+
+### Thumbnail Images
+
+When a "link in first comment" option is generated, include:
+- A **thumbnail spec** block with platform, size, background, logo, headline, accent color
+- The **image path** where it should be saved: `social-posts/images/{YYYY-MM}/{N}-{platform}-{slug}.png`
+- A **markdown image reference** inline so the image renders in the social posts file:
+  `![{alt text}](images/{YYYY-MM}/{N}-{platform}-{slug}.png)`
+
+Thumbnail spec details:
 - Platform and size (LinkedIn 1200x627, X 1200x675)
-- Background from brand config
-- Logo from brand assets
+- Background from brand config (or default dark if not configured)
+- Logo from brand assets (if configured)
 - Headline text from post
-- Accent color from brand config
-- Save path: `social-posts/images/{YYYY-MM}/{N}-{platform}-{slug}.png`
+- Accent color from brand config (if configured)
 
 ### Social Post Output File
 
 Save to: `social-posts/{YYYY-MM}-social-posts.md`
 Thumbnails to: `social-posts/images/{YYYY-MM}/`
+
+The social posts file header MUST include a back-link to the report:
+```
+**Report:** [{YYYY-MM}-content.md](../reports/{YYYY-MM}-content.md)
+```
 
 ---
 
@@ -377,3 +399,81 @@ Auto-generate at report end:
 9. **Save the report** to `reports/{YYYY-MM}-content.md`.
 10. **Auto-generate social posts and thumbnail specs** for every item. Save to `social-posts/{YYYY-MM}-social-posts.md`.
 11. After saving, give a brief summary including item count, top topics, content gaps, and confirm social posts were generated. Remind of available commands.
+
+---
+
+## Subagent Architecture
+
+Content Scout can delegate work to subagents for parallelism and focus. The main agent orchestrates; subagents do the heavy lifting.
+
+### When to Use Subagents
+
+Use subagents during `scout-scan` to parallelize source scanning. The main agent:
+1. Loads config and determines the time window.
+2. Dispatches subagents for independent source groups (see below).
+3. Collects results from all subagents.
+4. Merges, deduplicates, applies quality filter, numbers items, and saves the report.
+5. Generates social posts from the merged report.
+
+### Subagent Definitions
+
+Each subagent receives the same context: product config, search terms, time window, and exclusion rules. Each returns a structured list of content items with: title, date, author, source, URL, tags, and a brief summary.
+
+#### `scout-scan-blogs` — Blog & Article Scanner
+- Scans: Microsoft Tech Community, Dev.to, Medium, Hashnode, DZone, C# Corner, InfoQ, influencer blogs
+- Uses: `fetch_webpage`, RSS feeds
+- Returns: Blog post items with author, date, source, URL
+
+#### `scout-scan-youtube` — YouTube Scanner
+- Scans: YouTube Data API v3 searches
+- Uses: `run_in_terminal` for API calls
+- Returns: Video items with channel, date, title, description, URL
+- Requires: YouTube API key in config
+
+#### `scout-scan-github` — GitHub Community Scanner
+- Scans: GitHub search API for community repos
+- Uses: `fetch_webpage`, `run_in_terminal`
+- Returns: Repo items with name, description, stars, last commit, language, SDK
+- Applies: The full GitHub quality filter (README check, file count, fork check, SDK validation)
+
+#### `scout-scan-conversations` — Conversation Tracker
+- Scans: Stack Overflow, Reddit, Hacker News, Bluesky, LinkedIn
+- Uses: Public APIs, `fetch_webpage`
+- Returns: Conversation items (these go into the tracked/unnumbered section)
+
+#### `scout-scan-official` — Official Updates Scanner
+- Scans: Azure Updates, Microsoft Learn (via MCP tools)
+- Uses: `mcp_microsoft-lea_microsoft_docs_search`, `mcp_microsoft-lea_microsoft_docs_fetch`
+- Returns: Update items with title, date, type, URL
+
+#### `scout-post-generator` — Social Post Generator
+- Input: A merged, numbered report
+- Generates: Social posts + thumbnail specs for all items
+- Saves: `social-posts/{YYYY-MM}-social-posts.md`
+
+### Subagent Dispatch Pattern
+
+When running a scan, use this pattern:
+
+```
+1. Load config, determine time window
+2. Dispatch in parallel (where possible):
+   - scout-scan-blogs
+   - scout-scan-youtube (if API key configured)
+   - scout-scan-github
+   - scout-scan-conversations
+   - scout-scan-official
+3. Collect all results
+4. Merge into unified item list
+5. Deduplicate against .seen-links.json
+6. Apply quality filter to any items not pre-filtered by subagents
+7. Number sequentially, tag with canonical topics
+8. Save report
+9. Dispatch scout-post-generator with the final report
+10. Update .seen-links.json
+11. Summarize to user
+```
+
+### Fallback
+
+If subagents are not available or the user prefers a single-agent run, the main Content Scout agent can execute all steps sequentially. The subagent architecture is an optimization, not a requirement.
