@@ -6,6 +6,22 @@ description: "Content Scout configuration for Azure Cosmos DB"
 
 # Content Scout Configuration: Azure Cosmos DB
 
+## Role
+- **Role:** Developer Advocate
+- **Social posts:** on
+- **Posting calendar:** on
+- **Report focus:** Community projects, tutorials, conference talks, contributor spotlights
+- **Report section ordering:** community first
+- **Engagement scoring:** on
+- **Conversation sentiment:** on
+- **Feature request flagging:** off
+- **Unanswered question tracking:** off
+- **Rising contributors:** on
+- **SDK/feature adoption tracking:** on
+- **Competitor tracking:** off
+- **Launch coverage tracking:** off
+- **Doc gap focus:** off
+
 ## Product
 - **Name:** Azure Cosmos DB
 - **Slug:** cosmos-db
@@ -91,6 +107,18 @@ description: "Content Scout configuration for Azure Cosmos DB"
 - **Primary color:** #0078D4
 - **Accent color:** #50E6FF
 - **Thumbnail theme:** dark
+
+## Social Post Standards
+- **Tone:** Plainspoken, technically credible, non-marketing
+- **Always use full product name:** yes
+- **Avoid words/phrases:** "check it out", "exciting news", "game-changer", "unleash", "dive in"
+- **Emoji policy:** 0-2 max
+- **Hashtag policy:** 1-2 at end
+- **Things to avoid:** em dashes, UTM links, fluff phrases, speculation about unreleased features
+- **LinkedIn targets:** 800-1500 chars, hook in first 200
+- **X targets:** concise but substantive, no shortened links
+- **Content framing angles:** how this works, what you can build, what problem this solves, what changed and why, real-world example
+- **Additional rules:** Always link to official docs when referencing a feature. Voice: calm, confident, technically grounded.
 
 ## API Keys
 <!-- All optional. Do not commit secrets to public repos. -->

@@ -1,8 +1,8 @@
 # Content Scout
 
-A VS Code custom agent that discovers, catalogs, and promotes public content about your product across the developer ecosystem. Designed for Azure product teams and adaptable to any developer-focused product.
+A VS Code custom agent that discovers, catalogs, and promotes public content about your product across the developer ecosystem. Adaptable to any developer-focused product and any role that needs to track what the community is saying.
 
-**What it does in three sentences:** Content Scout scans public sources (Tech Community, Dev.to, Medium, YouTube, GitHub, Stack Overflow, Reddit, Hacker News, Bluesky, and more) for content about your product, filters it for quality and relevance, and produces a numbered report with topic tags, monthly trends, and content gap analysis. For every item found, it auto-generates LinkedIn and X post options following Microsoft social media standards, with thumbnail specs and copy-ready text. It also tracks community conversations and mentions across forums without promoting them, giving you a single view of what's being published and discussed.
+**What it does in three sentences:** Content Scout scans public sources (Tech Community, Dev.to, Medium, YouTube, GitHub, Stack Overflow, Reddit, Hacker News, Bluesky, and more) for content about your product, filters it for quality and relevance, and produces a numbered report with topic tags, monthly trends, and content gap analysis. Based on your role, it can auto-generate social media posts following your organization's social standards, with thumbnail specs and copy-ready text. It also tracks community conversations and mentions across forums without promoting them, giving you a single view of what's being published and discussed.
 
 ## Quick Start
 
@@ -26,19 +26,19 @@ Switch to the **Content Scout** agent mode (the base agent works for any product
 ### Step 3: Run onboarding
 Type `/scout-onboard` and answer the questions. The onboard process will ask you:
 
-1. **Product name and search terms** -- what to search for across all sources
-2. **Channels to exclude** -- your official blog, YouTube channel, social handles
-3. **Which networks to scan** -- pick from 20 sources or add custom ones:
+1. **Your role** — determines which features are active by default (social posts, posting calendar, report focus). Choose from: Program Manager, Product Manager, Social Media Manager, Product Marketer, Developer Advocate, Community Manager, Technical Writer, or Other (custom).
+2. **Product name and search terms** — what to search for across all sources
+3. **Channels to exclude** — your official blog, YouTube channel, social handles, product team members
+4. **Which networks to scan** — select all or pick from 17 sources. API keys are requested inline only for sources that need them (YouTube, Bluesky, X) — paste the key or say "skip":
    - Tech Community, Azure Updates, YouTube, GitHub, Microsoft Learn
    - Dev.to, Medium, Hashnode, DZone, C# Corner, InfoQ
    - Stack Overflow, Reddit, Hacker News, Bluesky, LinkedIn
-   - Baeldung, freeCodeCamp, CodeProject, Azure SDK Blog
-4. **Known external authors** -- community developers whose content auto-passes quality filter
-5. **Influencers to monitor** -- high-signal accounts to watch for product mentions
-6. **Social post platforms** -- LinkedIn, X, Bluesky, YouTube
-7. **Brand assets** -- logos, colors, thumbnail theme
-8. **Topic tags** -- canonical tags for categorizing content
-9. **Content filters** -- what to include and exclude
+   - Influencer blogs (Baeldung, freeCodeCamp, CodeProject)
+5. **People to watch** — known external authors, influencers to monitor
+6. **Social post configuration** — platforms, brand assets, and social post standards (only if role has social posts enabled)
+7. **Topic tags, content filters, competitors, events** — fine-tuning content discovery
+8. **Posting preferences** — frequency, timing, approval workflow (only if social posts enabled)
+9. **Language and region** — language and geographic focus
 
 ### Step 4: Start scanning
 ```
@@ -112,6 +112,7 @@ Repositories must pass all of these:
 | `/scout-post` | Generate social posts from a URL or report item number |
 | `/scout-calendar` | Create a weekly posting schedule |
 | `/scout-gaps` | Show topics with no recent coverage |
+| `/scout-trends` | Compare trends across months — trajectory, rising/declining topics, contributor patterns |
 
 ---
 
@@ -119,26 +120,27 @@ Repositories must pass all of these:
 
 ### 1. Onboarding (`scout-onboard`)
 
-Run once per product. Asks for: product name, search terms, hashtags, channels to exclude, known authors, brand assets, API keys, content preferences. Generates a `scout-config-{product}.prompt.md` that stores everything.
+Run once per product. Asks for: your role, product name, search terms, hashtags, channels to exclude, networks to scan (with API keys collected inline for sources that need them), known authors, brand assets, social post standards, and content preferences. Generates a `scout-config-{product}.prompt.md` that stores everything.
 
 ### 2. Content Scan (`scout-scan`)
 
 Scans all sources, applies quality filter, generates:
-- Numbered report with topic tags -> `reports/{YYYY-MM}-content.md`
-- Social posts (3 LinkedIn + 3 X per item, code-fenced for copy) -> `social-posts/{YYYY-MM}-social-posts.md`
-- Monthly trends and content gaps (auto-generated at report end)
-- Conversation tracking table (Stack Overflow, Reddit, HN, Bluesky -- tracked but not numbered)
+- Numbered report with topic tags, role-specific summary, and engagement scores -> `reports/{YYYY-MM}-content.md`
+- Role-specific sections: rising contributors, feature requests, unanswered questions, competitor signals, launch coverage, doc signals, SDK adoption (included based on role config)
+- Social posts (3 LinkedIn + 3 X per item, code-fenced for copy) -> `social-posts/{YYYY-MM}-social-posts.md` **(only if role has social posts enabled)**
+- Monthly trends with month-over-month deltas and content gaps (auto-generated at report end)
+- Conversation tracking with sentiment classification (positive/neutral/negative) and feature-request/pain-point flagging
 - Dedup tracker update -> `reports/.seen-links.json`
 
 ### 3. Social Post Generation (`scout-post`)
 
 Provide a URL and optional context (speakers, key highlights, event info). Generates at least 3 LinkedIn + 3 X options per item. At least one LinkedIn option uses "link in first comment" with thumbnail specs.
 
-All posts follow Microsoft Social Media Standards:
+All posts follow the social post standards from your config (set during onboarding):
+- Default: plainspoken, technically credible, no fluff
 - LinkedIn: 800-1500 chars, hook in first 200, 0-2 emoji, 1-2 hashtags
 - X: concise, substantive, developer voice, 1-2 hashtags
-- No em dashes, no UTM links, no marketing fluff
-- Always use full product name
+- Custom standards are supported — provide your org's style guide during onboarding
 
 ### 4. Posting Calendar (`scout-calendar`)
 
@@ -147,6 +149,10 @@ Spreads top items across weekdays. Max 2 posts/day, staggered platforms. Announc
 ### 5. Content Gap Analysis (`scout-gaps`)
 
 Compares canonical topic tags vs. tags used in report. Lists zero-coverage topics, flags drops from prior month, suggests content creation ideas.
+
+### 6. Trends Analysis (`scout-trends`)
+
+Compares current month vs. up to 3 prior months. Shows trajectory for item counts, contributor counts, conversation volume, and sentiment. Highlights rising and declining topics, repeat vs. new contributors, and provides a role-specific actionable insight. Saves to `reports/{YYYY-MM}-trends.md`.
 
 ---
 
@@ -200,9 +206,11 @@ See `scout-config-example.prompt.md` for a template with all fields documented.
     ├── scout-scan.prompt.md                # Content scan
     ├── scout-post.prompt.md                # Social post generation
     ├── scout-calendar.prompt.md            # Posting calendar
-    └── scout-gaps.prompt.md                # Gap analysis
+    ├── scout-gaps.prompt.md                # Gap analysis
+    └── scout-trends.prompt.md              # Trends analysis
 reports/
 ├── {YYYY-MM}-content.md                    # Monthly content reports
+├── {YYYY-MM}-trends.md                     # Monthly trends reports
 └── .seen-links.json                        # Dedup tracker
 social-posts/
 ├── {YYYY-MM}-social-posts.md               # Generated social posts (code-fenced)
@@ -298,14 +306,21 @@ It runs as a GitHub Copilot agent inside VS Code — no infrastructure to deploy
 - **No black boxes** — reports are readable markdown with direct links to every source
 - **Configurable** — every source, filter, and preference is set in a single config file
 - **Incremental** — dedup tracking means you can scan monthly without duplicates accumulating
-- **Standards-compliant** — all social posts follow Microsoft Social Media Standards for Developer Accounts
+- **Standards-compliant** — all social posts follow your organization's social media standards (configured during onboarding)
 
 ### Who It's For
 
-- Product managers tracking community engagement and content velocity
-- Developer advocates maintaining social presence across LinkedIn and X
-- DevRel teams running content programs and identifying community champions
-- Anyone managing a developer product who wants to know what the community is building and writing
+| Role | What You Get |
+|------|-------------|
+| **Program Manager** | Adoption metrics, SDK language breakdown, feature mention frequency, ecosystem health, month-over-month trajectory |
+| **Product Manager** | Competitor content volume with switching signals, feature request & pain point flagging from forums, customer sentiment, market signals |
+| **Social Media Manager** | Engagement potential scoring (1-5) on every item, platform-specific timing suggestions, auto-generated posts with posting calendar, trending topics |
+| **Product Marketer** | Launch coverage tracker (grouped by event), analyst mentions, customer success stories, competitive landscape, campaign amplification |
+| **Developer Advocate** | Rising contributor tracking, community projects, conference content grouping, tutorials, SDK adoption by language, auto-generated posts |
+| **Community Manager** | Sentiment breakdown (positive/neutral/negative), unanswered question tracking, new contributor spotlights, engagement trend, community health |
+| **Technical Writer** | FAQ pattern extraction, doc confusion signals, tutorial gap analysis, community vs. official doc coverage ratio, content freshness |
+
+Or define a custom role during onboarding to get exactly what you need.
 
 ---
 

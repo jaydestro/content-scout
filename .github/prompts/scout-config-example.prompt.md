@@ -7,6 +7,23 @@ mode: content-scout
 
 Apply this configuration to the Content Scout agent. Copy this file, rename it to `scout-config-{product-slug}.prompt.md`, and fill in all values for your product.
 
+## Role
+
+- **Role:** {Your role — e.g., Developer Advocate, Product Manager, Social Media Manager, etc.}
+- **Social posts:** {on/off — determines if social posts are auto-generated after scans}
+- **Posting calendar:** {on/off — determines if posting calendar is generated}
+- **Report focus:** {Role-specific focus — e.g., "Community projects, tutorials, conference talks, contributor spotlights"}
+- **Report section ordering:** {e.g., "community first", "competitors first", "SDK first"}
+- **Engagement scoring:** {on/off — adds 1-5 engagement potential score to each item}
+- **Conversation sentiment:** {on/off — classifies conversations as positive/neutral/negative}
+- **Feature request flagging:** {on/off — flags feature requests and pain points from forums}
+- **Unanswered question tracking:** {on/off — tracks questions with no answers}
+- **Rising contributors:** {on/off — tracks new and growing community contributors}
+- **SDK/feature adoption tracking:** {on/off — tracks GitHub repos by SDK language and feature mentions}
+- **Competitor tracking:** {on/off — tracks competitor content volume and switching signals}
+- **Launch coverage tracking:** {on/off — groups content by event during event windows}
+- **Doc gap focus:** {on/off — tracks FAQ patterns and doc coverage gaps}
+
 ## Product Identity
 
 - **Product:** {Your Product Name}
@@ -42,10 +59,15 @@ These are NOT your product team members. They are community developers, MVPs, an
 - **X thumbnail size:** 1200x675
 
 ## API Keys
-
-- **YouTube Data API v3:** {your key from Google Cloud Console}
-- **Bluesky:** handle: {your.handle.bsky.social} | app-password: {xxxx-xxxx-xxxx-xxxx}
-- **X/Twitter:** {Bearer token, or note if skipped}
+<!-- All optional. Collected during network selection (Group 3) -- paste key or say "skip". -->
+<!-- Without YouTube key: YouTube scanning is skipped (community videos won't appear in reports) -->
+<!-- Without Bluesky creds: Bluesky scanning is skipped (mentions and hashtag posts won't be tracked) -->
+<!-- Without X token: X/Twitter scanning is skipped (conversations and mentions won't be tracked) -->
+<!-- All other sources (blogs, GitHub, Stack Overflow, Reddit, Hacker News, MS Learn) work without keys -->
+- **YouTube Data API v3:** {key or "none"}
+- **Bluesky handle:** {handle or "none"}
+- **Bluesky app password:** {password or "none"}
+- **X Bearer token:** {token or "none"}
 
 ## Content Sources (scan order)
 
@@ -77,15 +99,18 @@ These are NOT your product team members. They are community developers, MVPs, an
 partitioning, data-modeling, query-perf, sdk-dotnet, sdk-java, sdk-python, indexing, throughput, monitoring, security, migration, architecture, integration, release
 
 ## Social Post Standards
+<!-- Only include if social posts are enabled. Set during onboarding or customize here. -->
 
-- Follow Microsoft Social Media Standards for developer accounts
-- Always use the full product name (e.g., "Azure Cosmos DB", not "Cosmos DB")
-- LinkedIn: 800-1500 chars, hook in first 200 chars, 0-2 emoji, 1-2 hashtags
-- X: concise, substantive, developer voice, 1-2 hashtags
-- At least 3 options per platform per item, each with different framing angle
-- At least 1 LinkedIn option must be "link in first comment" with thumbnail spec
-- No em dashes, no UTM links, no marketing fluff
-- Content framing angles: "how this works", "what you can build", "what problem this solves", "what changed and why it matters", "real-world example"
+- **Tone:** {e.g., "Plainspoken, technically credible, non-marketing" or your org's tone}
+- **Always use full product name:** {yes/no}
+- **Avoid words/phrases:** {e.g., "check it out", "exciting news", "game-changer" or your list}
+- **Emoji policy:** {e.g., "0-2 max"}
+- **Hashtag policy:** {e.g., "1-2 at end"}
+- **Things to avoid:** {e.g., "em dashes, UTM links, fluff phrases"}
+- **LinkedIn targets:** {e.g., "800-1500 chars, hook in first 200"}
+- **X targets:** {e.g., "concise but substantive, no shortened links"}
+- **Content framing angles:** {e.g., "how this works, what you can build, what problem this solves, what changed and why, real-world example"}
+- **Additional rules:** {any org-specific rules or "none"}
 
 ## Output Files
 
