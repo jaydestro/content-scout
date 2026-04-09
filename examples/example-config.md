@@ -62,18 +62,15 @@ description: "Content Scout configuration for Azure Cosmos DB"
 
 ## Networks
 
+### Standard Sources
 | Source | Enabled |
 |--------|---------|
-| Microsoft Tech Community | yes |
 | Dev.to | yes |
 | Medium | yes |
 | Hashnode | yes |
 | DZone | yes |
 | C# Corner | yes |
 | InfoQ | yes |
-| Influencer blogs | yes |
-| Azure Updates | yes |
-| Microsoft Learn | yes |
 | YouTube | yes |
 | GitHub | yes |
 | Stack Overflow | yes |
@@ -81,6 +78,16 @@ description: "Content Scout configuration for Azure Cosmos DB"
 | Hacker News | yes |
 | Bluesky | no |
 | LinkedIn | yes |
+
+### Custom Sources
+| Name | Type | URL |
+|------|------|-----|
+| Microsoft Tech Community | blog | https://techcommunity.microsoft.com/tag/azure-cosmos-db |
+| Azure Updates | update-feed | https://azure.microsoft.com/updates/?query=cosmos+db |
+| Microsoft Learn | docs | https://learn.microsoft.com/azure/cosmos-db/ |
+| Baeldung | influencer | https://www.baeldung.com |
+| freeCodeCamp | influencer | https://www.freecodecamp.org/news |
+| CodeProject | influencer | https://www.codeproject.com |
 
 ## Known External Authors
 <!-- These authors bypass the relevancy filter (still must pass date gate) -->

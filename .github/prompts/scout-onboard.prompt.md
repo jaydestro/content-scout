@@ -14,7 +14,7 @@ Ask these questions **one group at a time**. Do not dump all questions at once.
 
 ### Group 1 — Your Role
 
-Ask: **"What's your role? This helps me tailor the report, set smart defaults, and focus on what matters most to you."**
+Ask: **"What's your role? Pick one, or combine multiple roles to get a blended report. This helps me tailor the report, set smart defaults, and focus on what matters most to you."**
 
 | # | Role | What You'll Get |
 |---|------|----------------|
@@ -25,13 +25,13 @@ Ask: **"What's your role? This helps me tailor the report, set smart defaults, a
 | 5 | **Developer Advocate / DevRel** | Community projects, tutorials, rising contributors, conference talks |
 | 6 | **Community Manager** | Contributor tracking, sentiment trends, engagement health, unanswered questions |
 | 7 | **Technical Writer** | Doc gap analysis, tutorial patterns, FAQ signals, community-written tutorials vs. official docs |
-| 8 | **Other** | Custom — tell me what you care about and I'll configure accordingly |
+| 8 | **Custom** | Cherry-pick exactly the features you want — I'll walk you through each toggle |
 
-Accept a number or role name.
+Accept a single number/name, a comma-separated list (e.g., "1, 4" or "Program Manager, Product Marketer"), or "Custom".
 
 #### Role Defaults
 
-Each role sets smart defaults for the rest of onboarding. The user can override any default in subsequent groups.
+Each role sets smart defaults for the rest of onboarding. When **multiple roles** are selected, defaults are **merged** — if any selected role enables a feature, it's on. The user can override any default in subsequent groups.
 
 | Setting | PgM | PdM | SMM | PMktg | DevAdv | CM | TW |
 |---------|-----|-----|-----|-------|--------|----|----|
@@ -50,20 +50,44 @@ Each role sets smart defaults for the rest of onboarding. The user can override 
 | Report summary focus | adoption | market | content pipeline | messaging | community | engagement | documentation |
 | Report section ordering | SDK first | competitors first | blogs first | launch first | community first | questions first | doc signals first |
 
-When a role has social posts **off**, skip Group 5 (social platforms) and Group 10 (posting preferences) unless the user explicitly asks for them.
+When a role has social posts **off** (and no other selected role turns them on), skip Group 6 (social platforms) and Group 11 (posting preferences) unless the user explicitly asks for them.
 
-#### If "Other" is selected
-Interview the user:
+#### Multi-Role Merging
+When the user selects multiple roles:
+1. Merge feature toggles using **union** — if any selected role has a feature on, it's on
+2. For **report summary**, combine the relevant role summaries into one section (e.g., "Program Manager + Product Marketer" gets both adoption metrics and launch coverage)
+3. For **report section ordering**, use the first role's ordering as the base and insert sections from other roles that aren't already included
+4. Show the merged defaults table and ask: "Here's what's enabled based on your roles. Want to adjust anything?"
+
+#### If "Custom" is selected
+Show the full feature toggle list and let the user enable/disable each one:
+
+| # | Feature | Default | Description |
+|---|---------|---------|-------------|
+| 1 | Social posts | off | Auto-generate social posts from scan results |
+| 2 | Posting calendar | off | Weekly posting schedule |
+| 3 | Competitor tracking | off | Monitor competitor content volume and switching signals |
+| 4 | Conversation sentiment | off | Classify forum/social conversations as positive/neutral/negative |
+| 5 | Community health signals | off | Track community engagement trends |
+| 6 | Rising contributors | off | Spotlight new or increasingly active authors |
+| 7 | Feature request flagging | off | Flag feature requests and pain points from forums |
+| 8 | Unanswered question tracking | off | Track unanswered questions on Stack Overflow, Reddit, forums |
+| 9 | Doc gap focus | off | Identify documentation gaps and confusion signals |
+| 10 | SDK/feature adoption tracking | off | Track SDK language breakdown and feature mention frequency |
+| 11 | Engagement potential scoring | off | Score every item 1-5 for shareability |
+| 12 | Launch coverage tracking | off | Group content by event during launch windows |
+
+Ask: "Which features do you want? Give me the numbers, or say 'all' to enable everything."
+
+Then ask:
 - "Describe your role in a sentence or two."
 - "What are you trying to accomplish with Content Scout? (e.g., track community projects, monitor competitor content, find content to share, identify customer pain points)"
-- "Do you need social media posts generated, or is this primarily for monitoring and analysis?"
-- "Which of these signals matter most to you: community projects, blog content, conversations, competitor mentions, documentation gaps, customer feedback, or something else?"
 
 Based on answers, configure defaults and explain: "Here's what I've set up for your role: {summary}. You can adjust any of this in the following steps."
 
 #### Role Refinement
-After the role is selected, ask: **"Does this cover what you need, or should I adjust anything?"**
-If the user wants changes, interview them about what's missing or different and adjust defaults before proceeding. If the role needs capabilities not currently in the default set (e.g., a PM who also wants social posts), enable those features.
+After the role is selected (single, multi, or custom), ask: **"Does this cover what you need, or should I adjust anything?"**
+If the user wants changes, show the feature toggle table and let them flip individual settings. Any feature can be added or removed regardless of role.
 
 ### Group 2 — Product Identity
 - What is the **full product name**? (e.g., "Azure Cosmos DB")
@@ -85,31 +109,41 @@ Present the full source list and ask: **"Select all, or pick the ones you want."
 
 | # | Source | Auth Required |
 |---|--------|---------------|
-| 1 | Microsoft Tech Community | None |
-| 2 | Dev.to | None |
-| 3 | Medium | None |
-| 4 | Hashnode | None |
-| 5 | DZone | None |
-| 6 | C# Corner | None |
-| 7 | InfoQ | None |
-| 8 | Influencer blogs (Baeldung, freeCodeCamp, CodeProject) | None |
-| 9 | Azure Updates / What's New | None |
-| 10 | Microsoft Learn docs | None |
-| 11 | YouTube (community channels) | YouTube Data API v3 key (free) |
-| 12 | GitHub (community repos) | None |
-| 13 | Stack Overflow | None |
-| 14 | Reddit | None |
-| 15 | Hacker News | None |
-| 16 | Bluesky | App password (free) |
-| 17 | LinkedIn | None |
+| 1 | Dev.to | None |
+| 2 | Medium | None |
+| 3 | Hashnode | None |
+| 4 | DZone | None |
+| 5 | C# Corner | None |
+| 6 | InfoQ | None |
+| 7 | YouTube (community channels) | YouTube Data API v3 key (free) |
+| 8 | GitHub (community repos) | None |
+| 9 | Stack Overflow | None |
+| 10 | Reddit | None |
+| 11 | Hacker News | None |
+| 12 | Bluesky | App password (free) |
+| 13 | LinkedIn | None |
 
 Accept: "all" (default), a comma-separated list of numbers, or "all except {numbers}".
+
+#### Custom Sources (vendor-specific)
+After the standard network selection, ask:
+
+**"Does your product have any of these? Add as many as you need, or say 'none' to skip."**
+
+| Source Type | Description | Example |
+|-------------|-------------|---------|
+| **Vendor blog** | Official blog or community blog platform | `https://techcommunity.microsoft.com/tag/azure-cosmos-db`, `https://stripe.com/blog` |
+| **Product updates feed** | Release notes, changelog, or update feed | `https://azure.microsoft.com/updates/`, `https://github.com/orgs/twilio/discussions/categories/changelog` |
+| **Official docs site** | Documentation platform to monitor for new/updated pages | `https://learn.microsoft.com/azure/cosmos-db/`, `https://docs.stripe.com` |
+| **Influencer blogs** | Known high-quality external blogs relevant to your product | `https://baeldung.com`, `https://freecodecamp.org` |
+
+For each custom source, collect: **name**, **URL or search pattern**, and **type** (blog, update feed, docs, influencer).
 
 **After selection, ask for API keys ONLY for selected sources that require them.** For each one, explain what the key unlocks, then let the user paste the key or say "skip". Skipped keys can always be added to the config file later.
 
 - If **YouTube** was selected: "YouTube requires a free API key. Without it, YouTube is skipped and community videos won't appear in reports. Paste your YouTube Data API v3 key, or say **skip**."
 - If **Bluesky** was selected: "Bluesky requires a free app password for authenticated search. Without it, Bluesky is skipped and mentions/hashtag posts won't be tracked. Paste your Bluesky handle and app password, or say **skip**."
-- If **X/Twitter** is selected for conversation tracking: "X requires a bearer token ($200/mo Basic or limited free tier). Without it, X is skipped and conversations/mentions on X won't be tracked. Paste your X bearer token, or say **skip**."
+- If **X/Twitter** is added as a custom source or for conversation tracking: "X requires a bearer token ($200/mo Basic or limited free tier). Without it, X is skipped and conversations/mentions on X won't be tracked. Paste your X bearer token, or say **skip**."
 
 If none of the selected sources require keys, skip the key prompts entirely and tell the user: "All your selected sources work without API keys — no setup needed."
 
@@ -196,10 +230,10 @@ description: "Content Scout configuration for {Product Name}"
 # Content Scout Configuration: {Product Name}
 
 ## Role
-- **Role:** {selected role or custom role name}
+- **Role:** {selected role(s), comma-separated, or "Custom"}
 - **Social posts:** {on/off}
 - **Posting calendar:** {on/off}
-- **Report focus:** {role-specific focus description}
+- **Report focus:** {role-specific focus description, or combined if multi-role}
 - **Report section ordering:** {role-specific order — e.g., "SDK first", "competitors first", "community first"}
 - **Engagement scoring:** {on/off}
 - **Conversation sentiment:** {on/off}
@@ -249,18 +283,15 @@ description: "Content Scout configuration for {Product Name}"
 
 ## Networks
 
+### Standard Sources
 | Source | Enabled |
 |--------|---------|
-| Microsoft Tech Community | {yes/no} |
 | Dev.to | {yes/no} |
 | Medium | {yes/no} |
 | Hashnode | {yes/no} |
 | DZone | {yes/no} |
 | C# Corner | {yes/no} |
 | InfoQ | {yes/no} |
-| Influencer blogs | {yes/no} |
-| Azure Updates | {yes/no} |
-| Microsoft Learn | {yes/no} |
 | YouTube | {yes/no} |
 | GitHub | {yes/no} |
 | Stack Overflow | {yes/no} |
@@ -268,6 +299,12 @@ description: "Content Scout configuration for {Product Name}"
 | Hacker News | {yes/no} |
 | Bluesky | {yes/no} |
 | LinkedIn | {yes/no} |
+
+### Custom Sources
+<!-- Vendor-specific blogs, update feeds, docs, and influencer blogs. Omit section if "none". -->
+| Name | Type | URL |
+|------|------|-----|
+| {source name} | {blog/update-feed/docs/influencer} | {url} |
 
 ## Known External Authors
 <!-- These authors bypass the relevancy filter (still must pass date gate). Omit section if "none". -->

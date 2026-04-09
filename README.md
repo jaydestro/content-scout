@@ -2,7 +2,7 @@
 
 A VS Code custom agent that discovers, catalogs, and promotes public content about your product across the developer ecosystem. Adaptable to any developer-focused product and any role that needs to track what the community is saying.
 
-**What it does in three sentences:** Content Scout scans public sources (Tech Community, Dev.to, Medium, YouTube, GitHub, Stack Overflow, Reddit, Hacker News, Bluesky, and more) for content about your product, filters it for quality and relevance, and produces a numbered report with topic tags, monthly trends, and content gap analysis. Based on your role, it can auto-generate social media posts following your organization's social standards, with thumbnail specs and copy-ready text. It also tracks community conversations and mentions across forums without promoting them, giving you a single view of what's being published and discussed.
+**What it does in three sentences:** Content Scout scans public sources (Dev.to, Medium, YouTube, GitHub, Stack Overflow, Reddit, Hacker News, Bluesky, and more) for content about your product, filters it for quality and relevance, and produces a numbered report with topic tags, monthly trends, and content gap analysis. Based on your role, it can auto-generate social media posts following your organization's social standards, with thumbnail specs and copy-ready text. It also tracks community conversations and mentions across forums without promoting them, giving you a single view of what's being published and discussed.
 
 ## Quick Start
 
@@ -26,14 +26,14 @@ Switch to the **Content Scout** agent mode (the base agent works for any product
 ### Step 3: Run onboarding
 Type `/scout-onboard` and answer the questions. The onboard process will ask you:
 
-1. **Your role** — determines which features are active by default (social posts, posting calendar, report focus). Choose from: Program Manager, Product Manager, Social Media Manager, Product Marketer, Developer Advocate, Community Manager, Technical Writer, or Other (custom).
+1. **Your role(s)** — pick one or more roles (comma-separated), or choose Custom to cherry-pick individual features. Multi-role configs merge defaults (union). Choose from: Program Manager, Product Manager, Social Media Manager, Product Marketer, Developer Advocate, Community Manager, Technical Writer, or Custom.
 2. **Product name and search terms** — what to search for across all sources
 3. **Channels to exclude** — your official blog, YouTube channel, social handles, product team members
-4. **Which networks to scan** — select all or pick from 17 sources. API keys are requested inline only for sources that need them (YouTube, Bluesky, X) — paste the key or say "skip":
-   - Tech Community, Azure Updates, YouTube, GitHub, Microsoft Learn
+4. **Which networks to scan** — select all or pick from 13 standard sources. API keys are requested inline only for sources that need them (YouTube, Bluesky, X) — paste the key or say "skip":
+   - YouTube, GitHub
    - Dev.to, Medium, Hashnode, DZone, C# Corner, InfoQ
    - Stack Overflow, Reddit, Hacker News, Bluesky, LinkedIn
-   - Influencer blogs (Baeldung, freeCodeCamp, CodeProject)
+   - Plus optional **Custom Sources** (vendor blog, product update feed, official docs, influencer blogs)
 5. **People to watch** — known external authors, influencers to monitor
 6. **Social post configuration** — platforms, brand assets, and social post standards (only if role has social posts enabled)
 7. **Topic tags, content filters, competitors, events** — fine-tuning content discovery
@@ -47,14 +47,21 @@ Type `/scout-onboard` and answer the questions. The onboard process will ask you
 
 Your config is saved to `.github/prompts/scout-config-{product}.prompt.md`. Run it anytime to reapply settings. You never need to re-answer the onboarding questions.
 
+> **Note:** Config files (except the example template) are `.gitignore`'d by default since they may contain API keys and product-specific information. Only `scout-config-example.prompt.md` is committed.
+
 ### Example: Setting up for Azure Functions
 ```
+Roles: Developer Advocate, Product Marketer
 Product: Azure Functions
 Search terms: "Azure Functions", "Azure Function", "AzureFunctions"
 Hashtags: #AzureFunctions, #Serverless
 Exclude blog: devblogs.microsoft.com/azure-functions/
 Exclude YouTube: Azure Functions (channel)
-Networks: 1,2,3,4,5,6,7,12,13,14,15
+Standard networks: 1-13 (all)
+Custom sources:
+  - Microsoft Tech Community (blog): https://techcommunity.microsoft.com/tag/azure-functions
+  - Azure Updates (update-feed): https://azure.microsoft.com/updates/?query=azure+functions
+  - Microsoft Learn (docs): https://learn.microsoft.com/azure/azure-functions/
 Topic tags: triggers, bindings, durable-functions, consumption-plan, flex-consumption,
             deployment, monitoring, cold-start, sdk-dotnet, sdk-python, sdk-javascript, sdk-java
 ```
@@ -67,13 +74,13 @@ Topic tags: triggers, bindings, durable-functions, consumption-plan, flex-consum
 
 | Category | Sources | Auth Required |
 |----------|---------|---------------|
-| **Microsoft blogs** | Tech Community blog posts (not discussions) | None |
-| **Service updates** | Azure Updates, What's New docs | None |
+| **Vendor blogs** | Configured during onboarding (Custom Sources of type `blog`) | None |
+| **Product updates** | Configured during onboarding (Custom Sources of type `update-feed`) | None |
 | **YouTube** | All of YouTube excluding your official channel (community only) | YouTube Data API v3 key (free) |
 | **GitHub** | Community repos, SDK releases, samples | None |
-| **Docs** | Microsoft Learn new/updated pages | MS Learn MCP tools |
+| **Docs** | Configured during onboarding (Custom Sources of type `docs`). MS Learn MCP tools used when applicable | None |
 | **Community blogs** | Dev.to, Medium, Hashnode, Blogspot, WordPress, DZone, C# Corner, InfoQ | None (RSS) |
-| **Influencer blogs** | Baeldung, freeCodeCamp, CodeProject, Towards Data Science, Azure SDK Blog | None |
+| **Influencer blogs** | Configured during onboarding (Custom Sources of type `influencer`) | None |
 | **Forums** | Stack Overflow, Reddit | None (public JSON APIs) |
 | **Social** | Bluesky (authenticated search) | App password (free) |
 | **Discussions** | Hacker News | None (Algolia public API) |
@@ -96,8 +103,8 @@ Repositories must pass all of these:
 - Has a README with setup instructions or usage guidance
 - Is a complete, usable project (not a skeleton or stub)
 - Has commits within the scan period
-- Is NOT a fork of an official Microsoft repo or quickstart
-- Is NOT a Microsoft-provided quickstart or template
+- Is NOT a fork of an official product team repo or quickstart
+- Is NOT a vendor-provided quickstart or template
 - Uses the correct SDK for its language (verified by package references)
 - Meaningfully uses the product (not just a mention in a list)
 
@@ -120,7 +127,7 @@ Repositories must pass all of these:
 
 ### 1. Onboarding (`scout-onboard`)
 
-Run once per product. Asks for: your role, product name, search terms, hashtags, channels to exclude, networks to scan (with API keys collected inline for sources that need them), known authors, brand assets, social post standards, and content preferences. Generates a `scout-config-{product}.prompt.md` that stores everything.
+Run once per product. Asks for: your role(s), product name, search terms, hashtags, channels to exclude, networks to scan (with API keys collected inline for sources that need them), custom sources (vendor blogs, update feeds, docs), known authors, brand assets, social post standards, and content preferences. Generates a `scout-config-{product}.prompt.md` that stores everything.
 
 ### 2. Content Scan (`scout-scan`)
 
@@ -202,7 +209,8 @@ See `scout-config-example.prompt.md` for a template with all fields documented.
 │   └── content-scout.agent.md              # Agent definition
 └── prompts/
     ├── scout-onboard.prompt.md             # Onboarding wizard (interactive)
-    ├── scout-config-example.prompt.md      # Example config template
+    ├── scout-config-example.prompt.md      # Example config template (committed)
+    ├── scout-config-{product}.prompt.md    # Your product config (gitignored)
     ├── scout-scan.prompt.md                # Content scan
     ├── scout-post.prompt.md                # Social post generation
     ├── scout-calendar.prompt.md            # Posting calendar
@@ -240,7 +248,7 @@ All API keys are optional. Without them, the agent skips those sources and scans
 | Reddit | None | Always works | Public JSON API (append `.json` to any URL) |
 | Stack Overflow | None | Always works | Public API v2.3 (300 req/day free) |
 
-Blogs, GitHub, Stack Overflow, Reddit, Hacker News, Microsoft Learn, and Azure Updates all work without any API keys.
+Blogs, GitHub, Stack Overflow, Reddit, Hacker News, and custom sources (vendor blogs, update feeds, docs) all work without any API keys.
 
 ---
 
@@ -250,11 +258,11 @@ Content Scout can dispatch work to specialized subagents during `scout-scan` for
 
 | Subagent | Responsibility | Sources |
 |----------|---------------|---------|
-| `scout-scan-blogs` | Blog & article scanning | Tech Community, Dev.to, Medium, Hashnode, DZone, C# Corner, InfoQ, influencer blogs |
+| `scout-scan-blogs` | Blog & article scanning | Vendor blogs (from custom sources), Dev.to, Medium, Hashnode, DZone, C# Corner, InfoQ, influencer blogs |
 | `scout-scan-youtube` | YouTube search | YouTube Data API v3 (requires API key) |
 | `scout-scan-github` | Community repo discovery | GitHub search API, README validation, SDK detection |
 | `scout-scan-conversations` | Conversation tracking | Stack Overflow, Reddit, Hacker News, Bluesky, LinkedIn |
-| `scout-scan-official` | Official updates | Azure Updates, Microsoft Learn (via MCP tools) |
+| `scout-scan-official` | Official updates | Product update feeds and docs (from custom sources) |
 | `scout-post-generator` | Social post generation | Processes the merged report into platform-specific posts |
 
 ### How It Works
@@ -320,7 +328,7 @@ It runs as a GitHub Copilot agent inside VS Code — no infrastructure to deploy
 | **Community Manager** | Sentiment breakdown (positive/neutral/negative), unanswered question tracking, new contributor spotlights, engagement trend, community health |
 | **Technical Writer** | FAQ pattern extraction, doc confusion signals, tutorial gap analysis, community vs. official doc coverage ratio, content freshness |
 
-Or define a custom role during onboarding to get exactly what you need.
+Or define a custom role during onboarding to get exactly what you need. You can also **select multiple roles** (e.g., "Developer Advocate, Product Marketer") to merge their defaults.
 
 ---
 

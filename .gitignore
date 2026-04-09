@@ -1,6 +1,11 @@
 # Seen links tracker (local state, not shared)
 reports/.seen-links.json
 
+# Product configs contain API keys and product-specific settings — do not commit
+# Use scout-config-example.prompt.md as a reference template
+.github/prompts/scout-config-*.prompt.md
+!.github/prompts/scout-config-example.prompt.md
+
 # Generated images
 social-posts/images/
 

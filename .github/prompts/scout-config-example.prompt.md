@@ -9,7 +9,7 @@ Apply this configuration to the Content Scout agent. Copy this file, rename it t
 
 ## Role
 
-- **Role:** {Your role — e.g., Developer Advocate, Product Manager, Social Media Manager, etc.}
+- **Role:** {Your role(s), comma-separated — e.g., Developer Advocate, Product Marketer. Or "Custom" to cherry-pick features}
 - **Social posts:** {on/off — determines if social posts are auto-generated after scans}
 - **Posting calendar:** {on/off — determines if posting calendar is generated}
 - **Report focus:** {Role-specific focus — e.g., "Community projects, tutorials, conference talks, contributor spotlights"}
@@ -63,7 +63,7 @@ These are NOT your product team members. They are community developers, MVPs, an
 <!-- Without YouTube key: YouTube scanning is skipped (community videos won't appear in reports) -->
 <!-- Without Bluesky creds: Bluesky scanning is skipped (mentions and hashtag posts won't be tracked) -->
 <!-- Without X token: X/Twitter scanning is skipped (conversations and mentions won't be tracked) -->
-<!-- All other sources (blogs, GitHub, Stack Overflow, Reddit, Hacker News, MS Learn) work without keys -->
+<!-- All other sources (blogs, GitHub, Stack Overflow, Reddit, Hacker News) work without keys -->
 - **YouTube Data API v3:** {key or "none"}
 - **Bluesky handle:** {handle or "none"}
 - **Bluesky app password:** {password or "none"}
@@ -71,19 +71,26 @@ These are NOT your product team members. They are community developers, MVPs, an
 
 ## Content Sources (scan order)
 
-1. **Tech Community blog posts** (not discussions) -- community/MVP/partner authors
-2. **Azure Updates / What's New** -- GA releases, preview features
-3. **YouTube** (excluding official channel) -- community tutorials, demos, talks via Data API v3
-4. **GitHub** -- community repos, SDK releases, samples
-5. **Microsoft Learn docs** -- new/updated documentation via MS Learn MCP tools
-6. **Community blogs** -- Dev.to, Medium, Hashnode, Blogspot, WordPress, DZone, C# Corner, InfoQ
-7. **Influencer blogs** -- Baeldung, freeCodeCamp, CodeProject, Towards Data Science, Azure SDK Blog, Microsoft Open Source Blog, Azure Architecture Center
-8. **Conversation tracking (not numbered):**
+### Standard Sources
+1. **YouTube** (excluding official channel) — community tutorials, demos, talks via Data API v3
+2. **GitHub** — community repos, SDK releases, samples
+3. **Community blogs** — Dev.to, Medium, Hashnode, Blogspot, WordPress, DZone, C# Corner, InfoQ
+4. **Conversation tracking (not numbered):**
    - Stack Overflow (public API v2.3, no auth needed)
    - Reddit (public JSON API)
    - Hacker News (public Algolia API)
    - Bluesky (authenticated, multiple search queries)
    - LinkedIn, Substack (best effort)
+
+### Custom Sources
+<!-- Vendor-specific blogs, update feeds, docs, and influencer blogs configured during onboarding. -->
+<!-- These are product-specific sources that wouldn't apply to every user of Content Scout. -->
+| Name | Type | URL |
+|------|------|-----|
+| {vendor blog} | blog | {url} |
+| {product updates feed} | update-feed | {url} |
+| {official docs} | docs | {url} |
+| {influencer blog} | influencer | {url} |
 
 ## Content Quality Filter
 
