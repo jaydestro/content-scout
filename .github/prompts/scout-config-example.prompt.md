@@ -62,7 +62,7 @@ These are NOT your product team members. They are community developers, MVPs, an
 <!-- All optional. Collected during network selection (Group 3) -- paste key or say "skip". -->
 <!-- Without YouTube key: YouTube scanning is skipped (community videos won't appear in reports) -->
 <!-- Without Bluesky creds: Bluesky scanning is skipped (mentions and hashtag posts won't be tracked) -->
-<!-- Without X token: X/Twitter scanning is skipped (conversations and mentions won't be tracked) -->
+<!-- Without X token: X/Twitter scanning is skipped (conversations and mentions won't be tracked). The $200/mo Basic plan is typically needed — free tier is usually too limited. -->
 <!-- All other sources (blogs, GitHub, Stack Overflow, Reddit, Hacker News) work without keys -->
 - **YouTube Data API v3:** {key or "none"}
 - **Bluesky handle:** {handle or "none"}

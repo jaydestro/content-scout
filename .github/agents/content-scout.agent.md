@@ -156,6 +156,7 @@ The config file specifies which networks are enabled. For each enabled source, u
 - **Reddit** -- Public JSON API (no auth): append `.json` to search URLs
 - **Hacker News** -- Public Algolia API: `https://hn.algolia.com/api/v1/search_by_date?query={search-term}&tags=story`
 - **Bluesky** -- Authenticated via AT Protocol if credentials in config. Run searches for all text terms and hashtags.
+- **X/Twitter** -- Authenticated via bearer token if credentials in config. The $200/mo Basic plan is typically needed; free tier is usually too limited. Search for product terms and hashtags.
 - **LinkedIn** -- Best effort, search by product name
 
 #### Sentiment Classification
@@ -652,8 +653,8 @@ Each subagent receives the same context: product config, search terms, time wind
 - Applies: The full GitHub quality filter (README check, file count, fork check, SDK validation)
 
 #### `scout-scan-conversations` — Conversation Tracker
-- Scans: Stack Overflow, Reddit, Hacker News, Bluesky, LinkedIn
-- Uses: Public APIs, `fetch_webpage`
+- Scans: Stack Overflow, Reddit, Hacker News, Bluesky, X/Twitter, LinkedIn
+- Uses: Public APIs, `fetch_webpage`, X API (bearer token required)
 - Returns: Conversation items (these go into the tracked/unnumbered section)
 
 #### `scout-scan-official` — Product Updates Scanner

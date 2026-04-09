@@ -122,6 +122,7 @@ Present the full source list and ask: **"Select all, or pick the ones you want."
 | 11 | Hacker News | None |
 | 12 | Bluesky | App password (free) |
 | 13 | LinkedIn | None |
+| 14 | X/Twitter | X API bearer token ($200/mo Basic — free tier typically insufficient) |
 
 Accept: "all" (default), a comma-separated list of numbers, or "all except {numbers}".
 
@@ -143,7 +144,7 @@ For each custom source, collect: **name**, **URL or search pattern**, and **type
 
 - If **YouTube** was selected: "YouTube requires a free API key. Without it, YouTube is skipped and community videos won't appear in reports. Paste your YouTube Data API v3 key, or say **skip**."
 - If **Bluesky** was selected: "Bluesky requires a free app password for authenticated search. Without it, Bluesky is skipped and mentions/hashtag posts won't be tracked. Paste your Bluesky handle and app password, or say **skip**."
-- If **X/Twitter** is added as a custom source or for conversation tracking: "X requires a bearer token ($200/mo Basic or limited free tier). Without it, X is skipped and conversations/mentions on X won't be tracked. Paste your X bearer token, or say **skip**."
+- If **X/Twitter** was selected: "X requires a bearer token. The $200/mo Basic plan is typically needed — the free tier is usually too limited for meaningful scanning. Without it, X is skipped and conversations/mentions on X won't be tracked. Paste your X bearer token, or say **skip**."
 
 If none of the selected sources require keys, skip the key prompts entirely and tell the user: "All your selected sources work without API keys — no setup needed."
 
@@ -299,6 +300,7 @@ description: "Content Scout configuration for {Product Name}"
 | Hacker News | {yes/no} |
 | Bluesky | {yes/no} |
 | LinkedIn | {yes/no} |
+| X/Twitter | {yes/no} |
 
 ### Custom Sources
 <!-- Vendor-specific blogs, update feeds, docs, and influencer blogs. Omit section if "none". -->

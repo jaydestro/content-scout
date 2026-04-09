@@ -29,10 +29,11 @@ Type `/scout-onboard` and answer the questions. The onboard process will ask you
 1. **Your role(s)** — pick one or more roles (comma-separated), or choose Custom to cherry-pick individual features. Multi-role configs merge defaults (union). Choose from: Program Manager, Product Manager, Social Media Manager, Product Marketer, Developer Advocate, Community Manager, Technical Writer, or Custom.
 2. **Product name and search terms** — what to search for across all sources
 3. **Channels to exclude** — your official blog, YouTube channel, social handles, product team members
-4. **Which networks to scan** — select all or pick from 13 standard sources. API keys are requested inline only for sources that need them (YouTube, Bluesky, X) — paste the key or say "skip":
+4. **Which networks to scan** — select all or pick from 14 standard sources. API keys are requested inline only for sources that need them (YouTube, Bluesky, X) — paste the key or say "skip":
    - YouTube, GitHub
    - Dev.to, Medium, Hashnode, DZone, C# Corner, InfoQ
    - Stack Overflow, Reddit, Hacker News, Bluesky, LinkedIn
+   - X/Twitter (requires API bearer token — $200/mo Basic plan typically needed)
    - Plus optional **Custom Sources** (vendor blog, product update feed, official docs, influencer blogs)
 5. **People to watch** — known external authors, influencers to monitor
 6. **Social post configuration** — platforms, brand assets, and social post standards (only if role has social posts enabled)
@@ -83,6 +84,7 @@ Topic tags: triggers, bindings, durable-functions, consumption-plan, flex-consum
 | **Influencer blogs** | Configured during onboarding (Custom Sources of type `influencer`) | None |
 | **Forums** | Stack Overflow, Reddit | None (public JSON APIs) |
 | **Social** | Bluesky (authenticated search) | App password (free) |
+| **Social** | X/Twitter (authenticated search) | X API bearer token ($200/mo Basic recommended) |
 | **Discussions** | Hacker News | None (Algolia public API) |
 
 ### Quality Filter
@@ -243,7 +245,7 @@ All API keys are optional. Without them, the agent skips those sources and scans
 |---------|------|-----------|------------|
 | YouTube Data API v3 | Free | YouTube scanning skipped -- community videos won't appear in reports | Google Cloud Console -> APIs & Services -> Enable YouTube Data API v3 -> Create API Key |
 | Bluesky | Free | Bluesky scanning skipped -- mentions and hashtag posts won't be tracked | bsky.app/settings/app-passwords -> Add App Password |
-| X/Twitter | $200/mo (Basic) or free tier (limited) | X/Twitter scanning skipped -- conversations and mentions won't be tracked | developer.x.com -> Create app -> Bearer token |
+| X/Twitter | $200/mo (Basic) or free tier (limited) | X/Twitter scanning skipped -- conversations and mentions won't be tracked | developer.x.com -> Create app -> Bearer token. Free tier is typically too limited for meaningful scanning; Basic plan ($200/mo) recommended. |
 | Hacker News | None | Always works | Public Algolia API |
 | Reddit | None | Always works | Public JSON API (append `.json` to any URL) |
 | Stack Overflow | None | Always works | Public API v2.3 (300 req/day free) |
@@ -261,7 +263,7 @@ Content Scout can dispatch work to specialized subagents during `scout-scan` for
 | `scout-scan-blogs` | Blog & article scanning | Vendor blogs (from custom sources), Dev.to, Medium, Hashnode, DZone, C# Corner, InfoQ, influencer blogs |
 | `scout-scan-youtube` | YouTube search | YouTube Data API v3 (requires API key) |
 | `scout-scan-github` | Community repo discovery | GitHub search API, README validation, SDK detection |
-| `scout-scan-conversations` | Conversation tracking | Stack Overflow, Reddit, Hacker News, Bluesky, LinkedIn |
+| `scout-scan-conversations` | Conversation tracking | Stack Overflow, Reddit, Hacker News, Bluesky, X/Twitter, LinkedIn |
 | `scout-scan-official` | Official updates | Product update feeds and docs (from custom sources) |
 | `scout-post-generator` | Social post generation | Processes the merged report into platform-specific posts |
 

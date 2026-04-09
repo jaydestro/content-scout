@@ -78,6 +78,7 @@ description: "Content Scout configuration for Azure Cosmos DB"
 | Hacker News | yes |
 | Bluesky | no |
 | LinkedIn | yes |
+| X/Twitter | yes |
 
 ### Custom Sources
 | Name | Type | URL |
