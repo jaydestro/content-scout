@@ -23,6 +23,8 @@ Onboard (once) → Scan (monthly) → Post (ongoing) → Analyze (monthly)
 
 Run once per product. The onboarding wizard walks you through 9 groups of questions. You can say "none" or "skip" to any optional question.
 
+**Multiple products:** The first question asks whether you're tracking one product or several. If you choose multiple, onboarding collects shared settings (role, brand, networks) once, then loops product-specific details (search terms, exclusions, topic tags) for each product. Each product gets its own config file. Run `/scout-onboard` again later to add more products without re-entering shared settings.
+
 ### What It Asks
 
 | Group | Questions | Required |
@@ -123,10 +125,12 @@ Repositories have additional requirements:
 
 | Output | Path | Description |
 |--------|------|-------------|
-| Content report | `reports/{YYYY-MM}-content.md` | Numbered items with topic tags, summaries, engagement scores, role-specific sections |
-| Social posts | `social-posts/{YYYY-MM}-social-posts.md` | 3 LinkedIn + 3 X options per item, code-fenced for copy (only if social posts enabled) |
-| Dedup tracker | `reports/.seen-links.json` | Updated with all URLs from this scan |
+| Content report | `reports/{YYYY-MM}-{slug}-content.md` | Numbered items with topic tags, summaries, engagement scores, role-specific sections |
+| Social posts | `social-posts/{YYYY-MM}-{slug}-social-posts.md` | 3 LinkedIn + 3 X options per item, code-fenced for copy (only if social posts enabled) |
+| Dedup tracker | `reports/.seen-links.json` | Updated with all URLs from this scan (shared across products) |
 | Trends | Appended to report | Month-over-month deltas, content gaps (auto-generated at report end) |
+
+When only one product is configured, the slug is optional in filenames for backward compatibility.
 
 ### Conversation Tracking
 
@@ -206,7 +210,7 @@ Spreads your top content items across a posting schedule.
 
 ### Output
 
-Saved to `social-posts/{YYYY-MM}-posting-calendar.md` with a day-by-day schedule showing which item to post on which platform.
+Saved to `social-posts/{YYYY-MM}-{slug}-posting-calendar.md` with a day-by-day schedule showing which item to post on which platform.
 
 ---
 
@@ -239,7 +243,7 @@ Compares the current month against up to 3 prior months.
 
 ### Output
 
-Saved to `reports/{YYYY-MM}-trends.md`.
+Saved to `reports/{YYYY-MM}-{slug}-trends.md`.
 
 ---
 
@@ -250,6 +254,8 @@ Here's how the pieces fit together for a typical monthly cycle:
 ### Week 1: Scan and Review
 ```
 /scout-scan month:March year:2026
+/scout-scan cosmos-db month:March year:2026   # specific product
+/scout-scan all                                # all products
 ```
 Review the generated report. Check the conversation tracking section for sentiment shifts or emerging pain points.
 

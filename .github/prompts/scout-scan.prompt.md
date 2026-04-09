@@ -10,17 +10,23 @@ Run a content scan using the Content Scout agent.
 
 ## Instructions
 
-1. Load the product configuration from the `scout-config-*.prompt.md` file in `.github/prompts/`. If no config exists, tell the user to run `/scout-onboard` first and stop.
-2. Determine the **time window**:
+1. Load product configuration(s) from `scout-config-*.prompt.md` files in `.github/prompts/`:
+   - If the user specified a product (e.g., `/scout-scan cosmos-db`), load only `scout-config-{slug}.prompt.md`.
+   - If the user said `/scout-scan` with no product specified:
+     - If only **one** config file exists, use it.
+     - If **multiple** config files exist, ask: "You have configs for: {list of product names}. Scan all of them, or just one? (say 'all' or a product name/slug)"
+   - If no config exists, tell the user to run `/scout-onboard` first and stop.
+2. For each product being scanned, determine the **time window**:
    - If the user specified a month/year (e.g., "March 2026"), scan that calendar month.
    - Otherwise, scan the last 30 days from today.
-3. Execute **Scan mode** as defined in the Content Scout agent:
+3. Execute **Scan mode** for each product as defined in the Content Scout agent:
    - Search all enabled networks using the configured search terms.
    - Apply the content quality filter (date gate + relevancy gate).
    - Check `reports/.seen-links.json` for duplicates.
    - Tag every item with canonical topic tags.
    - Number items sequentially across all sections.
-4. Save the report to `reports/{YYYY-MM}-content.md`.
+4. Save each product's report to `reports/{YYYY-MM}-{slug}-content.md` (or `reports/{YYYY-MM}-content.md` if only one product).
 5. Update `reports/.seen-links.json` with all new URLs.
-6. Auto-generate social posts and thumbnail specs for every item. Save to `social-posts/{YYYY-MM}-social-posts.md`.
-7. Summarize: item count, top topics, content gaps, and confirm social posts were generated.
+6. Auto-generate social posts and thumbnail specs for every item. Save to `social-posts/{YYYY-MM}-{slug}-social-posts.md` (or `social-posts/{YYYY-MM}-social-posts.md` if only one product).
+7. Summarize: item count per product, top topics, content gaps, and confirm social posts were generated.
+8. If scanning multiple products, provide a brief cross-product summary at the end (total items, shared topics, comparative volume).

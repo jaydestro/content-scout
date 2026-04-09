@@ -12,6 +12,16 @@ Walk the user through configuring Content Scout for their product. Gather all re
 
 Ask these questions **one group at a time**. Do not dump all questions at once.
 
+### Group 0 — Product Scope
+
+Ask: **"Are you setting up Content Scout for one product or multiple products? If multiple, I'll walk you through each one."**
+
+- If **one product**: proceed to Group 1 as normal. Standard single-product flow.
+- If **multiple products**: note the count. The user will go through Groups 1-6 once (shared role, networks, brand), then loop through Group 2 (Product Identity) and Group 3 (Exclusions) for each product. Each product gets its own config file.
+- The user can also add more products later by running `/scout-onboard` again — it will detect existing configs and offer to add a new product.
+
+If multiple products are requested, explain: "Great — I'll collect your role, network preferences, and brand settings once (they'll be shared), then walk through product-specific details for each product."
+
 ### Group 1 — Your Role
 
 Ask: **"What's your role? Pick one, or combine multiple roles to get a blended report. This helps me tailor the report, set smart defaults, and focus on what matters most to you."**
@@ -259,7 +269,9 @@ Say "none" to skip this group entirely.
 
 ## Config File Generation
 
-After gathering all answers, generate the config file at:
+**One config file per product.** If the user is onboarding multiple products, generate a separate config file for each. Shared settings (role, networks, brand assets, social post standards) are duplicated into each config so every config is self-contained.
+
+After gathering all answers, generate each config file at:
 `.github/prompts/scout-config-{slug}.prompt.md`
 
 Use this exact template:
@@ -465,12 +477,13 @@ description: "Content Scout configuration for {Product Name}"
 
 ## After Generating
 
-1. Save the config file.
-2. Confirm to the user: "Configuration saved to `.github/prompts/scout-config-{slug}.prompt.md`."
+1. Save the config file(s).
+2. Confirm to the user: "Configuration saved to `.github/prompts/scout-config-{slug}.prompt.md`." If multiple products, list all generated config files.
 3. Remind them of available commands:
-   - `/scout-scan` — Run a content scan
+   - `/scout-scan` — Run a content scan (scans all products, or specify one: `/scout-scan cosmos-db`)
    - `/scout-post` — Generate social posts from a URL
    - `/scout-calendar` — Generate a posting calendar
    - `/scout-gaps` — Analyze content gaps
    - `/scout-trends` — Compare trends across months
-4. If any API keys were skipped during Group 3, remind the user which sources are disabled until keys are added to the config file.
+4. If multiple products were configured, explain: "You can scan all products at once with `/scout-scan`, or target one with `/scout-scan {slug}`. The same applies to other commands."
+5. If any API keys were skipped during Group 4, remind the user which sources are disabled until keys are added to the config file.

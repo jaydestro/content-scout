@@ -4,7 +4,7 @@
 
 # Content Scout
 
-A VS Code custom agent that discovers, catalogs, and promotes public content about your product across the developer ecosystem. It scans 14+ public sources, filters for quality, generates reports with topic tags and trends, and drafts ready-to-post social media content — all configured through a single onboarding conversation.
+A VS Code custom agent that discovers, catalogs, and promotes public content about your product across the developer ecosystem. It scans 14+ public sources, filters for quality, generates reports with topic tags and trends, and drafts ready-to-post social media content — all configured through a single onboarding conversation. Track one product or many from the same workspace.
 
 ## Who It's For
 
@@ -38,8 +38,8 @@ Your config saves to `.github/prompts/scout-config-{product}.prompt.md` (gitigno
 
 | Command | What It Does |
 |---------|-------------|
-| `/scout-onboard` | Set up the agent for a new product (interactive) |
-| `/scout-scan` | Scan for content (default: last 30 days, or specify month/year) |
+| `/scout-onboard` | Set up the agent for a new product (interactive, supports multiple products) |
+| `/scout-scan` | Scan for content — specify a product slug or scan all |
 | `/scout-post` | Generate social posts from a URL or report item number |
 | `/scout-calendar` | Create a weekly posting schedule |
 | `/scout-gaps` | Show topics with no recent coverage |
@@ -69,6 +69,8 @@ See [Workflow](docs/WORKFLOW.md) for the detailed end-to-end guide and [Architec
 ## Adapting for Your Product
 
 This agent is a template. Clone it, run `/scout-onboard`, and answer the questions for your product. The agent generates a config file with your search terms, excluded channels, brand assets, topic tags, and social post standards. All commands use that config automatically.
+
+**Multiple products:** Run `/scout-onboard` again to add another product. Each gets its own config file (`scout-config-{slug}.prompt.md`) and separate reports. Shared settings (role, brand, networks) can be reused. Pass a product slug to any command (e.g., `/scout-scan cosmos-db`) or scan all at once.
 
 See [example-config.md](examples/example-config.md) for a completed configuration using Azure Cosmos DB.
 

@@ -30,7 +30,27 @@ You have **five modes**:
 
 ## Configuration
 
-Before any operation, check for a `scout-config-*.prompt.md` file in `.github/prompts/`. If found, load the configuration from it. If not found, ask the user to run `/scout-onboard` first.
+Before any operation, check for `scout-config-*.prompt.md` files in `.github/prompts/`.
+
+### Multi-Product Support
+
+Content Scout supports tracking multiple products simultaneously. Each product has its own config file (`scout-config-{slug}.prompt.md`).
+
+**Product resolution rules:**
+- If the user specifies a product by name or slug (e.g., "scan cosmos-db", "post for Azure Functions"), load that product's config.
+- If only **one** config file exists, use it automatically.
+- If **multiple** config files exist and the user didn't specify, ask which product (or "all").
+- Commands that accept a product argument: `scout-scan`, `scout-post`, `scout-calendar`, `scout-gaps`, `scout-trends`.
+
+**File naming with multiple products:**
+- Reports: `reports/{YYYY-MM}-{slug}-content.md` (e.g., `2026-03-cosmos-db-content.md`)
+- Social posts: `social-posts/{YYYY-MM}-{slug}-social-posts.md`
+- Trends: `reports/{YYYY-MM}-{slug}-trends.md`
+- Calendars: `social-posts/{YYYY-MM}-{slug}-posting-calendar.md`
+- When only one product is configured, the slug is optional in filenames for backward compatibility.
+- The dedup tracker `reports/.seen-links.json` is shared across all products.
+
+**Adding products later:** Users can run `/scout-onboard` at any time to add a new product. The onboarding wizard detects existing configs and offers to add a new product without re-asking shared settings (role, networks, brand).
 
 The config file defines:
 - **Role** (user's role, social posts on/off, posting calendar on/off, report focus)
@@ -94,10 +114,11 @@ The user can specify the time window in two ways:
 
 ## Report File Naming
 
-Reports are organized by month/year:
-- `reports/{YYYY-MM}-content.md`
+Reports are organized by month/year and product:
+- Single product: `reports/{YYYY-MM}-content.md`
+- Multiple products: `reports/{YYYY-MM}-{slug}-content.md`
 - For last-30-day scans, use the current month/year.
-- If a report for that month already exists, **update it** -- merge new findings, avoid duplicates, re-number items sequentially.
+- If a report for that month/product already exists, **update it** -- merge new findings, avoid duplicates, re-number items sequentially.
 
 ## Content Sources
 
