@@ -15,7 +15,7 @@ A VS Code custom agent that discovers, catalogs, and promotes public content abo
 
 ### Step 1: Clone the repo
 ```
-git clone https://github.com/jagord_microsoft/content-scout.git
+git clone https://github.com/jaydestro/content-scout.git
 cd content-scout
 code .
 ```
