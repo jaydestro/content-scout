@@ -159,24 +159,67 @@ Say "none" to skip this group entirely.
 Say "none" to skip any of these. Defaults will be used.
 - Which **platforms** should we generate posts for? Select from: **LinkedIn**, **X**, **Bluesky**, **YouTube Community**. *(Pick one or more, or say "none" to skip social post generation entirely.)*
 - For each selected platform, what is the **account handle or URL**? *(optional — say "none" if you don't want to link your account)*
-- What is the **product logo URL or path**? (for thumbnail generation) *(optional — say "none")*
-- What are the **brand colors**? (primary, accent — hex codes) *(optional — say "none" to use defaults)*
-- What **background theme** for thumbnails? (dark, light, gradient) *(optional — default: dark)*
+
+#### Brand & Thumbnail Identity
+Collect brand identity details so thumbnails accurately represent the product. Say "none" to skip any item.
+
+- **Logo files:** Where are your logo files? Provide a **directory path or URLs** to the actual logo files. List each logo filename if multiple versions exist (e.g., full-color, white, icon-only). *(If none provided, thumbnails will use text-only layouts — logos are never fabricated.)*
+- **Logo usage rules:** Any rules for when to use which logo version? (e.g., "Use icon-only on dark backgrounds, full wordmark on light", "Minimum clear space of 20px around logo", "Never place logo on busy backgrounds")
+- **Product name on thumbnails:** How should the product name appear? (e.g., exact casing like "Azure Cosmos DB", never abbreviated, or short forms allowed)
+- **Brand colors** — provide hex codes for each:
+  - Primary background: (e.g., #0C1A2E)
+  - Accent / highlight: (e.g., #50E6FF)
+  - Text color: (e.g., #FFFFFF)
+  - Any additional palette colors and where each is used
+- **Background theme:** dark, light, or gradient? *(default: dark)*
+- **Visual style / look and feel:** Describe the general aesthetic for thumbnails. (e.g., "Stars/space theme on dark background", "Clean and minimal with bold typography", "Gradient backgrounds with geometric accents")
+- **Font preferences:** Any specific fonts for headlines or body text? (e.g., "Segoe UI Semibold for headings", "Use brand typeface only")
+- **Thumbnail composition:** Any preferences for layout? (e.g., "Logo top-left, headline centered", "Always include a subtle pattern overlay", "Text should never overlap the logo")
+- **Things to NEVER do on thumbnails:** List any brand guardrails. (e.g., "Never stretch or recolor the logo", "Never use gradients on the logo", "Never use competitor colors", "Never add drop shadows to the logo")
+- **Other brand concerns:** Anything a marketing team would flag? (e.g., "All thumbnails must match our brand kit at {URL}", "Follow accessibility contrast ratios", "Include legal disclaimer for preview features")
 
 #### Social Post Standards
-If social posts are enabled, ask:
-- "Does your organization have **social media guidelines or a style guide** I should follow? Describe the key rules (tone, emoji policy, hashtag limits, character targets, things to avoid) or say **'use defaults'** and I'll use industry-standard developer account practices."
-- "Any **words, phrases, or patterns to always avoid** in posts? (e.g., 'game-changer', em dashes, UTM links)"
-- "What **tone** works best for your audience? (e.g., technically grounded, conversational, authoritative, casual)"
-- "Should posts always use the **full product name**, or is a short name acceptable?"
+If social posts are enabled, ask these questions. Say "use defaults" to skip to sensible defaults.
+
+**Audience:**
+- "Who is the **target audience** for your social posts? (e.g., backend developers, cloud architects, data engineers, DevOps practitioners, engineering managers, startup CTOs) — knowing the audience shapes tone, technical depth, and framing."
+
+**Tone & Voice:**
+- "What **tone** works best for your audience? (e.g., technically grounded, conversational, authoritative, casual, witty)"
+- "Does your organization have **social media guidelines or a style guide** I should follow? Describe the key rules (tone, emoji policy, hashtag limits, things to avoid) or say **'use defaults'**."
+
+**Brand Name Usage:**
+- "What is the **correct way to refer to your product** in social posts? Provide the full canonical name and any rules for short forms."
+  - Example: *"The brand is 'Azure Cosmos DB'. Never write 'CosmosDB' or 'Azure CosmosDB'. After the full name has appeared once in a post, 'Cosmos DB' is acceptable for subsequent mentions."*
+- "Are there **other names, abbreviations, or misspellings** that must never appear?" (e.g., incorrect casing, missing spaces, old product names)
+
+**Length & Format Limits:**
+- "Any **length constraints** beyond platform defaults?" Platform defaults are:
+  - LinkedIn: 800-1500 chars, hook in first 200 chars
+  - X: concise but substantive (aim for full tweet, not threads)
+  - Bluesky: up to 300 chars
+  - YouTube Community: concise, conversational
+- "Any rules about **emoji usage**? (default: 0-2 max)"
+- "Any rules about **hashtag usage**? (default: 1-2 at end)"
+
+**Words & Patterns to Avoid:**
+- "Any **words, phrases, or patterns to always avoid** in posts? (e.g., 'game-changer', 'excited to announce', em dashes, UTM links, clickbait hooks)"
+- "Any **competitor names** that should never appear in your posts?"
+
+**Content Framing:**
+- "What **framing angles** work best for your content?" Default angles: how this works, what you can build, what problem this solves, what changed and why, real-world example. Add or remove as needed.
+
+**Additional Rules:**
+- "Any other **org-specific rules**? (e.g., 'always link to official docs', 'never speculate about unreleased features', 'include legal disclaimer for preview features')"
 
 If the user says "use defaults", apply these sensible defaults:
+- Target audience: developers and technical practitioners
 - Plainspoken, technically credible, non-marketing
 - No fluff phrases ("check it out", "exciting news", "game-changer")
 - No em dashes, no UTM links
+- Always use full product name on first mention; acceptable short form on subsequent mentions only if defined
 - LinkedIn: 800-1500 chars, hook in first 200, 0-2 emoji, 1-2 hashtags
 - X: concise but substantive, 1-2 hashtags, no shortened links
-- Always use full product name
 - Vary framing angles across post options
 
 Store whatever the user provides (or the defaults) in the config under `## Social Post Standards`.
@@ -326,23 +369,45 @@ description: "Content Scout configuration for {Product Name}"
 | YouTube Community | {yes/no} | {channel or "none"} |
 
 ## Brand Assets
-<!-- Omit any field where the user said "none" -->
-- **Logo:** {path or URL or "none"}
-- **Primary color:** {hex or "none"}
-- **Accent color:** {hex or "none"}
-- **Thumbnail theme:** {dark/light/gradient or "dark"}
+<!-- Omit any field where the user said "none". CRITICAL: Never generate fake or placeholder logos. -->
+<!-- If no logo files are provided, thumbnails use text-only layouts. -->
+- **Logo directory:** {path to logo files or "none"}
+- **Logos available:** {list of logo filenames or "none"}
+- **Logo usage rules:** {when to use which version, clear space rules, or "none"}
+- **Product name on thumbnails:** {exact casing and usage rules, e.g., "Azure Cosmos DB — never abbreviate"}
+- **Brand colors:**
+  - Primary background: {#hex or "none"}
+  - Accent: {#hex or "none"}
+  - Highlight: {#hex or "none"}
+  - Text: {#hex or "none"}
+- **Thumbnail style:** {visual style description, e.g., "Stars/space theme on dark background"}
+- **Background theme:** {dark/light/gradient or "dark"}
+- **Font:** {e.g., "Segoe UI Semibold for headings" or "none"}
+- **Thumbnail composition:** {layout preferences, e.g., "Logo top-left, headline centered" or "none"}
+- **Brand guardrails (never do):** {list of things to never do, e.g., "Never stretch logo, never use competitor colors" or "none"}
+- **Additional brand concerns:** {marketing team requirements or "none"}
+- **Thumbnail sizes:**
+  - LinkedIn: 1200x1200 (square) or 1200x628 (landscape)
+  - X: 1600x900
+  - Bluesky: 2000x1000
+  - YouTube Community: 1200x675
 
 ## Social Post Standards
 <!-- Only include if social posts are enabled. Omit entire section if social posts are off. -->
 <!-- If user said "use defaults", include the default standards here explicitly so the agent can reference them. -->
+- **Target audience:** {e.g., "Backend developers, cloud architects, data engineers" or custom}
 - **Tone:** {e.g., "Plainspoken, technically credible, non-marketing" or custom}
-- **Always use full product name:** {yes/no}
+- **Brand name — canonical form:** {e.g., "Azure Cosmos DB"}
+- **Brand name — acceptable short form:** {e.g., "Cosmos DB (only after full name has appeared in the same post)" or "none — always use full name"}
+- **Brand name — never write:** {e.g., "CosmosDB, Azure CosmosDB, Cosmos" or "none"}
 - **Avoid words/phrases:** {list or "none"}
+- **Avoid competitor names in posts:** {list or "none"}
 - **Emoji policy:** {e.g., "0-2 max" or custom}
 - **Hashtag policy:** {e.g., "1-2 at end" or custom}
 - **Things to avoid:** {e.g., "em dashes, UTM links, fluff phrases" or custom}
 - **LinkedIn targets:** {e.g., "800-1500 chars, hook in first 200" or custom}
 - **X targets:** {e.g., "concise but substantive, no shortened links" or custom}
+- **Bluesky targets:** {e.g., "up to 300 chars" or custom}
 - **Content framing angles:** {e.g., "how this works, what you can build, what problem this solves, what changed and why, real-world example" or custom}
 - **Additional rules:** {any org-specific rules or "none"}
 
@@ -351,7 +416,7 @@ description: "Content Scout configuration for {Product Name}"
 <!-- Without YouTube key: YouTube scanning is skipped (community videos won't appear in reports) -->
 <!-- Without Bluesky creds: Bluesky scanning is skipped (mentions and hashtag posts won't be tracked) -->
 <!-- Without X token: X/Twitter scanning is skipped (conversations and mentions won't be tracked) -->
-<!-- All other sources (blogs, GitHub, Stack Overflow, Reddit, Hacker News, MS Learn) work without keys -->
+<!-- All other sources (blogs, GitHub, Stack Overflow, Reddit, Hacker News) work without keys -->
 - **YouTube Data API v3:** {key or "none"}
 - **Bluesky handle:** {handle or "none"}
 - **Bluesky app password:** {password or "none"}

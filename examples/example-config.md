@@ -111,20 +111,37 @@ description: "Content Scout configuration for Azure Cosmos DB"
 | YouTube Community | no | none |
 
 ## Brand Assets
-- **Logo:** assets/cosmos-db-logo.svg
-- **Primary color:** #0078D4
-- **Accent color:** #50E6FF
-- **Thumbnail theme:** dark
+<!-- Never generate fake or placeholder logos. Only use the files listed here. -->
+- **Logo directory:** assets/
+- **Logos available:** cosmos-db-logo.svg, cosmos-db-icon-white.svg
+- **Logo usage rules:** Use full logo on dark backgrounds, white icon-only version on accent-colored backgrounds. Minimum 20px clear space around logo.
+- **Product name on thumbnails:** Azure Cosmos DB — always use full name, never abbreviate to "Cosmos" alone
+- **Brand colors:**
+  - Primary background: #0C1A2E
+  - Accent: #50E6FF
+  - Highlight: #0078D4
+  - Text: #FFFFFF
+- **Thumbnail style:** Stars/space theme on dark background
+- **Background theme:** dark
+- **Font:** Segoe UI Semibold for headings
+- **Thumbnail composition:** Logo top-left, headline centered, accent bar at bottom
+- **Brand guardrails (never do):** Never stretch or recolor the logo, never place logo on busy backgrounds, never use competitor brand colors
+- **Additional brand concerns:** Follow Microsoft brand guidelines for Azure sub-brands
 
 ## Social Post Standards
+- **Target audience:** Backend developers, cloud architects, data engineers, and distributed systems practitioners
 - **Tone:** Plainspoken, technically credible, non-marketing
-- **Always use full product name:** yes
-- **Avoid words/phrases:** "check it out", "exciting news", "game-changer", "unleash", "dive in"
+- **Brand name — canonical form:** Azure Cosmos DB
+- **Brand name — acceptable short form:** Cosmos DB (only after "Azure Cosmos DB" has appeared in the same post)
+- **Brand name — never write:** CosmosDB, Azure CosmosDB, Cosmos (alone), cosmosdb, cosmos
+- **Avoid words/phrases:** "check it out", "exciting news", "game-changer", "unleash", "dive in", "excited to announce"
+- **Avoid competitor names in posts:** none
 - **Emoji policy:** 0-2 max
 - **Hashtag policy:** 1-2 at end
 - **Things to avoid:** em dashes, UTM links, fluff phrases, speculation about unreleased features
 - **LinkedIn targets:** 800-1500 chars, hook in first 200
 - **X targets:** concise but substantive, no shortened links
+- **Bluesky targets:** up to 300 chars, concise and direct
 - **Content framing angles:** how this works, what you can build, what problem this solves, what changed and why, real-world example
 - **Additional rules:** Always link to official docs when referencing a feature. Voice: calm, confident, technically grounded.
 

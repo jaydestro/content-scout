@@ -69,7 +69,7 @@ https://azure.microsoft.com/updates/cosmos-db-priority-throttling
 
 | Property | Value |
 |----------|-------|
-| Platform | LinkedIn (1200x627) |
+| Platform | LinkedIn (1200x1200 square) |
 | Background | Dark (#1a1a2e) |
 | Logo | Cosmos DB logo (top-left) |
 | Headline | "Priority-Based Throttling" |
@@ -175,7 +175,7 @@ Full tutorial with working code: https://dev.to/justinepark/rag-pipeline-cosmos-
 
 | Property | Value |
 |----------|-------|
-| Platform | LinkedIn (1200x627) |
+| Platform | LinkedIn (1200x1200 square) |
 | Background | Dark (#1a1a2e) |
 | Logo | Cosmos DB logo (top-left) |
 | Headline | "RAG with Cosmos DB" |
@@ -227,4 +227,4 @@ https://dev.to/justinepark/rag-pipeline-cosmos-db-semantic-kernel
 - Each "link in first comment" option has separate copy blocks for post body and comment
 - Thumbnail images rendered inline with markdown image references
 - All items link back to their report entry
-- All posts follow Microsoft Social Media Standards for Developer Accounts
+- All posts follow the Social Post Standards from the product config

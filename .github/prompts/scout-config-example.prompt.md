@@ -45,18 +45,28 @@ These are NOT your product team members. They are community developers, MVPs, an
 | {Name} | {Company/Community} | {@handle} |
 
 ## Brand Assets
+<!-- CRITICAL: Never generate fake or placeholder logos. If no logos are provided, use text-only thumbnails. -->
 
 - **Logo directory:** {path to logo files}
 - **Logos available:** {list of logo filenames}
+- **Logo usage rules:** {when to use which version, clear space rules, or "none"}
+- **Product name on thumbnails:** {exact casing and usage rules, e.g., "Azure Cosmos DB — never abbreviate"}
 - **Brand colors:**
   - Primary background: {#hex}
   - Accent: {#hex}
   - Highlight: {#hex}
   - Text: {#hex}
 - **Thumbnail style:** {e.g., Stars/space theme on dark background}
+- **Background theme:** {dark/light/gradient or "dark"}
 - **Font:** {e.g., Segoe UI Semibold for headings}
-- **LinkedIn thumbnail size:** 1200x627
-- **X thumbnail size:** 1200x675
+- **Thumbnail composition:** {layout preferences, e.g., "Logo top-left, headline centered"}
+- **Brand guardrails (never do):** {e.g., "Never stretch logo, never use competitor colors"}
+- **Additional brand concerns:** {marketing team requirements or "none"}
+- **Thumbnail sizes:**
+  - LinkedIn: 1200x1200 (square) or 1200x628 (landscape)
+  - X: 1600x900
+  - Bluesky: 2000x1000
+  - YouTube Community: 1200x675
 
 ## API Keys
 <!-- All optional. Collected during network selection (Group 3) -- paste key or say "skip". -->
@@ -80,7 +90,8 @@ These are NOT your product team members. They are community developers, MVPs, an
    - Reddit (public JSON API)
    - Hacker News (public Algolia API)
    - Bluesky (authenticated, multiple search queries)
-   - LinkedIn, Substack (best effort)
+   - X/Twitter (authenticated, bearer token required)
+   - LinkedIn (best effort)
 
 ### Custom Sources
 <!-- Vendor-specific blogs, update feeds, docs, and influencer blogs configured during onboarding. -->
@@ -108,14 +119,19 @@ partitioning, data-modeling, query-perf, sdk-dotnet, sdk-java, sdk-python, index
 ## Social Post Standards
 <!-- Only include if social posts are enabled. Set during onboarding or customize here. -->
 
+- **Target audience:** {e.g., "Backend developers, cloud architects, data engineers" or custom}
 - **Tone:** {e.g., "Plainspoken, technically credible, non-marketing" or your org's tone}
-- **Always use full product name:** {yes/no}
+- **Brand name — canonical form:** {e.g., "Azure Cosmos DB"}
+- **Brand name — acceptable short form:** {e.g., "Cosmos DB (only after full name has appeared in the same post)" or "none — always use full name"}
+- **Brand name — never write:** {e.g., "CosmosDB, Azure CosmosDB, Cosmos" or "none"}
 - **Avoid words/phrases:** {e.g., "check it out", "exciting news", "game-changer" or your list}
+- **Avoid competitor names in posts:** {list or "none"}
 - **Emoji policy:** {e.g., "0-2 max"}
 - **Hashtag policy:** {e.g., "1-2 at end"}
 - **Things to avoid:** {e.g., "em dashes, UTM links, fluff phrases"}
 - **LinkedIn targets:** {e.g., "800-1500 chars, hook in first 200"}
 - **X targets:** {e.g., "concise but substantive, no shortened links"}
+- **Bluesky targets:** {e.g., "up to 300 chars"}
 - **Content framing angles:** {e.g., "how this works, what you can build, what problem this solves, what changed and why, real-world example"}
 - **Additional rules:** {any org-specific rules or "none"}
 

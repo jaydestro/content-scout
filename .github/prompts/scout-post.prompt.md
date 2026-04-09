@@ -5,7 +5,7 @@ mode: content-scout
 
 # scout-post
 
-Generate social media posts for LinkedIn and X. Follow all Microsoft Social Media Standards defined in the agent instructions. Produce at least 3 LinkedIn options and 3 X options, each with a different framing angle.
+Generate social media posts for LinkedIn and X. Follow all Social Post Standards from the product config. Produce at least 3 LinkedIn options and 3 X options, each with a different framing angle.
 
 ${{input:URL (required) -- this is the CTA link for the posts}}
 

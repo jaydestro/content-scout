@@ -445,12 +445,24 @@ When the user invokes `scout-post`, they will provide:
 **Read all post standards from the config's `## Social Post Standards` section.** Do not use hardcoded standards. The onboarding wizard collects these from the user (or applies sensible defaults if they said "use defaults").
 
 If the config has no `## Social Post Standards` section, fall back to these minimal defaults:
+- Target audience: developers and technical practitioners
 - Plainspoken, technically credible, non-marketing
 - No fluff phrases ("check it out", "exciting news", "game-changer")
-- Always use the full product name from config
+- Always use the full product name from config on first mention
 - Vary framing angles across post options
 - LinkedIn: 800-1500 chars, hook in first 200, 0-2 emoji, 1-2 hashtags
 - X: concise but substantive, 1-2 hashtags, no shortened links
+
+#### Audience Awareness
+- Read `Target audience` from the config. Tailor technical depth, jargon, and framing to that audience.
+- If the audience is "backend developers", lean into implementation details. If "engineering managers", emphasize impact and outcomes. Adapt accordingly.
+
+#### Brand Name Enforcement
+- Read `Brand name — canonical form`, `Brand name — acceptable short form`, and `Brand name — never write` from the config.
+- **First mention** in every post MUST use the canonical form exactly as written (e.g., "Azure Cosmos DB").
+- **Subsequent mentions** in the same post may use the acceptable short form if one is defined (e.g., "Cosmos DB"). If no short form is defined, always use the canonical form.
+- **Never write** any form listed in the "never write" field. This includes incorrect casing, missing spaces, old product names, and informal abbreviations.
+- These rules apply to post body text, thumbnails, alt text, and any other generated content.
 
 #### Content Framing (pick one angle per post)
 - "Here's how this works"
@@ -490,11 +502,25 @@ When a "link in first comment" option is generated, include:
   `![{alt text}](images/{YYYY-MM}/{N}-{platform}-{slug}.png)`
 
 Thumbnail spec details:
-- Platform and size (LinkedIn 1200x627, X 1200x675)
+- Platform and size:
+  - LinkedIn: 1200x1200 (square, recommended for image posts) or 1200x628 (landscape)
+  - X: 1600x900 (16:9 landscape)
+  - Bluesky: 2000x1000 (2:1 landscape)
+  - YouTube Community: 1200x675 (16:9)
 - Background from brand config (or default dark if not configured)
 - Logo from brand assets (if configured)
 - Headline text from post
 - Accent color from brand config (if configured)
+
+Brand fidelity rules for thumbnails:
+- **NEVER generate fake, placeholder, or AI-fabricated logos.** Only use logo files explicitly provided in the Brand Assets config.
+- If no logo files are configured, produce **text-only thumbnails** — do not invent a logo.
+- Use the **exact product name** as specified in Brand Assets (respect casing, never abbreviate unless allowed).
+- Follow **logo usage rules** from config (which version, clear space, background constraints).
+- Apply **brand guardrails** — if the config lists "never do" items, enforce them strictly.
+- Follow **thumbnail composition** preferences if specified (logo placement, text positioning, layout).
+- Use **brand fonts** if specified; fall back to a clean sans-serif if not.
+- Respect any **additional brand concerns** (accessibility contrast, legal disclaimers, brand kit compliance).
 
 ### Social Post Output File
 
