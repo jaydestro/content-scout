@@ -13,8 +13,8 @@ A VS Code custom agent that discovers, catalogs, and promotes public content abo
 | **Program Manager** | Adoption metrics, SDK language breakdown, feature mention frequency, ecosystem health, month-over-month trajectory |
 | **Product Manager** | Competitor signals, feature request & pain point flagging, customer sentiment, market signals |
 | **Social Media Manager** | Engagement scoring, platform-specific timing, auto-generated posts with posting calendar, trending topics |
-| **Product Marketer** | Launch coverage tracker, analyst mentions, customer success stories, competitive landscape, campaign amplification |
-| **Developer Advocate** | Rising contributor tracking, community projects, conference content, tutorials, SDK adoption, auto-generated posts |
+| **Product Marketer** | Launch coverage tracker, analyst mentions, customer success stories, competitive landscape, open CFPs, campaign amplification |
+| **Developer Advocate** | Rising contributor tracking, community projects, conference content, open CFPs, tutorials, SDK adoption, auto-generated posts |
 | **Community Manager** | Sentiment breakdown, unanswered question tracking, new contributor spotlights, engagement trends, community health |
 | **Technical Writer** | FAQ pattern extraction, doc confusion signals, tutorial gap analysis, community vs. official doc coverage ratio |
 
@@ -58,7 +58,7 @@ All API keys are optional — without them, the agent skips those sources and sc
 ## How It Works
 
 1. **Onboard** — configure your product, role(s), sources, brand identity, and social post standards
-2. **Scan** — the agent searches all sources, applies quality filters (relevancy, dedup, scoring), and produces a numbered report
+2. **Scan** — the agent searches all sources, applies quality filters (relevancy, dedup, scoring), finds open CFPs and recent conference talks, and produces a numbered report
 3. **Post** — generates platform-specific social posts with brand name enforcement and thumbnail specs
 4. **Analyze** — content gap analysis, monthly trends, sentiment tracking, contributor patterns
 

@@ -10,7 +10,7 @@ description: "Content Scout configuration for Azure Cosmos DB"
 - **Role:** Developer Advocate
 - **Social posts:** on
 - **Posting calendar:** on
-- **Report focus:** Community projects, tutorials, conference talks, contributor spotlights
+- **Report focus:** Community projects, tutorials, conference talks, CFPs, contributor spotlights
 - **Report section ordering:** community first
 - **Engagement scoring:** on
 - **Conversation sentiment:** on
@@ -19,6 +19,7 @@ description: "Content Scout configuration for Azure Cosmos DB"
 - **Rising contributors:** on
 - **SDK/feature adoption tracking:** on
 - **Competitor tracking:** off
+- **Conference CFP tracking:** on
 - **Launch coverage tracking:** off
 - **Doc gap focus:** off
 
@@ -204,6 +205,11 @@ description: "Content Scout configuration for Azure Cosmos DB"
 |-------|-------|-------|
 | Microsoft Build 2026 | May 19-21, 2026 | Major product announcements expected |
 | .NET Conf 2026 | November 2026 | .NET + Cosmos DB sessions |
+
+### CFP Discovery Settings
+- **Conference categories:** cloud/infrastructure, database, data engineering, developer, .NET, Java, Python, AI/ML, DevOps
+- **Must-check conferences:** NDC, KubeCon, QCon, DevIntersection, PASS Data Community Summit, re:Invent
+- **Event regions:** Global
 
 ## Posting Preferences
 - **Target frequency:** 3-5 posts per week

@@ -128,6 +128,7 @@ Repositories have additional requirements:
 | Content report | `reports/{YYYY-MM}-{slug}-content.md` | Numbered items with topic tags, summaries, engagement scores, role-specific sections |
 | Social posts | `social-posts/{YYYY-MM}-{slug}-social-posts.md` | 3 LinkedIn + 3 X options per item, code-fenced for copy (only if social posts enabled) |
 | Dedup tracker | `reports/.seen-links.json` | Updated with all URLs from this scan (shared across products) |
+| Open CFPs | Included in report | Open calls for papers sorted by deadline (if Conference CFP tracking is on) |
 | Trends | Appended to report | Month-over-month deltas, content gaps (auto-generated at report end) |
 
 When only one product is configured, the slug is optional in filenames for backward compatibility.
@@ -144,6 +145,15 @@ Forums and social platforms are scanned separately from blog/article content. Co
 
 Each conversation is classified by sentiment (positive/neutral/negative) and flagged if it contains a feature request or pain point.
 
+### Conference CFP & Talk Discovery
+
+When **Conference CFP tracking** is enabled (on by default for Developer Advocate and Product Marketer roles), the scan also finds:
+
+- **Open CFPs** — conferences with open calls for papers relevant to the product's user communities. Each entry includes the conference name, CFP deadline, conference dates, location, site URL, CFP URL, a short description, and which audience segment it targets. CFPs closing within 14 days are highlighted.
+- **Recent conference talks** — presentations at conferences that featured the product. These populate the Conference Content section of the report.
+
+The agent determines relevant conference communities from the product itself (e.g., a database product maps to database, cloud, data engineering, and developer conferences) and uses CFP aggregator sites (sessionize.com, papercall.io, confs.tech) plus search queries to find opportunities.
+
 ### Subagent Parallelism
 
 If subagents are available, the scan dispatches work in parallel:
@@ -155,6 +165,7 @@ If subagents are available, the scan dispatches work in parallel:
 | `scout-scan-github` | GitHub repos, README validation, SDK detection |
 | `scout-scan-conversations` | Stack Overflow, Reddit, Hacker News, Bluesky, X/Twitter, LinkedIn |
 | `scout-scan-official` | Product update feeds and docs |
+| `scout-scan-cfp` | CFP aggregators, conference archives, speaker decks (if Conference CFP tracking is on) |
 
 If subagents aren't available, the main agent runs everything sequentially. Same results, just slower.
 

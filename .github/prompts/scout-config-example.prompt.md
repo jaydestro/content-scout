@@ -21,6 +21,7 @@ Apply this configuration to the Content Scout agent. Copy this file, rename it t
 - **Rising contributors:** {on/off — tracks new and growing community contributors}
 - **SDK/feature adoption tracking:** {on/off — tracks GitHub repos by SDK language and feature mentions}
 - **Competitor tracking:** {on/off — tracks competitor content volume and switching signals}
+- **Conference CFP tracking:** {on/off — finds open calls for papers and recent conference talks}
 - **Launch coverage tracking:** {on/off — groups content by event during event windows}
 - **Doc gap focus:** {on/off — tracks FAQ patterns and doc coverage gaps}
 
@@ -134,6 +135,18 @@ partitioning, data-modeling, query-perf, sdk-dotnet, sdk-java, sdk-python, index
 - **Bluesky targets:** {e.g., "up to 300 chars"}
 - **Content framing angles:** {e.g., "how this works, what you can build, what problem this solves, what changed and why, real-world example"}
 - **Additional rules:** {any org-specific rules or "none"}
+
+## Conferences & Events
+<!-- Events where the product will be featured. Content gets relevancy boost during event windows. -->
+| Event | Dates | Notes |
+|-------|-------|-------|
+| {event name} | {dates or "recurring"} | {notes} |
+
+### CFP Discovery Settings
+<!-- Only include if Conference CFP tracking is on. -->
+- **Conference categories:** {e.g., "cloud/infrastructure, database, developer, DevOps, .NET, AI/ML"}
+- **Must-check conferences:** {e.g., "NDC, KubeCon, QCon" or "none"}
+- **Event regions:** {e.g., "Global" or "North America, Europe" or "Virtual only"}
 
 ## Output Files
 

@@ -66,6 +66,7 @@ The config file defines:
 - **API keys** (YouTube, Bluesky, X — collected during network selection)
 - **Topic tags** (canonical tags for categorization)
 - **Content filters** (include/exclude rules)
+- **Conference & CFP settings** (event list, CFP categories, must-check conferences — only if Conference CFP tracking is on)
 
 ### Role-Aware Behavior
 
@@ -77,7 +78,7 @@ The config's `## Role` section controls what the agent emphasizes:
 | Product Manager | Market signals, competitor content, customer feedback, feature requests | Off | Off |
 | Social Media Manager | Engagement opportunities, trending content, viral signals | On | On |
 | Product Marketer | Launch coverage, analyst mentions, customer stories, competitive landscape | On | On |
-| Developer Advocate | Community projects, tutorials, conference talks, contributor spotlights | On | On |
+| Developer Advocate | Community projects, tutorials, conference talks, CFPs, contributor spotlights | On | On |
 | Community Manager | Sentiment, new contributors, unanswered questions, community health | Off | Off |
 | Technical Writer | Doc confusion signals, FAQ patterns, tutorial gaps, content freshness | Off | Off |
 | Custom | As defined during onboarding | As configured | As configured |
@@ -102,7 +103,7 @@ The config's `## Role` section controls what the agent emphasizes:
 - **Product Manager:** Market signals — customer pain points, feature requests (flagged from forums), competitor content volume and sentiment, switching signals (migration posts to/from competitors), month-over-month delta
 - **Social Media Manager:** Engagement opportunities — top 5 items ranked by engagement potential score (1-5), trending topics, viral candidates, platform-specific timing suggestions, month-over-month delta
 - **Product Marketer:** Coverage summary — launch/event mentions (grouped by event if in event window), analyst/press coverage, customer success stories, competitive landscape summary, month-over-month delta
-- **Developer Advocate:** Community pulse — new tutorials count, conference content (grouped by event), rising contributors (first-time or increased output), project spotlights, SDK adoption by language, month-over-month delta
+- **Developer Advocate:** Community pulse — new tutorials count, conference content (grouped by event), open CFPs with deadlines, rising contributors (first-time or increased output), project spotlights, SDK adoption by language, month-over-month delta
 - **Community Manager:** Community health — sentiment breakdown (positive/neutral/negative from conversations), unanswered question count and list, new voices this month, active discussion threads, engagement trend, month-over-month delta
 - **Technical Writer:** Doc signals — top FAQ patterns (from Stack Overflow), confusion signals (recurring questions on same topic), tutorial gaps (topics with community tutorials but no official docs), community tutorials vs. official doc coverage ratio, month-over-month delta
 
@@ -197,6 +198,61 @@ These flagged items populate the **Feature Requests & Pain Points** and **Compet
 #### Unanswered Question Detection
 Track questions with zero answers (Stack Overflow) or low engagement (Reddit, forums). These populate the **Unanswered Questions** report section. Useful for Community Managers to identify where the community needs help.
 
+### Conference CFP & Talk Discovery
+
+**Enabled for:** Developer Advocate, Product Marketer (on by default). Other roles: off by default but can be enabled via config toggle `Conference CFP tracking`.
+
+Scan for two things:
+
+#### 1. Open Calls for Papers (CFPs)
+Search for conferences with open CFPs that are relevant to the product's user communities. Determine the relevant communities from the product itself (e.g., a database product → database conferences, cloud conferences, developer conferences, data engineering conferences, language-specific conferences for the SDKs used).
+
+**Where to search:**
+- CFP aggregator sites: `sessionize.com`, `papercall.io`, `confs.tech`, `cfpland.com`
+- Search queries: `"{product name}" conference`, `"{product domain}" call for papers {year}`, `"{product name}" CFP`
+- Conference websites listed in the config's `## Conferences & Events` section
+- Conference-focused lists and community calendars related to the product's ecosystem
+
+**For each open CFP, capture:**
+| Field | Description |
+|-------|-------------|
+| Conference name | Full name of the conference |
+| CFP closing date | Submission deadline (critical — bold if closing within 14 days) |
+| Conference dates | When the conference takes place |
+| Location | City/country or "Virtual" |
+| Conference URL | Main website |
+| CFP URL | Direct link to the submission page |
+| Description | 1-2 sentences: what the conference is about and why it's relevant to the product's users |
+| Audience fit | Which of the product's user communities this targets (e.g., "cloud architects", "data engineers", ".NET developers") |
+
+**Filtering rules:**
+- Only include CFPs with deadlines **in the future** (not already closed)
+- Only include conferences relevant to the product's domain and user base
+- Exclude vendor-run events that are already in the config's Events section (those are tracked separately)
+- Sort by CFP closing date ascending (most urgent first)
+
+#### 2. Recent Conference Talks
+Search for talks, presentations, and workshops at conferences that featured the product.
+
+**Where to search:**
+- YouTube (conference channel uploads, search `"{product name}" conference talk {year}`)
+- Conference schedule archives and session pages
+- Speaker deck sites (speakerdeck.com, slideshare.net)
+- Blog posts tagged as conference recaps
+
+**For each talk found, capture:**
+| Field | Description |
+|-------|-------------|
+| Conference name | Which conference |
+| Talk title | Session title |
+| Speaker | Presenter name(s) |
+| Date | When the talk was given |
+| Type | talk, workshop, lightning-talk, panel |
+| URL | Link to the recording, slides, or session page |
+| Description | 1-2 sentences about the talk content |
+
+These talks populate the **Conference Content** report section (already exists). The CFPs populate a new **Open Calls for Papers** section.
+
 ### Search Terms and Hashtags
 
 Use ALL search terms and hashtags from the config file across ALL sources:
@@ -271,8 +327,8 @@ The report sections below are always present, but their **order after the Summar
 | Program Manager | SDK & Feature Adoption → GitHub Activity → Community Content → Blog Posts → Official Announcements → Videos → Docs → Conversations |
 | Product Manager | Competitor & Market Signals → Feature Requests & Pain Points → Community Content → Conversations → Blog Posts → Official Announcements → GitHub → Videos → Docs |
 | Social Media Manager | Blog Posts → Videos → Community Content → Official Announcements → GitHub → Docs → Conversations |
-| Product Marketer | Launch Coverage → Blog Posts → Videos → Community Content → Official Announcements → GitHub → Docs → Competitor Signals → Conversations |
-| Developer Advocate | Community Content → Rising Contributors → GitHub Activity → Videos → Blog Posts → Conference Content → Official Announcements → Docs → Conversations |
+| Product Marketer | Launch Coverage → Blog Posts → Videos → Community Content → Conference Content → Open CFPs → Official Announcements → GitHub → Docs → Competitor Signals → Conversations |
+| Developer Advocate | Community Content → Rising Contributors → GitHub Activity → Videos → Blog Posts → Conference Content → Open CFPs → Official Announcements → Docs → Conversations |
 | Community Manager | Unanswered Questions → Conversations → Community Content → Rising Contributors → Blog Posts → Videos → GitHub → Official Announcements → Docs |
 | Technical Writer | Documentation Signals → Conversations → Blog Posts → Community Content → Official Announcements → Videos → GitHub → Docs |
 | Custom | Default order (as listed below) |
@@ -384,7 +440,14 @@ The role-specific summary aggregates these: "Sentiment: X positive, Y neutral, Z
 <!-- Include for: Developer Advocate, Product Marketer. Groups event-related content during event windows. -->
 | # | Event | Date | Title | Speaker | Type | Tags | EP | Link | Posts |
 |---|-------|------|-------|---------|------|------|----|------|-------|
-<!-- Type: talk, workshop, demo, lightning-talk -->
+<!-- Type: talk, workshop, demo, lightning-talk, panel -->
+
+## Open Calls for Papers
+<!-- Include for: Developer Advocate, Product Marketer (or any role with Conference CFP tracking on). -->
+<!-- Sorted by CFP closing date ascending (most urgent first). Bold the deadline if closing within 14 days. -->
+| Conference | CFP Closes | Conf Dates | Location | Audience Fit | Description | Site | CFP Link |
+|------------|-----------|------------|----------|-------------|-------------|------|----------|
+<!-- These are NOT numbered report items — they are speaking opportunities, not content to share. -->
 
 ## Unanswered Questions
 <!-- Include for: Community Manager. Show for others if data is available. -->
@@ -709,6 +772,12 @@ Each subagent receives the same context: product config, search terms, time wind
 - Uses: `fetch_webpage`, MS Learn MCP tools (when applicable)
 - Returns: Update items with title, date, type, URL
 
+#### `scout-scan-cfp` — Conference CFP & Talk Scanner
+- Scans: CFP aggregators (sessionize.com, papercall.io, confs.tech, cfpland.com), YouTube conference channels, conference schedule archives, speaker deck sites
+- Uses: `fetch_webpage`, `run_in_terminal`
+- Returns: Two lists — (1) open CFPs with closing date, conference name, dates, location, site URL, CFP URL, description, audience fit; (2) recent conference talks with title, speaker, conference, date, type, URL
+- Only dispatched when Conference CFP tracking is enabled in config
+
 #### `scout-post-generator` — Social Post Generator
 - Input: A merged, numbered report
 - Generates: Social posts + thumbnail specs for all items
@@ -726,15 +795,16 @@ When running a scan, use this pattern:
    - scout-scan-github
    - scout-scan-conversations
    - scout-scan-official
+   - scout-scan-cfp (if Conference CFP tracking is on)
 3. Collect all results
 4. Merge into unified item list
 5. Deduplicate against .seen-links.json
 6. Apply quality filter to any items not pre-filtered by subagents
 7. Number sequentially, tag with canonical topics
-8. Save report
+8. Save report (including Open CFPs section — not numbered, sorted by deadline)
 9. Dispatch scout-post-generator with the final report (only if role has social posts on)
 10. Update .seen-links.json
-11. Summarize to user (include role-specific insight)
+11. Summarize to user (include role-specific insight; call out any CFPs closing within 14 days)
 ```
 
 ### Fallback

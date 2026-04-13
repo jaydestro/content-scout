@@ -48,6 +48,7 @@ Each role sets smart defaults for the rest of onboarding. When **multiple roles*
 | Social posts | off | off | on (all platforms) | on (all platforms) | on (all platforms) | off | off |
 | Posting calendar | off | off | on | on | on | off | off |
 | Competitor tracking | off | on | off | on | off | off | off |
+| Conference CFP tracking | off | off | off | on | on | off | off |
 | Conversation sentiment | on | on | off | off | on | on | off |
 | Community health signals | off | off | off | off | on | on | off |
 | Rising contributors | off | off | off | off | on | on | off |
@@ -77,15 +78,16 @@ Show the full feature toggle list and let the user enable/disable each one:
 | 1 | Social posts | off | Auto-generate social posts from scan results |
 | 2 | Posting calendar | off | Weekly posting schedule |
 | 3 | Competitor tracking | off | Monitor competitor content volume and switching signals |
-| 4 | Conversation sentiment | off | Classify forum/social conversations as positive/neutral/negative |
-| 5 | Community health signals | off | Track community engagement trends |
-| 6 | Rising contributors | off | Spotlight new or increasingly active authors |
-| 7 | Feature request flagging | off | Flag feature requests and pain points from forums |
-| 8 | Unanswered question tracking | off | Track unanswered questions on Stack Overflow, Reddit, forums |
-| 9 | Doc gap focus | off | Identify documentation gaps and confusion signals |
-| 10 | SDK/feature adoption tracking | off | Track SDK language breakdown and feature mention frequency |
-| 11 | Engagement potential scoring | off | Score every item 1-5 for shareability |
-| 12 | Launch coverage tracking | off | Group content by event during launch windows |
+| 4 | Conference CFP tracking | off | Find open calls for papers and recent conference talks about your product |
+| 5 | Conversation sentiment | off | Classify forum/social conversations as positive/neutral/negative |
+| 6 | Community health signals | off | Track community engagement trends |
+| 7 | Rising contributors | off | Spotlight new or increasingly active authors |
+| 8 | Feature request flagging | off | Flag feature requests and pain points from forums |
+| 9 | Unanswered question tracking | off | Track unanswered questions on Stack Overflow, Reddit, forums |
+| 10 | Doc gap focus | off | Identify documentation gaps and confusion signals |
+| 11 | SDK/feature adoption tracking | off | Track SDK language breakdown and feature mention frequency |
+| 12 | Engagement potential scoring | off | Score every item 1-5 for shareability |
+| 13 | Launch coverage tracking | off | Group content by event during launch windows |
 
 Ask: "Which features do you want? Give me the numbers, or say 'all' to enable everything."
 
@@ -252,9 +254,20 @@ Say "none" to skip this group entirely.
 - This is optional. Skip if not relevant.
 
 ### Group 10 — Conferences & Events (optional)
+**Show this group by default for Developer Advocate and Product Marketer roles, or any role with Conference CFP tracking on. For other roles, only show if the user requests it.**
+
 - Any **upcoming conferences or events** where the product will be featured? (e.g., "Microsoft Build 2026", "KubeCon EU 2026")
 - Are there **recurring meetups** or community events to watch? (e.g., ".NET Conf", "Azure Cosmos DB Live")
 - Event content (talks, workshops, demos) gets boosted in the relevancy filter during and immediately after the event window.
+
+#### Conference CFP Discovery (if Conference CFP tracking is on)
+If CFP tracking is enabled for this role, also ask:
+
+- "What **types of conferences** are relevant to your product's users? I'll use these to find open CFPs." Suggest categories based on the product (e.g., for a database product: cloud/infrastructure, database/data engineering, developer, DevOps, AI/ML, language-specific like .NET or Java). Let the user add or remove categories.
+- "Any **specific conferences** you always want checked for open CFPs?" (e.g., "NDC", "re:Invent", "KubeCon", "QCon") These will be checked every scan even if they don't appear in aggregator searches.
+- "What **regions** matter for in-person events? Or are you only interested in virtual conferences?" (default: same as Language & Region setting)
+
+Store the conference categories, must-check conferences, and event region preferences in the config under `## Conferences & Events`.
 
 ### Group 11 — Posting Preferences (optional)
 **Skip this group if the role has posting calendar off and social posts are disabled.**
@@ -298,6 +311,7 @@ description: "Content Scout configuration for {Product Name}"
 - **Rising contributors:** {on/off}
 - **SDK/feature adoption tracking:** {on/off}
 - **Competitor tracking:** {on/off}
+- **Conference CFP tracking:** {on/off}
 - **Launch coverage tracking:** {on/off}
 - **Doc gap focus:** {on/off}
 
@@ -463,6 +477,12 @@ description: "Content Scout configuration for {Product Name}"
 | Event | Dates | Notes |
 |-------|-------|-------|
 | {event name} | {dates or "recurring"} | {notes} |
+
+### CFP Discovery Settings
+<!-- Only include if Conference CFP tracking is on. Omit entire subsection if off. -->
+- **Conference categories:** {e.g., "cloud/infrastructure, database, developer, DevOps, .NET, Java, AI/ML"}
+- **Must-check conferences:** {e.g., "NDC, KubeCon, QCon, re:Invent" or "none"}
+- **Event regions:** {e.g., "Global" or "North America, Europe" or "Virtual only"}
 
 ## Posting Preferences
 - **Target frequency:** {e.g., "3-5 posts per week"}

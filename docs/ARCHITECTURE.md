@@ -11,6 +11,7 @@ Content Scout can dispatch work to specialized subagents during `scout-scan` for
 | `scout-scan-github` | Community repo discovery | GitHub search API, README validation, SDK detection |
 | `scout-scan-conversations` | Conversation tracking | Stack Overflow, Reddit, Hacker News, Bluesky, X/Twitter, LinkedIn |
 | `scout-scan-official` | Official updates | Product update feeds and docs (from custom sources) |
+| `scout-scan-cfp` | Conference CFP & talk discovery | CFP aggregators (sessionize.com, papercall.io, confs.tech), conference archives, speaker decks. Only dispatched when Conference CFP tracking is enabled. |
 | `scout-post-generator` | Social post generation | Processes the merged report into platform-specific posts |
 
 ## How It Works
