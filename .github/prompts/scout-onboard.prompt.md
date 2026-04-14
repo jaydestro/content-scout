@@ -6,11 +6,37 @@ description: Set up Content Scout for a new product — interactive configuratio
 
 # Product Onboarding
 
-Walk the user through configuring Content Scout for their product. Gather all required information through a conversational interview, then generate the config file.
+Walk the user through configuring Content Scout for their product, technology, or project. Gather all required information through a conversational interview, then generate the config file.
 
 ## Interview Flow
 
 Ask these questions **one group at a time**. Do not dump all questions at once.
+
+### Quick Start vs. Full Setup
+
+Before diving into groups, ask: **"Would you like a quick setup or full setup?"**
+
+- **Quick setup** — 3 questions: product/tech name, your role, and which networks to scan. Everything else uses smart defaults. Best for people who track many products or want to get started fast.
+- **Full setup** — Walk through all groups for maximum customization. Best for dedicated product owners who want fine-tuned control.
+
+If the user doesn't express a preference, default to **full setup**.
+
+#### Quick Setup Flow
+
+If the user chooses quick setup:
+
+1. Ask: **"What product, technology, or project are you tracking?"** (e.g., "Azure Cosmos DB", "Python", "Ollama", "Copilot CLI")
+2. Ask: **"What's your role?"** Show the role table from Group 1.
+3. Ask: **"Which networks should I scan? Say 'all' for everything, or pick specific ones."** Show the network table from Group 4.
+4. Auto-generate:
+   - **Search terms** from the product/tech name (full name, common abbreviations, no-space version)
+   - **Hashtags** from the name (#ProductName)
+   - **Slug** from the name (lowercase, hyphenated)
+   - **Role defaults** for all feature toggles
+   - **Content filters**, **topic tags**, and **social post standards** using sensible defaults
+   - Skip: exclusions (none), people to watch (none), brand assets (text-only thumbnails), competitors (none), conferences (none), posting preferences (defaults)
+5. Save the config file and `.env` (if keys were provided).
+6. Tell the user: "Quick setup complete! You can customize further anytime by editing the config file or running `/scout-onboard` again."
 
 ### Group 0 — Product Scope
 
@@ -102,10 +128,11 @@ After the role is selected (single, multi, or custom), ask: **"Does this cover w
 If the user wants changes, show the feature toggle table and let them flip individual settings. Any feature can be added or removed regardless of role.
 
 ### Group 2 — Product Identity
-- What is the **full product name**? (e.g., "Azure Cosmos DB")
-- What is a **short slug** for file naming? (e.g., "cosmos-db")
+- What is the **full name** of the product, technology, project, or tool you want to track? (e.g., "Azure Cosmos DB", "Python", "Ollama", "GitHub Copilot CLI")
+- What **type** is this? (product, technology/language, open-source project, tool/CLI) — this shapes report sections and search strategy.
+- What is a **short slug** for file naming? (e.g., "cosmos-db", "python", "ollama", "copilot-cli")
 - What **text search terms** should we use? List all name variations, abbreviations, and related terms. (e.g., "Azure Cosmos DB", "CosmosDB", "Cosmos DB")
-- What **hashtags** are used on social media? (e.g., #CosmosDB, #AzureCosmosDB)
+- What **hashtags** are used on social media? (e.g., #CosmosDB, #AzureCosmosDB, #Python, #OllamaAI)
 
 ### Group 3 — Exclusions (optional)
 We need to exclude your team's own content so we only find community/external content. **Say "none" to skip any of these.**
@@ -152,11 +179,13 @@ After the standard network selection, ask:
 
 For each custom source, collect: **name**, **URL or search pattern**, and **type** (blog, update feed, docs, influencer).
 
-**After selection, ask for API keys ONLY for selected sources that require them.** For each one, explain what the key unlocks, then let the user paste the key or say "skip". Skipped keys can always be added to the config file later.
+**After selection, ask for API keys ONLY for selected sources that require them.** For each one, explain what the key unlocks, then let the user paste the key or say "skip". Keys are saved to `.env` at the workspace root (not in the config file), so the config can be safely committed or shared.
 
 - If **YouTube** was selected: "YouTube requires a free API key. Without it, YouTube is skipped and community videos won't appear in reports. Paste your YouTube Data API v3 key, or say **skip**."
 - If **Bluesky** was selected: "Bluesky requires a free app password for authenticated search. Without it, Bluesky is skipped and mentions/hashtag posts won't be tracked. Paste your Bluesky handle and app password, or say **skip**."
 - If **X/Twitter** was selected: "X requires a bearer token. The $200/mo Basic plan is typically needed — the free tier is usually too limited for meaningful scanning. Without it, X is skipped and conversations/mentions on X won't be tracked. Paste your X bearer token, or say **skip**."
+
+**Saving keys:** When the user provides keys, save them to `.env` at the workspace root. If `.env` doesn't exist, create it from `.env.example`. Never store keys in the config file.
 
 If none of the selected sources require keys, skip the key prompts entirely and tell the user: "All your selected sources work without API keys — no setup needed."
 
@@ -315,9 +344,11 @@ description: "Content Scout configuration for {Product Name}"
 - **Launch coverage tracking:** {on/off}
 - **Doc gap focus:** {on/off}
 
-## Product
-- **Name:** {Product Name}
+## Topic
+- **Name:** {Product/Technology/Project Name}
 - **Slug:** {slug}
+- **Type:** {product | technology | project | tool}
+<!-- Type shapes report sections: products get SDK adoption + launch tracking; technologies get ecosystem/library tracking; projects get contributor + release tracking; tools get integration + tutorial tracking -->
 
 ## Search Terms
 
@@ -438,15 +469,14 @@ description: "Content Scout configuration for {Product Name}"
 - **Additional rules:** {any org-specific rules or "none"}
 
 ## API Keys
-<!-- All optional. Add keys here when available. Do not commit secrets to public repos. -->
+<!-- API keys are stored in .env at the workspace root, NOT in this config file. -->
+<!-- This keeps secrets out of config so the config can be safely committed/shared. -->
+<!-- See .env.example for the expected format. Copy it to .env and fill in your keys. -->
 <!-- Without YouTube key: YouTube scanning is skipped (community videos won't appear in reports) -->
 <!-- Without Bluesky creds: Bluesky scanning is skipped (mentions and hashtag posts won't be tracked) -->
 <!-- Without X token: X/Twitter scanning is skipped (conversations and mentions won't be tracked) -->
 <!-- All other sources (blogs, GitHub, Stack Overflow, Reddit, Hacker News) work without keys -->
-- **YouTube Data API v3:** {key or "none"}
-- **Bluesky handle:** {handle or "none"}
-- **Bluesky app password:** {password or "none"}
-- **X Bearer token:** {token or "none"}
+_Keys are stored in `.env` — see `.env.example` for setup._
 
 ## Topic Tags (Canonical)
 <!-- All content items are tagged with 1-4 of these. If user said "none", auto-generate a starter set. -->
@@ -498,12 +528,13 @@ description: "Content Scout configuration for {Product Name}"
 ## After Generating
 
 1. Save the config file(s).
-2. Confirm to the user: "Configuration saved to `.github/prompts/scout-config-{slug}.prompt.md`." If multiple products, list all generated config files.
-3. Remind them of available commands:
+2. If the user provided API keys, save them to `.env` at the workspace root. If `.env` already exists, update only the keys that changed. Never overwrite existing keys without confirming.
+3. Confirm to the user: "Configuration saved to `.github/prompts/scout-config-{slug}.prompt.md`." If multiple products, list all generated config files. If keys were saved, confirm: "API keys saved to `.env`."
+4. Remind them of available commands:
    - `/scout-scan` — Run a content scan (scans all products, or specify one: `/scout-scan cosmos-db`)
    - `/scout-post` — Generate social posts from a URL
    - `/scout-calendar` — Generate a posting calendar
    - `/scout-gaps` — Analyze content gaps
    - `/scout-trends` — Compare trends across months
-4. If multiple products were configured, explain: "You can scan all products at once with `/scout-scan`, or target one with `/scout-scan {slug}`. The same applies to other commands."
-5. If any API keys were skipped during Group 4, remind the user which sources are disabled until keys are added to the config file.
+5. If multiple products were configured, explain: "You can scan all products at once with `/scout-scan`, or target one with `/scout-scan {slug}`. The same applies to other commands."
+6. If any API keys were skipped during Group 4, remind the user which sources are disabled until keys are added to `.env`.

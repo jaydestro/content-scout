@@ -4,7 +4,7 @@
 
 # Content Scout
 
-A VS Code custom agent that discovers, catalogs, and promotes public content about your product across the developer ecosystem. It scans 14+ public sources, filters for quality, generates reports with topic tags and trends, and drafts ready-to-post social media content — all configured through a single onboarding conversation. Track one product or many from the same workspace.
+A VS Code custom agent that discovers, catalogs, and promotes public content about your product, technology, open-source project, or tool across the developer ecosystem. It scans 14+ public sources, filters for quality, generates reports with topic tags and trends, and drafts ready-to-post social media content — all configured through a single onboarding conversation. Track one topic or many from the same workspace.
 
 ## Who It's For
 
@@ -29,17 +29,17 @@ code .
 ```
 
 1. Switch to the **Content Scout** agent mode in Copilot Chat
-2. Run `/scout-onboard` — answer the setup questions (role, product, sources, brand)
+2. Run `/scout-onboard` — choose **quick setup** (3 questions) or **full setup** (detailed customization)
 3. Run `/scout-scan` to discover content
 
-Your config saves to `.github/prompts/scout-config-{product}.prompt.md` (gitignored). See the [workflow guide](docs/WORKFLOW.md) for the full onboarding walkthrough.
+Your config saves to `.github/prompts/scout-config-{slug}.prompt.md` (gitignored). API keys are stored in `.env` (also gitignored) — see `.env.example` for the template. See the [workflow guide](docs/WORKFLOW.md) for the full onboarding walkthrough.
 
 ## Commands
 
 | Command | What It Does |
 |---------|-------------|
-| `/scout-onboard` | Set up the agent for a new product (interactive, supports multiple products) |
-| `/scout-scan` | Scan for content — specify a product slug or scan all |
+| `/scout-onboard` | Set up the agent for a new product, technology, or project (interactive, quick or full setup) |
+| `/scout-scan` | Scan for content — specify a topic slug or scan all |
 | `/scout-post` | Generate social posts from a URL or report item number |
 | `/scout-calendar` | Create a weekly posting schedule |
 | `/scout-gaps` | Show topics with no recent coverage |
@@ -53,24 +53,28 @@ Your config saves to `.github/prompts/scout-config-{product}.prompt.md` (gitigno
 **Free auth:** YouTube (API key), Bluesky (app password)
 **Paid auth:** X/Twitter ($200/mo Basic plan recommended)
 
-All API keys are optional — without them, the agent skips those sources and scans everything else. See [API Keys](docs/API-KEYS.md) for setup details and [Content Sources](docs/SOURCES.md) for the full source reference.
+All API keys are optional — without them, the agent skips those sources and scans everything else. Keys are stored in `.env` at the workspace root (not in config files). See [API Keys](docs/API-KEYS.md) for setup details and [Content Sources](docs/SOURCES.md) for the full source reference.
 
 ## How It Works
 
-1. **Onboard** — configure your product, role(s), sources, brand identity, and social post standards
+1. **Onboard** — configure your topic (product, technology, project, or tool), role(s), sources, brand identity, and social post standards
 2. **Scan** — the agent searches all sources, applies quality filters (relevancy, dedup, scoring), finds open CFPs and recent conference talks, and produces a numbered report
 3. **Post** — generates platform-specific social posts with brand name enforcement and thumbnail specs
 4. **Analyze** — content gap analysis, monthly trends, sentiment tracking, contributor patterns
+
+Reports adapt based on topic type — products get SDK adoption tracking, technologies get ecosystem/library tracking, projects get contributor/release tracking, and tools get integration/plugin tracking.
 
 Reports save to `reports/`, social posts to `social-posts/`. Everything is markdown you can review, edit, and version control.
 
 See [Workflow](docs/WORKFLOW.md) for the detailed end-to-end guide and [Architecture](docs/ARCHITECTURE.md) for quality filters, subagent dispatch, and thumbnail generation.
 
-## Adapting for Your Product
+## Adapting for Your Topic
 
-This agent is a template. Clone it, run `/scout-onboard`, and answer the questions for your product. The agent generates a config file with your search terms, excluded channels, brand assets, topic tags, and social post standards. All commands use that config automatically.
+This agent is a template. Clone it, run `/scout-onboard`, and answer the questions for your product, technology, or project. The agent generates a config file with your search terms, excluded channels, brand assets, topic tags, and social post standards. All commands use that config automatically.
 
-**Multiple products:** Run `/scout-onboard` again to add another product. Each gets its own config file (`scout-config-{slug}.prompt.md`) and separate reports. Shared settings (role, brand, networks) can be reused. Pass a product slug to any command (e.g., `/scout-scan cosmos-db`) or scan all at once.
+**Multiple topics:** Run `/scout-onboard` again to add another topic. Each gets its own config file (`scout-config-{slug}.prompt.md`) and separate reports. Shared settings (role, brand, networks) can be reused. Pass a slug to any command (e.g., `/scout-scan cosmos-db`, `/scout-scan python`) or scan all at once.
+
+**Topic types:** Content Scout supports products (Azure Cosmos DB), technologies (Python), open-source projects (Ollama), and tools (Copilot CLI). Each type adapts the report sections and search strategy automatically.
 
 See [example-config.md](examples/example-config.md) for a completed configuration using Azure Cosmos DB.
 
@@ -83,7 +87,7 @@ See [example-config.md](examples/example-config.md) for a completed configuratio
 └── prompts/
     ├── scout-onboard.prompt.md         # Onboarding wizard
     ├── scout-config-example.prompt.md  # Example config template (committed)
-    ├── scout-config-{product}.prompt.md # Your config (gitignored)
+    ├── scout-config-{slug}.prompt.md   # Your config (gitignored)
     ├── scout-scan.prompt.md            # Content scan
     ├── scout-post.prompt.md            # Social post generation
     ├── scout-calendar.prompt.md        # Posting calendar
@@ -98,6 +102,7 @@ docs/
 reports/                                # Monthly content & trends reports
 social-posts/                           # Generated posts, calendars, thumbnails
 examples/                               # Sample outputs (config, report, posts, calendar)
+.env.example                            # API key template (copy to .env)
 ```
 
 ## Examples

@@ -1,3 +1,6 @@
+# API keys — store in .env, never commit
+.env
+
 # Seen links tracker (local state, not shared)
 reports/.seen-links.json
 
