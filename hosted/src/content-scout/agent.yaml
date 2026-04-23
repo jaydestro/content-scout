@@ -1,11 +1,15 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/microsoft/AgentSchema/refs/heads/main/schemas/v1.0/ContainerAgent.yaml
+#
+# EXPERIMENTAL — Microsoft Foundry Hosted Agents preview. Requires subscription
+# enrollment and a supported region. See docs/HOSTED-AGENT.md.
 
 kind: hosted
 name: content-scout
 description: |
-    Content Scout — discovers, catalogs, and promotes public developer content
-    about a product or technology across 14+ sources. Filters for quality,
-    generates reports with topic tags and trends, and drafts social posts.
+    [EXPERIMENTAL] Content Scout — discovers, catalogs, and promotes public
+    developer content about a product or technology across 14+ sources. Filters
+    for quality, generates reports with topic tags and trends, and drafts social
+    posts. Depends on the Microsoft Foundry Hosted Agents preview.
 metadata:
     tags:
         - Agent Framework

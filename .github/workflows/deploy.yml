@@ -1,5 +1,11 @@
-name: Deploy hosted agent
+name: Deploy hosted agent (experimental)
 
+# EXPERIMENTAL — depends on the Microsoft Foundry Hosted Agents preview.
+# Requires subscription enrollment in the preview AND a supported region
+# (Australia East, Canada Central, North Central US, or Sweden Central).
+# Without access, `azd up` fails with 400 "requested experience is not available
+# for this subscription". See docs/HOSTED-AGENT.md.
+#
 # Deploys the Content Scout hosted agent to Microsoft Foundry on merge to main.
 # Requires the following repo-level secrets and variables:
 #   Secrets:  (none — uses OIDC federated identity)

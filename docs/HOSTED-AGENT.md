@@ -1,5 +1,14 @@
 # Hosted Agent — Deployment Guide
 
+> ⚠️ **Experimental / preview feature.**
+>
+> The hosted agent mode depends on the [Microsoft Foundry Hosted Agents](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/hosted-agents) preview. It requires:
+> - **Subscription enrollment** in the Foundry Hosted Agents preview. Deployments without access fail with HTTP 400 `"The requested experience is not available for this subscription"`.
+> - **A supported region.** As of April 2026: Australia East, Canada Central, North Central US, Sweden Central.
+> - Pre-release Python packages (`agent-framework-foundry-hosting`) and the `azure.ai.agents` azd extension (preview).
+>
+> APIs, infra shape, and the `azd ai agent` CLI surface may change. For production / stable use, run Content Scout in **editor mode** instead.
+
 Content Scout can run as a **Foundry hosted agent** — a containerized Python service deployed to Azure Foundry Agent Service. This enables automated scanning, scheduled operations, programmatic access, and team-wide availability via Teams or M365.
 
 ## Two Modes, One Agent

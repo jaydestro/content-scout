@@ -4,9 +4,9 @@
 
 # Content Scout
 
-A dual-mode agent that discovers, catalogs, and promotes public content about your product, technology, open-source project, or tool across the developer ecosystem. Run it **interactively in your editor** (VS Code, Claude Code, Cursor, and more) or deploy it as a **Microsoft Foundry hosted agent** for scheduled scans, automated reports, and CI-driven social post generation. It scans 14+ public sources, filters for quality, generates reports with topic tags and trends, and drafts ready-to-post social media content — all configured through a single onboarding conversation. Track one topic or many from the same workspace.
+A content research agent that discovers, catalogs, and promotes public content about your product, technology, open-source project, or tool across the developer ecosystem. Run it **interactively in your editor** (VS Code, Claude Code, Cursor, and more) — the primary, supported mode. An **experimental Microsoft Foundry hosted agent mode** is also included for teams with access to the Foundry Hosted Agents preview. Content Scout scans 14+ public sources, filters for quality, generates reports with topic tags and trends, and drafts ready-to-post social media content — all configured through a single onboarding conversation. Track one topic or many from the same workspace.
 
-> **Hosted agent?** See [docs/HOSTED-AGENT.md](docs/HOSTED-AGENT.md) for `azd up` deployment, Responses/Invocations protocols, and GitHub Actions automation.
+> ⚠️ **Experimental:** Hosted agent mode depends on the [Microsoft Foundry Hosted Agents preview](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/hosted-agents), which requires subscription-level allowlisting and is only available in selected regions. See [docs/HOSTED-AGENT.md](docs/HOSTED-AGENT.md) for details.
 
 ## Who It's For
 
@@ -177,7 +177,9 @@ examples/                                  # Sample outputs (config, report, pos
 .env.example                               # API key template (copy to .env)
 ```
 
-## Hosted Agent Mode
+## Hosted Agent Mode (Experimental)
+
+> ⚠️ **Experimental / preview.** Requires access to the Microsoft Foundry Hosted Agents preview on your Azure subscription. Deployments currently fail with `400: The requested experience is not available for this subscription` unless your subscription is enrolled. Available regions at time of writing: Australia East, Canada Central, North Central US, Sweden Central.
 
 Content Scout can also run as a **Foundry hosted agent** — a containerized service that accepts automated commands without a human in an editor. Use this for:
 
@@ -225,7 +227,7 @@ The [`examples/`](examples/) folder contains sample outputs using Azure Cosmos D
 | [Content Sources](docs/SOURCES.md) | All 14 standard sources, custom sources, scanning order |
 | [API Keys](docs/API-KEYS.md) | YouTube, Bluesky, X/Twitter setup instructions and costs |
 | [Architecture](docs/ARCHITECTURE.md) | Subagent dispatch, quality filters, GitHub filters, thumbnail generation |
-| [Hosted Agent](docs/HOSTED-AGENT.md) | Deploy as a Foundry hosted agent for automated/scheduled scanning |
+| [Hosted Agent](docs/HOSTED-AGENT.md) ⚠️ *experimental* | Deploy as a Foundry hosted agent for automated/scheduled scanning (preview) |
 
 ## Contributing
 
