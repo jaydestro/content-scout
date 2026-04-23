@@ -177,7 +177,7 @@ The [`examples/`](examples/) folder contains sample outputs using Azure Cosmos D
 | [Content Sources](docs/SOURCES.md) | All 14 standard sources, custom sources, scanning order |
 | [API Keys](docs/API-KEYS.md) | YouTube, Bluesky, X/Twitter setup instructions and costs |
 | [Architecture](docs/ARCHITECTURE.md) | Subagent dispatch, quality filters, GitHub filters, thumbnail generation |
-| [Hosted Agent](docs/HOSTED-AGENT.md) ⚠️ *experimental* | Deploy as a Foundry hosted agent for automated/scheduled scanning (preview) |
+| Hosted Agent ⚠️ *experimental* | Deploy as a Foundry hosted agent for automated/scheduled scanning (preview) |
 
 ## Contributing
 
