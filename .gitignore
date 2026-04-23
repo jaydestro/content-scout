@@ -1,31 +1,143 @@
-# API keys — store in .env, never commit
+# ---------------------------------------------------------------------------
+# Secrets & API keys — NEVER commit
+# ---------------------------------------------------------------------------
 .env
+.env.*
+!.env.example
+*.env.local
+*.pem
+*.key
+*.pfx
+*.crt
+credentials.json
+secrets.json
 
-# Seen links tracker (local state, not shared)
+# Seen-links tracker (local state, not shared)
 reports/.seen-links.json
 
-# Product configs contain API keys and product-specific settings — do not commit
-# Use scout-config-example.prompt.md as a reference template
+# Product configs contain product-specific settings and occasionally API
+# references — do not commit. Use scout-config-example.prompt.md as a template.
 .github/prompts/scout-config-*.prompt.md
 !.github/prompts/scout-config-example.prompt.md
 
-# Generated images
+# Generated thumbnails / images
 social-posts/images/
 
-# OS files
-.DS_Store
-Thumbs.db
-Desktop.ini
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.installed.cfg
+pip-log.txt
+pip-delete-this-directory.txt
 
-# Editor
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Testing & coverage
+.pytest_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Type checkers / linters
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# ---------------------------------------------------------------------------
+# Azure Developer CLI (azd)
+# ---------------------------------------------------------------------------
+.azure/
+azd-env-*.json
+hosted/.azure/
+hosted/.foundry/
+
+# ---------------------------------------------------------------------------
+# Bicep / Terraform build artifacts
+# ---------------------------------------------------------------------------
+*.bicep.json
+infra/**/main.json
+hosted/infra/**/main.json
+.terraform/
+terraform.tfstate
+terraform.tfstate.backup
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+
+# ---------------------------------------------------------------------------
+# Docker build artifacts
+# ---------------------------------------------------------------------------
+*.tar
+docker-compose.override.yml
+
+# ---------------------------------------------------------------------------
+# OS files
+# ---------------------------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ---------------------------------------------------------------------------
+# Editor / IDE
+# ---------------------------------------------------------------------------
+# VS Code — keep only shared settings
 .vscode/*
 !.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+
+# Cursor — keep shared rules
 .cursor/*
 !.cursor/rules/
 
-# Hosted agent local state
-hosted/.env
-hosted/.venv/
-hosted/__pycache__/
-hosted/scout/__pycache__/
-hosted/.foundry/
+# JetBrains
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Vim / Emacs
+*.swp
+*.swo
+*~
+\#*\#
+
+# Sublime
+*.sublime-workspace
+
+# ---------------------------------------------------------------------------
+# Logs & scratch
+# ---------------------------------------------------------------------------
+*.log
+logs/
+tmp/
+temp/
+scratch/
