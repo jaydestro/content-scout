@@ -4,9 +4,7 @@
 
 # Content Scout
 
-A content research agent that discovers, catalogs, and promotes public content about your product, technology, open-source project, or tool across the developer ecosystem. Run it **interactively in your editor** (VS Code, Claude Code, Cursor, and more) — the primary, supported mode. An **experimental Microsoft Foundry hosted agent mode** is also included for teams with access to the Foundry Hosted Agents preview. Content Scout scans 14+ public sources, filters for quality, generates reports with topic tags and trends, and drafts ready-to-post social media content — all configured through a single onboarding conversation. Track one topic or many from the same workspace.
-
-> ⚠️ **Experimental:** Hosted agent mode depends on the [Microsoft Foundry Hosted Agents preview](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/hosted-agents), which requires subscription-level allowlisting and is only available in selected regions. See [docs/HOSTED-AGENT.md](docs/HOSTED-AGENT.md) for details.
+A content research agent that discovers, catalogs, and promotes public content about your product, technology, open-source project, or tool across the developer ecosystem. Run it **interactively in your editor** (VS Code, Claude Code, Cursor, and more). Content Scout scans 14+ public sources, filters for quality, generates reports with topic tags and trends, and drafts ready-to-post social media content — all configured through a single onboarding conversation. Track one topic or many from the same workspace.
 
 ## Who It's For
 
@@ -114,7 +112,7 @@ Reports adapt based on topic type — products get SDK adoption tracking, techno
 
 Reports save to `reports/`, social posts to `social-posts/`. Everything is markdown you can review, edit, and version control.
 
-See [Workflow](docs/WORKFLOW.md) for the detailed end-to-end guide, [Architecture](docs/ARCHITECTURE.md) for quality filters, subagent dispatch, and thumbnail generation, and [Hosted Agent](docs/HOSTED-AGENT.md) for deploying as an automated service on Azure Foundry.
+See [Workflow](docs/WORKFLOW.md) for the detailed end-to-end guide and [Architecture](docs/ARCHITECTURE.md) for quality filters, subagent dispatch, and thumbnail generation.
 
 ## Adapting for Your Topic
 
@@ -148,65 +146,17 @@ CLAUDE.md                                  # Claude Code instructions
     ├── scout-calendar.prompt.md           # Posting calendar
     ├── scout-gaps.prompt.md               # Gap analysis
     └── scout-trends.prompt.md             # Trends analysis
-hosted/                                    # Foundry hosted agent (automated mode)
-├── agent.yaml                             # Foundry agent definition
-├── azure.yaml                             # azd deployment config
-├── Dockerfile                             # Container image
-├── app.py                                 # Agent entry point
-├── requirements.txt                       # Python dependencies
-├── .env.example                           # Hosted agent env template
-└── scout/                                 # Core scanning modules
-    ├── config.py                          # Config file parser
-    ├── scanner.py                         # Source scanners (14 sources)
-    ├── quality.py                         # Quality filter + scoring
-    ├── dedup.py                           # Deduplication tracker
-    ├── report.py                          # Report generator
-    ├── social.py                          # Social post generator
-    ├── trends.py                          # Trends analysis
-    └── gaps.py                            # Gap analysis
 docs/
 ├── WORKFLOW.md                            # End-to-end workflow guide
 ├── SOURCES.md                             # Content sources reference
 ├── API-KEYS.md                            # API key setup instructions
 ├── ARCHITECTURE.md                        # Subagents, quality filters, thumbnails
-├── HOSTED-AGENT.md                        # Hosted agent deployment guide
 └── assets/                                # Banner images
 reports/                                   # Monthly content & trends reports
 social-posts/                              # Generated posts, calendars, thumbnails
 examples/                                  # Sample outputs (config, report, posts, calendar)
 .env.example                               # API key template (copy to .env)
 ```
-
-## Hosted Agent Mode (Experimental)
-
-> ⚠️ **Experimental / preview.** Requires access to the Microsoft Foundry Hosted Agents preview on your Azure subscription. Deployments currently fail with `400: The requested experience is not available for this subscription` unless your subscription is enrolled. Available regions at time of writing: Australia East, Canada Central, North Central US, Sweden Central.
-
-Content Scout can also run as a **Foundry hosted agent** — a containerized service that accepts automated commands without a human in an editor. Use this for:
-
-- **Scheduled scans** — trigger monthly scans via webhooks or cron
-- **CI/CD integration** — run scans as part of a pipeline
-- **Programmatic access** — invoke via the Foundry Responses or Invocations API
-- **Team access** — publish to Teams or M365 for team-wide use
-
-The hosted agent reads the same config files and produces the same reports. Onboarding is still done in your editor — the hosted agent consumes the generated config.
-
-```bash
-# Deploy to Foundry
-cd hosted
-azd up
-```
-
-Or invoke via API:
-```json
-POST {project_endpoint}/agents/content-scout/endpoint/protocols/invocations
-{
-  "command": "scan",
-  "slug": "cosmos-db",
-  "month": "2026-04"
-}
-```
-
-See [Hosted Agent docs](docs/HOSTED-AGENT.md) for the full deployment guide.
 
 ## Examples
 

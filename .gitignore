@@ -71,15 +71,12 @@ coverage.xml
 # ---------------------------------------------------------------------------
 .azure/
 azd-env-*.json
-hosted/.azure/
-hosted/.foundry/
 
 # ---------------------------------------------------------------------------
 # Bicep / Terraform build artifacts
 # ---------------------------------------------------------------------------
 *.bicep.json
 infra/**/main.json
-hosted/infra/**/main.json
 .terraform/
 terraform.tfstate
 terraform.tfstate.backup
