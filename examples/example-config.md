@@ -23,9 +23,10 @@ description: "Content Scout configuration for Azure Cosmos DB"
 - **Launch coverage tracking:** off
 - **Doc gap focus:** off
 
-## Product
+## Topic
 - **Name:** Azure Cosmos DB
 - **Slug:** cosmos-db
+- **Type:** product
 
 ## Search Terms
 
@@ -147,14 +148,13 @@ description: "Content Scout configuration for Azure Cosmos DB"
 - **Additional rules:** Always link to official docs when referencing a feature. Voice: calm, confident, technically grounded.
 
 ## API Keys
-<!-- All optional. Do not commit secrets to public repos. -->
+<!-- API keys are stored in .env at the workspace root, NOT in this config file. -->
+<!-- This keeps secrets out of config so the config can be safely committed/shared. -->
+<!-- See .env.example for the expected format. Copy it to .env and fill in your keys. -->
 <!-- Without YouTube key: YouTube scanning is skipped (community videos won't appear in reports) -->
 <!-- Without Bluesky creds: Bluesky scanning is skipped (mentions and hashtag posts won't be tracked) -->
 <!-- Without X token: X/Twitter scanning is skipped (conversations and mentions won't be tracked) -->
-- **YouTube Data API v3:** YOUR_KEY_HERE
-- **Bluesky handle:** none
-- **Bluesky app password:** none
-- **X Bearer token:** none
+_Keys are stored in `.env` — see `.env.example` for setup._
 
 ## Topic Tags (Canonical)
 <!-- All content items are tagged with 1-4 of these -->

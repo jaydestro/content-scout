@@ -3,9 +3,9 @@ description: Example configuration -- copy and customize for your product
 mode: content-scout
 ---
 
-# scout-config: {Your Product Name}
+# scout-config: {Your Product/Technology/Project Name}
 
-Apply this configuration to the Content Scout agent. Copy this file, rename it to `scout-config-{product-slug}.prompt.md`, and fill in all values for your product.
+Apply this configuration to the Content Scout agent. Copy this file, rename it to `scout-config-{slug}.prompt.md`, and fill in all values for your topic (product, technology, open-source project, or tool).
 
 ## Role
 
@@ -25,11 +25,13 @@ Apply this configuration to the Content Scout agent. Copy this file, rename it t
 - **Launch coverage tracking:** {on/off — groups content by event during event windows}
 - **Doc gap focus:** {on/off — tracks FAQ patterns and doc coverage gaps}
 
-## Product Identity
+## Topic Identity
 
-- **Product:** {Your Product Name}
-- **Search terms (text):** "{Full Product Name}", "{Short Name}", "{NoSpaces}"
-- **Search hashtags:** #{ProductHashtag1}, #{ProductHashtag2}
+- **Name:** {Your Product/Technology/Project Name}
+- **Slug:** {slug}
+- **Type:** {product | technology | project | tool}
+- **Search terms (text):** "{Full Name}", "{Short Name}", "{NoSpaces}"
+- **Search hashtags:** #{Hashtag1}, #{Hashtag2}
 
 ## Official Channels to EXCLUDE (already tracked separately)
 
@@ -70,15 +72,14 @@ These are NOT your product team members. They are community developers, MVPs, an
   - YouTube Community: 1200x675
 
 ## API Keys
-<!-- All optional. Collected during network selection (Group 3) -- paste key or say "skip". -->
+<!-- API keys are stored in .env at the workspace root, NOT in this config file. -->
+<!-- This keeps secrets out of config so the config can be safely committed/shared. -->
+<!-- See .env.example for the expected format. Copy it to .env and fill in your keys. -->
 <!-- Without YouTube key: YouTube scanning is skipped (community videos won't appear in reports) -->
 <!-- Without Bluesky creds: Bluesky scanning is skipped (mentions and hashtag posts won't be tracked) -->
 <!-- Without X token: X/Twitter scanning is skipped (conversations and mentions won't be tracked). The $200/mo Basic plan is typically needed — free tier is usually too limited. -->
 <!-- All other sources (blogs, GitHub, Stack Overflow, Reddit, Hacker News) work without keys -->
-- **YouTube Data API v3:** {key or "none"}
-- **Bluesky handle:** {handle or "none"}
-- **Bluesky app password:** {password or "none"}
-- **X Bearer token:** {token or "none"}
+_Keys are stored in `.env` — see `.env.example` for setup._
 
 ## Content Sources (scan order)
 
@@ -88,7 +89,7 @@ These are NOT your product team members. They are community developers, MVPs, an
 3. **Community blogs** — Dev.to, Medium, Hashnode, Blogspot, WordPress, DZone, C# Corner, InfoQ
 4. **Conversation tracking (not numbered):**
    - Stack Overflow (public API v2.3, no auth needed)
-   - Reddit (public JSON API)
+   - Reddit (OAuth2 app-only auth, free)
    - Hacker News (public Algolia API)
    - Bluesky (authenticated, multiple search queries)
    - X/Twitter (authenticated, bearer token required)

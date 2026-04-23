@@ -1,6 +1,6 @@
 # Subagent Architecture
 
-Content Scout can dispatch work to specialized subagents during `scout-scan` for parallelism and focus. The main agent orchestrates; subagents handle source-specific scanning.
+Content Scout can dispatch work to specialized subagents during `scout-scan` for parallelism and focus. The main agent orchestrates; subagents handle source-specific scanning. Works for any topic type — products, technologies, open-source projects, and tools.
 
 ## Subagents
 
