@@ -1,36 +1,31 @@
-# Content Scout — Hosted Agent
-# Azure Developer CLI (azd) deployment configuration.
-#
-# `azd up` provisions end-to-end in a single command:
-#   - User-assigned Managed Identity (zero secrets, zero keys)
-#   - Azure Container Registry (hosts the agent image)
-#   - Azure Key Vault (scanner API keys, RBAC-only access)
-#   - Azure Storage Account (persistent reports + dedup; key auth disabled)
-#   - Log Analytics workspace (diagnostics, audit logs)
-#   - Azure AI Foundry account + project (hosts the agent runtime)
-#   - Model deployment (gpt-4o-mini by default; override with MODEL_NAME)
-#   - All required role assignments (least-privilege)
-#
-# Customize the LLM before deploying:
-#   azd env set MODEL_NAME gpt-4o
-#   azd env set MODEL_VERSION 2024-11-20
-#   azd env set MODEL_CAPACITY 100
-#   azd up
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
 
+requiredVersions:
+    extensions:
+        azure.ai.agents: '>=0.1.0-preview'
 name: content-scout
-metadata:
-  template: content-scout-hosted-agent@1.0.0
-
-infra:
-  provider: bicep
-  path: infra
-  module: main
-
 services:
-  agent:
-    host: ai.agent
-    project: .
-    language: python
-    docker:
-      path: ../Dockerfile
-      context: ../
+    content-scout:
+        project: src/content-scout
+        host: azure.ai.agent
+        language: docker
+        docker:
+            remoteBuild: true
+        config:
+            container:
+                resources:
+                    cpu: "0.5"
+                    memory: 1Gi
+            deployments:
+                - model:
+                    format: OpenAI
+                    name: gpt-4o-mini
+                    version: "2024-07-18"
+                  name: gpt-4o-mini
+                  sku:
+                    capacity: 50
+                    name: GlobalStandard
+            startupCommand: python main.py
+infra:
+    provider: bicep
+    path: ./infra

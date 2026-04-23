@@ -1,287 +1,237 @@
-// Content Scout — Hosted Agent Infrastructure
-// Deploys a secure, end-to-end production stack:
-//   - Azure AI Foundry project (hosts the agent runtime + model deployments)
-//   - Azure Container Registry (stores agent image)
-//   - User-assigned Managed Identity (auth for everything; zero secrets)
-//   - Azure Key Vault (scanner API keys: Reddit, YouTube, Bluesky, X)
-//   - Azure Storage Account (persistent reports + dedup tracker)
-//   - Log Analytics workspace (container logs + diagnostics)
-//
-// All role assignments follow least-privilege. No connection strings, no keys in env.
-
-targetScope = 'resourceGroup'
+targetScope = 'subscription'
+// targetScope = 'resourceGroup'
 
 @minLength(1)
-@maxLength(20)
-@description('Environment name; used as a prefix for all resource names.')
+@maxLength(64)
+@description('Name of the environment that can be used as part of naming resource convention')
 param environmentName string
 
-@description('Primary deployment location.')
-param location string = resourceGroup().location
+@minLength(1)
+@maxLength(90)
+@description('Name of the resource group to use or create')
+param resourceGroupName string = 'rg-${environmentName}'
 
-@description('Model to deploy for LLM features (social posts, sentiment, trends).')
-param modelName string = 'gpt-4o-mini'
+// Restricted locations to match list from
+// https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/responses?tabs=python-key#region-availability
+@minLength(1)
+@description('Primary location for all resources')
+@allowed([
+  'australiaeast'
+  'brazilsouth'
+  'canadacentral'
+  'canadaeast'
+  'eastus'
+  'eastus2'
+  'francecentral'
+  'germanywestcentral'
+  'italynorth'
+  'japaneast'
+  'koreacentral'
+  'northcentralus'
+  'norwayeast'
+  'polandcentral'
+  'southafricanorth'
+  'southcentralus'
+  'southeastasia'
+  'southindia'
+  'spaincentral'
+  'swedencentral'
+  'switzerlandnorth'
+  'uaenorth'
+  'uksouth'
+  'westus'
+  'westus2'
+  'westus3'
+])
+param location string
 
-@description('Model version.')
-param modelVersion string = '2024-07-18'
+param aiDeploymentsLocation string
 
-@description('Model deployment capacity (TPM in thousands).')
-param modelCapacity int = 50
+@description('Id of the user or app to assign application roles')
+param principalId string
 
-@description('Tags applied to all resources.')
-param tags object = {
+@description('Principal type of user or app')
+param principalType string
+
+@description('Optional. Name of an existing AI Services account within the resource group. If not provided, a new one will be created.')
+param aiFoundryResourceName string = ''
+
+@description('Optional. Name of the AI Foundry project. If not provided, a default name will be used.')
+param aiFoundryProjectName string = 'ai-project-${environmentName}'
+
+@description('List of model deployments')
+param aiProjectDeploymentsJson string = '[]'
+
+@description('List of connections')
+param aiProjectConnectionsJson string = '[]'
+
+@secure()
+@description('JSON map of connection name to credentials object. Example: {"my-conn":{"key":"secret"}}')
+param aiProjectConnectionCredentialsJson string = '{}'
+
+@description('List of resources to create and connect to the AI project')
+param aiProjectDependentResourcesJson string = '[]'
+
+var aiProjectDeployments = json(aiProjectDeploymentsJson)
+var aiProjectConnections = json(aiProjectConnectionsJson)
+var aiProjectConnectionCreds = json(aiProjectConnectionCredentialsJson)
+var aiProjectDependentResources = json(aiProjectDependentResourcesJson)
+
+@description('Enable hosted agent deployment')
+param enableHostedAgents bool
+
+@description('Enable the capability host for supporting BYO storage of agent conversations. When false and hosted agents are enabled, the capability host is not created.')
+param enableCapabilityHost bool
+
+@description('Enable monitoring for the AI project')
+param enableMonitoring bool
+
+@description('When true, skip Foundry project/role/connection provisioning and reference the existing project read-only. Use when pointing at an existing Foundry project via --project-id.')
+param useExistingAiProject bool = false
+
+@description('Optional. Existing container registry resource ID. If provided, no new ACR will be created and a connection to this ACR will be established.')
+param existingContainerRegistryResourceId string = ''
+
+@description('Optional. Existing container registry endpoint (login server). Required if existingContainerRegistryResourceId is provided.')
+param existingContainerRegistryEndpoint string = ''
+
+@description('Optional. Name of an existing ACR connection on the Foundry project. If provided, no new ACR or connection will be created.')
+param existingAcrConnectionName string = ''
+
+@description('Optional. Existing Application Insights connection string. If provided, a connection will be created but no new App Insights resource.')
+param existingApplicationInsightsConnectionString string = ''
+
+@description('Optional. Existing Application Insights resource ID. Used for connection metadata when providing an existing App Insights.')
+param existingApplicationInsightsResourceId string = ''
+
+@description('Optional. Name of an existing Application Insights connection on the Foundry project. If provided, no new App Insights or connection will be created.')
+param existingAppInsightsConnectionName string = ''
+
+// Tags that should be applied to all resources.
+// 
+// Note that 'azd-service-name' tags should be applied separately to service host resources.
+// Example usage:
+//   tags: union(tags, { 'azd-service-name': <service name in azure.yaml> })
+var tags = {
   'azd-env-name': environmentName
-  application: 'content-scout'
 }
 
-var resourceToken = uniqueString(subscription().id, resourceGroup().id, environmentName)
-var abbrs = {
-  acr: 'cr'
-  kv: 'kv'
-  sa: 'st'
-  law: 'log'
-  mi: 'id'
-  foundry: 'aif'
-}
-
-// ---------------------------------------------------------------------------
-// Managed Identity — auth for everything
-// ---------------------------------------------------------------------------
-resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: '${abbrs.mi}-${environmentName}-${resourceToken}'
+// Check if resource group exists and create it if it doesn't
+resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
+  name: resourceGroupName
   location: location
   tags: tags
 }
 
-// ---------------------------------------------------------------------------
-// Log Analytics — logs + diagnostics
-// ---------------------------------------------------------------------------
-resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
-  name: '${abbrs.law}-${environmentName}-${resourceToken}'
-  location: location
-  tags: tags
-  properties: {
-    sku: { name: 'PerGB2018' }
-    retentionInDays: 30
-    features: { enableLogAccessUsingOnlyResourcePermissions: true }
+// Build dependent resources array conditionally
+// Check if ACR already exists in the user-provided array to avoid duplicates
+// Also skip if user provided an existing container registry endpoint or connection name
+var hasAcr = contains(map(aiProjectDependentResources, r => r.resource), 'registry')
+var shouldCreateAcr = enableHostedAgents && !hasAcr && empty(existingContainerRegistryResourceId) && empty(existingAcrConnectionName)
+var dependentResources = shouldCreateAcr ? union(aiProjectDependentResources, [
+  {
+    resource: 'registry'
+    connectionName: 'acr-${uniqueString(subscription().id, resourceGroupName, location)}'
+  }
+]) : aiProjectDependentResources
+
+// AI Project module — only when creating new resources
+module aiProject 'core/ai/ai-project.bicep' = if (!useExistingAiProject) {
+  scope: rg
+  name: 'ai-project'
+  params: {
+    tags: tags
+    location: aiDeploymentsLocation
+    aiFoundryProjectName: aiFoundryProjectName
+    principalId: principalId
+    principalType: principalType
+    existingAiAccountName: aiFoundryResourceName
+    deployments: aiProjectDeployments
+    connections: aiProjectConnections
+    connectionCredentials: aiProjectConnectionCreds
+    additionalDependentResources: dependentResources
+    enableMonitoring: enableMonitoring
+    enableHostedAgents: enableHostedAgents
+    enableCapabilityHost: enableCapabilityHost
+    existingContainerRegistryResourceId: existingContainerRegistryResourceId
+    existingContainerRegistryEndpoint: existingContainerRegistryEndpoint
+    existingAcrConnectionName: existingAcrConnectionName
+    existingApplicationInsightsConnectionString: existingApplicationInsightsConnectionString
+    existingApplicationInsightsResourceId: existingApplicationInsightsResourceId
+    existingAppInsightsConnectionName: existingAppInsightsConnectionName
   }
 }
 
-// ---------------------------------------------------------------------------
-// Container Registry — stores agent image
-// ---------------------------------------------------------------------------
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' = {
-  name: '${abbrs.acr}${replace(environmentName, '-', '')}${resourceToken}'
-  location: location
-  tags: tags
-  sku: { name: 'Basic' }
-  properties: {
-    adminUserEnabled: false // no admin user — MI only
-    publicNetworkAccess: 'Enabled'
-    anonymousPullEnabled: false
+// Existing project module — read-only reference when reusing an existing Foundry project
+module existingAiProject 'core/ai/existing-ai-project.bicep' = if (useExistingAiProject) {
+  scope: rg
+  name: 'existing-ai-project'
+  params: {
+    aiServicesAccountName: aiFoundryResourceName
+    aiFoundryProjectName: aiFoundryProjectName
+    existingAcrConnectionName: existingAcrConnectionName
+    existingContainerRegistryEndpoint: existingContainerRegistryEndpoint
+    existingApplicationInsightsConnectionString: existingApplicationInsightsConnectionString
+    existingApplicationInsightsResourceId: existingApplicationInsightsResourceId
   }
 }
 
-// MI needs AcrPull to let Foundry runtime fetch the image
-resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(containerRegistry.id, managedIdentity.id, 'acr-pull')
-  scope: containerRegistry
-  properties: {
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    // AcrPull
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+// ACR for existing project — create when hosted agents need a registry but the existing project has none
+var shouldCreateAcrForExistingProject = useExistingAiProject && shouldCreateAcr
+var acrConnectionName = 'acr-${uniqueString(subscription().id, resourceGroupName, location)}'
+
+module acrForExistingProject 'core/host/acr.bicep' = if (shouldCreateAcrForExistingProject) {
+  scope: rg
+  name: 'acr-for-existing-project'
+  params: {
+    location: location
+    tags: tags
+    resourceName: 'cr${uniqueString(subscription().id, resourceGroupName, location)}'
+    connectionName: acrConnectionName
+    principalId: principalId
+    principalType: principalType
+    aiServicesAccountName: aiFoundryResourceName
+    aiProjectName: aiFoundryProjectName
   }
 }
 
-// ---------------------------------------------------------------------------
-// Key Vault — scanner API keys
-// ---------------------------------------------------------------------------
-resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
-  name: '${abbrs.kv}-${environmentName}-${resourceToken}'
-  location: location
-  tags: tags
-  properties: {
-    sku: { family: 'A', name: 'standard' }
-    tenantId: subscription().tenantId
-    enableRbacAuthorization: true // use RBAC, not access policies
-    enableSoftDelete: true
-    softDeleteRetentionInDays: 90
-    enablePurgeProtection: true
-    publicNetworkAccess: 'Enabled'
-  }
-}
+// Resources
+output AZURE_RESOURCE_GROUP string = resourceGroupName
+output AZURE_AI_ACCOUNT_ID string = useExistingAiProject ? existingAiProject.outputs.accountId : aiProject.outputs.accountId
+output AZURE_AI_PROJECT_ID string = useExistingAiProject ? existingAiProject.outputs.projectId : aiProject.outputs.projectId
+output AZURE_AI_FOUNDRY_PROJECT_ID string = useExistingAiProject ? existingAiProject.outputs.projectId : aiProject.outputs.projectId
+output AZURE_AI_ACCOUNT_NAME string = useExistingAiProject ? existingAiProject.outputs.aiServicesAccountName : aiProject.outputs.aiServicesAccountName
+output AZURE_AI_PROJECT_NAME string = useExistingAiProject ? existingAiProject.outputs.projectName : aiProject.outputs.projectName
 
-// MI needs Key Vault Secrets User to read scanner API keys
-resource kvSecretsUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, managedIdentity.id, 'kv-secrets-user')
-  scope: keyVault
-  properties: {
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    // Key Vault Secrets User
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
-  }
-}
+// Endpoints
+output AZURE_AI_PROJECT_ENDPOINT string = useExistingAiProject ? existingAiProject.outputs.AZURE_AI_PROJECT_ENDPOINT : aiProject.outputs.AZURE_AI_PROJECT_ENDPOINT
+output AZURE_OPENAI_ENDPOINT string = useExistingAiProject ? existingAiProject.outputs.AZURE_OPENAI_ENDPOINT : aiProject.outputs.AZURE_OPENAI_ENDPOINT
+output APPLICATIONINSIGHTS_CONNECTION_STRING string = useExistingAiProject ? existingAiProject.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING : aiProject.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
+output APPLICATIONINSIGHTS_RESOURCE_ID string = useExistingAiProject ? existingAiProject.outputs.APPLICATIONINSIGHTS_RESOURCE_ID : aiProject.outputs.APPLICATIONINSIGHTS_RESOURCE_ID
 
-// ---------------------------------------------------------------------------
-// Storage Account — persistent reports + dedup tracker
-// ---------------------------------------------------------------------------
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
-  name: '${abbrs.sa}${replace(environmentName, '-', '')}${resourceToken}'
-  location: location
-  tags: tags
-  kind: 'StorageV2'
-  sku: { name: 'Standard_LRS' }
-  properties: {
-    minimumTlsVersion: 'TLS1_2'
-    supportsHttpsTrafficOnly: true
-    allowBlobPublicAccess: false
-    allowSharedKeyAccess: false // MI only — no key-based access
-    publicNetworkAccess: 'Enabled'
-    defaultToOAuthAuthentication: true
-    networkAcls: {
-      defaultAction: 'Allow'
-      bypass: 'AzureServices'
-    }
-  }
-}
+// Dependent Resources and Connections
 
-resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
-  parent: storageAccount
-  name: 'default'
-  properties: {
-    deleteRetentionPolicy: { enabled: true, days: 30 }
-    containerDeleteRetentionPolicy: { enabled: true, days: 30 }
-  }
-}
+// ACR
+output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = shouldCreateAcrForExistingProject ? acrForExistingProject.outputs.containerRegistryConnectionName : (useExistingAiProject ? existingAiProject.outputs.dependentResources.registry.connectionName : aiProject.outputs.dependentResources.registry.connectionName)
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = shouldCreateAcrForExistingProject ? acrForExistingProject.outputs.containerRegistryLoginServer : (useExistingAiProject ? existingAiProject.outputs.dependentResources.registry.loginServer : aiProject.outputs.dependentResources.registry.loginServer)
 
-resource reportsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
-  parent: blobService
-  name: 'reports'
-  properties: { publicAccess: 'None' }
-}
+// Bing Search
+output BING_GROUNDING_CONNECTION_NAME  string = useExistingAiProject ? existingAiProject.outputs.dependentResources.bing_grounding.connectionName : aiProject.outputs.dependentResources.bing_grounding.connectionName
+output BING_GROUNDING_RESOURCE_NAME string = useExistingAiProject ? existingAiProject.outputs.dependentResources.bing_grounding.name : aiProject.outputs.dependentResources.bing_grounding.name
+output BING_GROUNDING_CONNECTION_ID string = useExistingAiProject ? existingAiProject.outputs.dependentResources.bing_grounding.connectionId : aiProject.outputs.dependentResources.bing_grounding.connectionId
 
-resource socialPostsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
-  parent: blobService
-  name: 'social-posts'
-  properties: { publicAccess: 'None' }
-}
+// Bing Custom Search
+output BING_CUSTOM_GROUNDING_CONNECTION_NAME string = useExistingAiProject ? existingAiProject.outputs.dependentResources.bing_custom_grounding.connectionName : aiProject.outputs.dependentResources.bing_custom_grounding.connectionName
+output BING_CUSTOM_GROUNDING_NAME string = useExistingAiProject ? existingAiProject.outputs.dependentResources.bing_custom_grounding.name : aiProject.outputs.dependentResources.bing_custom_grounding.name
+output BING_CUSTOM_GROUNDING_CONNECTION_ID string = useExistingAiProject ? existingAiProject.outputs.dependentResources.bing_custom_grounding.connectionId : aiProject.outputs.dependentResources.bing_custom_grounding.connectionId
 
-// MI needs Storage Blob Data Contributor to read/write reports
-resource storageBlobRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, managedIdentity.id, 'storage-blob-contributor')
-  scope: storageAccount
-  properties: {
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    // Storage Blob Data Contributor
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
-  }
-}
+// Azure AI Search
+output AZURE_AI_SEARCH_CONNECTION_NAME string = useExistingAiProject ? existingAiProject.outputs.dependentResources.search.connectionName : aiProject.outputs.dependentResources.search.connectionName
+output AZURE_AI_SEARCH_SERVICE_NAME string = useExistingAiProject ? existingAiProject.outputs.dependentResources.search.serviceName : aiProject.outputs.dependentResources.search.serviceName
 
-// ---------------------------------------------------------------------------
-// Azure AI Foundry — hosts the agent + model deployment
-// ---------------------------------------------------------------------------
-resource foundryAccount 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
-  name: '${abbrs.foundry}-${environmentName}-${resourceToken}'
-  location: location
-  tags: tags
-  kind: 'AIServices'
-  sku: { name: 'S0' }
-  identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${managedIdentity.id}': {}
-    }
-  }
-  properties: {
-    customSubDomainName: '${abbrs.foundry}-${environmentName}-${resourceToken}'
-    publicNetworkAccess: 'Enabled'
-    disableLocalAuth: true // MI only — no API keys
-    allowProjectManagement: true
-  }
-}
+// Azure Storage
+output AZURE_STORAGE_CONNECTION_NAME string = useExistingAiProject ? existingAiProject.outputs.dependentResources.storage.connectionName : aiProject.outputs.dependentResources.storage.connectionName
+output AZURE_STORAGE_ACCOUNT_NAME string = useExistingAiProject ? existingAiProject.outputs.dependentResources.storage.accountName : aiProject.outputs.dependentResources.storage.accountName
 
-resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2024-10-01' = {
-  parent: foundryAccount
-  name: 'content-scout-project'
-  location: location
-  tags: tags
-  identity: { type: 'SystemAssigned' }
-  properties: {}
-}
-
-resource modelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
-  parent: foundryAccount
-  name: modelName
-  sku: {
-    name: 'GlobalStandard'
-    capacity: modelCapacity
-  }
-  properties: {
-    model: {
-      format: 'OpenAI'
-      name: modelName
-      version: modelVersion
-    }
-    raiPolicyName: 'Microsoft.DefaultV2'
-  }
-}
-
-// MI needs Azure AI User role on the Foundry account to invoke models
-resource foundryUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(foundryAccount.id, managedIdentity.id, 'azure-ai-user')
-  scope: foundryAccount
-  properties: {
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    // Azure AI User (formerly Cognitive Services User + OpenAI User)
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '53ca6127-db72-4b80-b1b0-d745d6d5456d')
-  }
-}
-
-// Diagnostic settings — ship logs to Log Analytics
-resource foundryDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
-  name: 'send-to-law'
-  scope: foundryAccount
-  properties: {
-    workspaceId: logAnalytics.id
-    logs: [
-      { categoryGroup: 'allLogs', enabled: true }
-      { categoryGroup: 'audit', enabled: true }
-    ]
-    metrics: [
-      { category: 'AllMetrics', enabled: true }
-    ]
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Outputs — consumed by azd + agent.yaml
-// ---------------------------------------------------------------------------
-output AZURE_LOCATION string = location
-output AZURE_TENANT_ID string = subscription().tenantId
-output AZURE_SUBSCRIPTION_ID string = subscription().subscriptionId
-output AZURE_RESOURCE_GROUP string = resourceGroup().name
-
-output AZURE_CLIENT_ID string = managedIdentity.properties.clientId
-output AZURE_MANAGED_IDENTITY_ID string = managedIdentity.id
-output AZURE_MANAGED_IDENTITY_PRINCIPAL_ID string = managedIdentity.properties.principalId
-
-output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.properties.loginServer
-output AZURE_CONTAINER_REGISTRY_NAME string = containerRegistry.name
-
-output AZURE_KEY_VAULT_ENDPOINT string = keyVault.properties.vaultUri
-output AZURE_KEY_VAULT_NAME string = keyVault.name
-
-output AZURE_STORAGE_ACCOUNT_NAME string = storageAccount.name
-output AZURE_STORAGE_BLOB_ENDPOINT string = storageAccount.properties.primaryEndpoints.blob
-
-output AZURE_AI_PROJECT_ENDPOINT string = foundryProject.properties.endpoints['AI Foundry API']
-output AZURE_AI_FOUNDRY_ENDPOINT string = foundryAccount.properties.endpoint
-output AZURE_AI_FOUNDRY_NAME string = foundryAccount.name
-output AZURE_AI_PROJECT_NAME string = foundryProject.name
-output MODEL_DEPLOYMENT_NAME string = modelDeployment.name
-
-output AZURE_LOG_ANALYTICS_WORKSPACE_ID string = logAnalytics.id
+// Connections
+output AI_PROJECT_CONNECTION_IDS_JSON string = useExistingAiProject ? string(existingAiProject.outputs.connectionIds) : string(aiProject.outputs.connectionIds)
