@@ -1,6 +1,6 @@
 # API Keys
 
-All API keys are optional. Without them, the agent skips those sources and scans everything else. Most sources (blogs, GitHub, Stack Overflow, Reddit, Hacker News, LinkedIn, and all custom sources) work without any keys.
+All API keys are optional. Without them, the agent skips those sources and scans everything else. Most sources (blogs, GitHub, Stack Overflow, Hacker News, LinkedIn, and all custom sources) work without any keys.
 
 **Keys are stored in `.env` at the workspace root** — not in config files. This means your config can be safely committed and shared. Copy `.env.example` to `.env` and fill in your keys. The `.env` file is gitignored.
 
