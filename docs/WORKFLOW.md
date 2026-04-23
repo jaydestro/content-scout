@@ -50,13 +50,13 @@ Choose one or more roles (comma-separated). Multi-role configs merge features as
 
 | Role | Social Posts | Posting Calendar | Key Report Sections |
 |------|-------------|-----------------|---------------------|
-| Program Manager | Off | Off | Adoption metrics, SDK breakdown, feature frequency, ecosystem health |
+| Program Manager | Off | Off | Adoption metrics, SDK breakdown, feature frequency, feature request flagging, ecosystem health |
 | Product Manager | Off | Off | Competitor signals, feature requests, pain points, customer sentiment |
-| Social Media Manager | On | On | Engagement scoring, timing suggestions, trending topics |
-| Product Marketer | On | On | Launch coverage, analyst mentions, success stories, competitive landscape |
+| Social Media Manager | On | On | Engagement scoring, timing suggestions, trending topics, conversation sentiment |
+| Product Marketer | On | On | Launch coverage, analyst mentions, success stories, competitive landscape, feature request flagging, customer sentiment |
 | Developer Advocate | On | On | Rising contributors, community projects, conference content, SDK adoption |
 | Community Manager | Off | Off | Sentiment breakdown, unanswered questions, new contributors, engagement trend |
-| Technical Writer | Off | Off | FAQ patterns, doc confusion signals, tutorial gaps, content freshness |
+| Technical Writer | Off | Off | FAQ patterns, doc confusion signals, tutorial gaps, content freshness, conversation sentiment |
 | Custom | Choose | Choose | Cherry-pick from 12 individual features |
 
 ### Brand Identity (Group 6)

@@ -179,11 +179,34 @@ The config file specifies which networks are enabled. For each enabled source, u
 
 ### Conversation Tracking (tracked, not numbered)
 - **Stack Overflow** -- Public API v2.3 (no auth): `https://api.stackexchange.com/2.3/questions?order=desc&sort=creation&tagged={tag}&site=stackoverflow`
-- **Reddit** -- Public JSON API (no auth): append `.json` to search URLs
+- **Reddit** -- OAuth2 app-only auth (free): register an app at `https://www.reddit.com/prefs/apps/`, use client credentials grant for app-only access. The public `.json` endpoint is rate-limited without auth. If Reddit credentials are not in `.env`, skip Reddit and note it in the "Sources That Could Not Be Reached" section.
 - **Hacker News** -- Public Algolia API: `https://hn.algolia.com/api/v1/search_by_date?query={search-term}&tags=story`
 - **Bluesky** -- Authenticated via AT Protocol if credentials in config. Run searches for all text terms and hashtags.
-- **X/Twitter** -- Authenticated via bearer token if credentials in config. The $200/mo Basic plan is typically needed; free tier is usually too limited. Search for product terms and hashtags.
-- **LinkedIn** -- Best effort, search by product name
+- **X/Twitter** -- Authenticated via bearer token if credentials in config. The $200/mo Basic plan is recommended for reliable scanning. Without a key, attempt best-effort scanning via `web/fetch` on public search pages, but note results may be incomplete or unavailable. If scanning fails without auth, skip X and note it in the "Sources That Could Not Be Reached" section.
+- **LinkedIn** -- Best effort via `web/fetch`, search by product name. LinkedIn has no public API for content search.
+
+#### Social Source Data Requirements
+
+**Every item from a social or community source** (Reddit, X/Twitter, Bluesky, LinkedIn, YouTube, Stack Overflow, Hacker News) MUST include all of the following when available:
+
+| Field | Description | Required |
+|-------|-------------|----------|
+| **Direct link** | Permalink to the exact post, comment, video, or question | Always |
+| **Poster/author name** | Display name or username of the person who posted | Always |
+| **Poster handle/profile** | Platform handle (e.g., `@username`) or profile URL | Always |
+| **Poster bio/context** | Brief context — follower count, bio snippet, or affiliation if visible | When available |
+| **Post date** | When the post was published | Always |
+| **Post content/summary** | The text of the post or a summary (first 280 chars minimum) | Always |
+| **Sentiment** | 🟢 Positive, 🟡 Neutral, or 🔴 Negative (see Sentiment Classification below) | Always |
+| **Engagement metrics** | Upvotes, likes, retweets, replies, comments, views — whatever the platform exposes | When available |
+| **Thread/replies** | If the post is part of a thread or has notable replies, summarize the thread context | When available |
+| **Subreddit/community** | For Reddit: the subreddit. For LinkedIn: the group. For Bluesky: any feed context | When available |
+
+**Do NOT include a social item without a direct link to the original post.** If the API or scan method cannot produce a permalink, skip that item.
+
+**YouTube-specific fields:** For YouTube videos (community content, not official channel), also include: channel name, channel subscriber count (if available), video view count, like count, and comment count.
+
+**Referenced social posts in reports:** When social posts are referenced anywhere in the report (blog post mentions, community content that links to social discussions), include the direct link and poster info inline — do not use bare URLs or "[link]" placeholders.
 
 #### Sentiment Classification
 For every conversation item, assign a sentiment:
@@ -262,6 +285,34 @@ These talks populate the **Conference Content** report section (already exists).
 Use ALL search terms and hashtags from the config file across ALL sources:
 - Text searches catch different name variations
 - Hashtags are used on social platforms (Bluesky, LinkedIn, conversation tracking)
+
+### Rate Limiting & Bot Prevention
+
+When scanning sources via `web/fetch` or API calls, follow these rules to avoid being blocked:
+
+- **Use a realistic User-Agent header** on every HTTP request. Never use the default `python-httpx` or `fetch` User-Agent. Use a current browser User-Agent string (e.g., Chrome on Windows).
+- **Add a delay between requests** to the same domain. Wait at least 1.5 seconds between requests. For Google APIs (YouTube), wait at least 2 seconds.
+- **Do not fire all search terms simultaneously** against the same API. Process search terms sequentially within each source, with delays between each.
+- **Include standard browser headers** — `Accept`, `Accept-Language`, and `Referer` where appropriate.
+- **If a source returns a 429 (rate limit) or 403 (forbidden):** Stop scanning that source immediately. Do NOT retry. Note the source in "Sources That Could Not Be Reached" with the reason. Move on to other sources.
+- **Sources can be scanned in parallel** (YouTube and GitHub at the same time is fine), but requests within a single source must be sequential with delays.
+
+### Authentication Requirements by Source
+
+| Source | Auth Required | Free? | What Happens Without Auth |
+|--------|--------------|-------|---------------------------|
+| Dev.to | No | — | Works fine |
+| Medium | No | — | Works fine (RSS) |
+| Hashnode | No | — | Works fine |
+| DZone, C# Corner, InfoQ | No | — | Works fine |
+| YouTube | API key | Yes (free) | YouTube scanning skipped |
+| GitHub | No (unauthenticated) | — | Lower rate limits (60 req/hr). Add a `GITHUB_TOKEN` for 5000 req/hr |
+| Stack Overflow | No | — | Works fine (public API v2.3) |
+| Reddit | OAuth2 app credentials | Yes (free) | Reddit scanning skipped. Register at reddit.com/prefs/apps |
+| Hacker News | No | — | Works fine (Algolia API) |
+| Bluesky | App password | Yes (free) | Bluesky scanning skipped |
+| X/Twitter | Bearer token | $200/mo | Best-effort public scraping attempted; may fail. Reliable scanning requires paid API. |
+| LinkedIn | No (best effort) | — | Limited results via web search |
 
 ## Content Quality Filter
 
@@ -491,8 +542,8 @@ The role-specific summary aggregates these: "Sentiment: X positive, Y neutral, Z
 |-------------------|--------------------|--------------------|
 
 ## Conversations & Mentions (tracked, not for social posts)
-| Date | Platform | Summary | Sentiment | Tags | Engagement? | Link |
-|------|----------|---------|-----------|------|-------------|------|
+| Date | Platform | Author | Handle/Profile | Summary | Sentiment | Engagement | Community | Link |
+|------|----------|--------|----------------|---------|-----------|------------|-----------|------|
 
 ## Sources That Could Not Be Reached
 - {source} -- {reason}
@@ -734,7 +785,7 @@ Auto-generate at report end:
 
 1. **Date filtering is critical.** Only include content from the specified time window.
 2. **No duplicates.** Check `reports/.seen-links.json` before adding items.
-3. **Include direct links.** Every item must have a clickable URL.
+3. **Include direct links.** Every item must have a clickable URL — no exceptions, no placeholders.
 4. **Be thorough but honest.** If a source is unreachable, say so.
 5. **Apply the relevancy filter strictly.** Known authors bypass relevancy, not date.
 6. **Number every item sequentially.**
@@ -743,6 +794,8 @@ Auto-generate at report end:
 9. **Save the report** to `reports/{YYYY-MM}-content.md`.
 10. **Auto-generate social posts and thumbnail specs** for every item **only if the role has social posts enabled**. Save to `social-posts/{YYYY-MM}-social-posts.md`. If social posts are off, skip this step.
 11. After saving, give a brief summary including item count, top topics, content gaps, and (if applicable) confirm social posts were generated. Include a role-specific insight based on the Role-Aware Behavior table. Remind of available commands.
+12. **Complete ALL source scanning before generating the report.** Do not generate or show the report while scans are still in progress. Scan every enabled source first, collect all results, merge, deduplicate, filter, then generate the report once from the complete dataset. If a source fails, note it in "Sources That Could Not Be Reached" but do not delay the report for retries.
+13. **Social source items require poster details.** Every item from Reddit, X, Bluesky, LinkedIn, YouTube, Stack Overflow, or Hacker News must include the poster's name, handle/profile link, post content summary, sentiment, engagement metrics, and a direct permalink. See "Social Source Data Requirements" for the full field list.
 
 ---
 

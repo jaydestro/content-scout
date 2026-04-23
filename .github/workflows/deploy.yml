@@ -1,0 +1,62 @@
+name: Deploy hosted agent
+
+# Deploys the Content Scout hosted agent to Microsoft Foundry on merge to main.
+# Requires the following repo-level secrets and variables:
+#   Secrets:  (none — uses OIDC federated identity)
+#   Vars:     AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
+#             AZURE_ENV_NAME, AZURE_LOCATION
+# See docs/HOSTED-AGENT.md for setup instructions.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'hosted/**'
+      - '.github/agents/**'
+      - '.github/prompts/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+# Only one deploy at a time; cancel older runs.
+concurrency:
+  group: deploy-hosted-agent
+  cancel-in-progress: false
+
+permissions:
+  id-token: write   # for OIDC federated auth to Azure
+  contents: read
+
+jobs:
+  # Always run tests first so we never deploy a broken build.
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    name: azd up
+    needs: test
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install azd
+        uses: Azure/setup-azd@v2
+
+      - name: Log in to Azure (OIDC)
+        run: |
+          azd auth login \
+            --client-id "$AZURE_CLIENT_ID" \
+            --federated-credential-provider "github" \
+            --tenant-id "$AZURE_TENANT_ID"
+
+      - name: Provision + deploy
+        working-directory: hosted
+        run: azd up --no-prompt

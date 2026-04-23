@@ -20,3 +20,12 @@ Desktop.ini
 # Editor
 .vscode/*
 !.vscode/settings.json
+.cursor/*
+!.cursor/rules/
+
+# Hosted agent local state
+hosted/.env
+hosted/.venv/
+hosted/__pycache__/
+hosted/scout/__pycache__/
+hosted/.foundry/

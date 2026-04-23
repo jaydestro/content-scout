@@ -12,23 +12,26 @@ Walk the user through configuring Content Scout for their product, technology, o
 
 Ask these questions **one group at a time**. Do not dump all questions at once.
 
-### Quick Start vs. Full Setup
+### Setup Tiers
 
-Before diving into groups, ask: **"Would you like a quick setup or full setup?"**
+Before diving into groups, ask: **"How much do you want to customize? Pick a setup level:"**
 
-- **Quick setup** — 3 questions: product/tech name, your role, and which networks to scan. Everything else uses smart defaults. Best for people who track many products or want to get started fast.
-- **Full setup** — Walk through all groups for maximum customization. Best for dedicated product owners who want fine-tuned control.
+| Tier | Questions | Time | Best For |
+|------|-----------|------|----------|
+| **Quick** | 3 questions | ~1 min | Tracking many topics, or just want to start fast |
+| **Standard** | ~6 questions | ~3 min | Most users — covers the essentials, agent suggests the rest |
+| **Full** | All groups | ~10 min | Dedicated product owners who want fine-tuned control |
 
-If the user doesn't express a preference, default to **full setup**.
+If the user doesn't express a preference, default to **standard setup**.
 
 #### Quick Setup Flow
 
 If the user chooses quick setup:
 
 1. Ask: **"What product, technology, or project are you tracking?"** (e.g., "Azure Cosmos DB", "Python", "Ollama", "Copilot CLI")
-2. Ask: **"What's your role?"** Show the role table from Group 1.
+2. Ask: **"What's your role?"** Show the role table from Group 1 — or accept a natural language description (see "Natural Language Role Mapping" below).
 3. Ask: **"Which networks should I scan? Say 'all' for everything, or pick specific ones."** Show the network table from Group 4.
-4. Auto-generate:
+4. Auto-generate everything else using Smart Suggestions (see below):
    - **Search terms** from the product/tech name (full name, common abbreviations, no-space version)
    - **Hashtags** from the name (#ProductName)
    - **Slug** from the name (lowercase, hyphenated)
@@ -36,7 +39,132 @@ If the user chooses quick setup:
    - **Content filters**, **topic tags**, and **social post standards** using sensible defaults
    - Skip: exclusions (none), people to watch (none), brand assets (text-only thumbnails), competitors (none), conferences (none), posting preferences (defaults)
 5. Save the config file and `.env` (if keys were provided).
-6. Tell the user: "Quick setup complete! You can customize further anytime by editing the config file or running `/scout-onboard` again."
+6. Tell the user: "Quick setup complete! You can customize further anytime by editing the config file or running onboarding again."
+
+#### Standard Setup Flow
+
+Standard setup covers the essentials and uses Smart Suggestions for the rest. The agent proactively recommends values based on the product — the user confirms, tweaks, or skips.
+
+1. **Role** — Group 1 (accept natural language or role table selection)
+2. **Product identity** — Group 2 (name, type, slug). Then show Smart Suggestions for search terms, hashtags, and topic tags. User confirms or tweaks.
+3. **Exclusions** — Group 3, but streamlined: "I found these official channels for {product}. Should I exclude them?" Show suggestions. User confirms, adds, or says "none."
+4. **Networks** — Group 4. Show the source table, default to "all". Collect API keys for selected auth sources.
+5. **Social posts** — If the role has social posts enabled, ask: "Want to configure your brand and post standards now, or use defaults?" If "defaults", auto-generate. If "configure", walk through Group 6.
+6. **Review** — Show a summary of the complete config with all Smart Suggestions applied. Ask: "Anything you want to change or add? (competitors, conferences, known authors, content filters, or anything else)" Handle adjustments, then save.
+
+#### Full Setup Flow
+
+Walk through all groups (0-12) for maximum customization, as documented in the group sections below. Smart Suggestions are still shown at each step — the user can accept or override them.
+
+---
+
+## Smart Suggestions
+
+After the user provides the product name and type (Group 2), the agent should **proactively research and suggest** values for subsequent groups instead of asking the user to type everything from scratch. The user confirms, tweaks, or skips each suggestion.
+
+### What to Suggest
+
+| Group | What the Agent Suggests | How |
+|-------|------------------------|-----|
+| Search terms | Full name, common abbreviations, no-space version, hyphenated version, old product names | Infer from the product name and type |
+| Hashtags | #ProductName, #ProductNameNoSpaces, community hashtags | Infer from the product name; search social platforms if accessible |
+| Exclusions | Official blog, YouTube channel, GitHub org, social handles | Search for the product's official web presence |
+| Topic tags | Feature areas, use cases, and common themes | Infer from the product's domain (e.g., database → performance, data-modeling, migration, security, sdk, etc.) |
+| Competitors | Adjacent or competing products | Infer from the product category (e.g., database → MongoDB, DynamoDB, CockroachDB) |
+| SDK packages | Language-specific package names | Search package registries (NuGet, npm, PyPI, Maven) for official SDKs |
+| Conferences | Relevant conferences and event series | Infer from the product domain (e.g., cloud product → KubeCon, re:Invent, Build) |
+| Custom sources | Vendor blog, update feed, docs site | Search for the product's official documentation and blog |
+
+### How to Present Suggestions
+
+Show suggestions as a checklist the user can confirm or edit:
+
+```
+Based on what I know about {Product Name}, here's what I'd suggest:
+
+**Search terms:** "Azure Cosmos DB", "CosmosDB", "Cosmos DB"
+**Hashtags:** #CosmosDB, #AzureCosmosDB
+**Topic tags:** getting-started, performance, data-modeling, migration, security, monitoring, sdk, integrations, ai, serverless, cost-optimization, best-practices
+
+Look right? Say "yes" to accept, or tell me what to change.
+```
+
+### When to Suggest
+
+- **Quick setup:** Auto-apply all suggestions silently. Mention what was generated in the completion summary.
+- **Standard setup:** Show suggestions at steps 2, 3, and 6 (review). The user confirms or tweaks.
+- **Full setup:** Show suggestions at each relevant group. The user confirms or tweaks.
+
+### Recommendation Engine
+
+Beyond filling in defaults, the agent should **actively recommend** additional configuration based on what it learns during onboarding:
+
+| Trigger | Recommendation |
+|---------|---------------|
+| User selects "Developer Advocate" role | "I'd recommend enabling Conference CFP tracking — I can find open calls for papers at conferences relevant to your product's community. Want to enable it?" (if not already on) |
+| Product has multiple SDKs across languages | "Your product has SDKs in .NET, Java, Python, and Node.js. I'll track GitHub repos by SDK language so you can see adoption by ecosystem. Here are the package names I found: {list}. Correct?" |
+| Product is in a competitive market | "Products like {name} are often compared to {competitors}. Want me to track competitor content volume and switching signals?" |
+| User mentions "launch", "announce", or an event | "Sounds like you have a launch coming up. Want me to enable launch coverage tracking so I can group content by event?" |
+| User skips topic tags | "I'll generate a starter set based on {product}'s feature areas: {list}. You can refine these after your first scan." |
+| User picks a role but describes different needs | "Based on what you described, you might also want {feature} — it's usually off for your role but sounds relevant. Want me to turn it on?" |
+| First scan produces unexpected gaps | (Post-onboarding, during first scan) "I noticed no results from {source}. Your search terms might need tweaking — want to add {suggested term}?" |
+
+Present recommendations conversationally, not as a checklist dump. One at a time, at the relevant moment in the flow.
+
+---
+
+## Natural Language Role Mapping
+
+Users don't have to pick from the role table. They can describe their role in natural language, and the agent maps it to the right configuration.
+
+### How It Works
+
+Before showing the role table, offer this option:
+
+**"What's your role? You can pick a number from the list below, combine multiple roles, or just tell me what you do — I'll figure out the right settings."**
+
+Then show the role table as usual.
+
+### Mapping Rules
+
+If the user provides a freeform description instead of selecting a role:
+
+1. **Parse intent** — Identify what they care about from their description:
+   - "I need to know what the community is building" → community content, rising contributors (Developer Advocate)
+   - "I track our competitors and what customers are asking for" → competitor tracking, feature requests, sentiment (Product Manager)
+   - "I manage our social media presence" → social posts, engagement scoring, calendar (Social Media Manager)
+   - "I write the docs and need to know where they're falling short" → doc gaps, FAQ patterns, unanswered questions (Technical Writer)
+   - "I need adoption numbers and SDK usage data for stakeholder decks" → SDK tracking, feature adoption, ecosystem health (Program Manager)
+
+2. **Map to role(s)** — Find the closest role or combination. If no single role fits, use a multi-role merge or Custom with specific toggles.
+
+3. **Show the mapping** — Explain what you chose and why:
+   ```
+   Based on your description, I'd set you up as a Developer Advocate with competitor tracking added.
+   That gives you: community projects, rising contributors, conference talks, SDK adoption, social posts,
+   plus competitor content volume and switching signals.
+
+   Here's the full feature set: {show merged toggle table}
+
+   Does this match what you need, or should I adjust anything?
+   ```
+
+4. **Handle edge cases:**
+   - "I'm a VP of Engineering" → Start with Program Manager defaults (adoption metrics) + Product Manager signals (customer feedback, competitors). Ask what matters most.
+   - "I do a bit of everything" → Suggest Custom role, walk through toggles, or ask: "What are the top 3 things you want from Content Scout?"
+   - "I'm a developer" → Clarify: "Are you looking to track community content for your own product, or discover content about a technology you use?" Route accordingly.
+   - "My role doesn't fit any of these" → Go to Custom: "No problem — tell me what you want to track and I'll build a custom config."
+
+### Additive Customization
+
+After the role is mapped, always ask: **"Is there anything your role cares about that mine don't typically cover?"**
+
+This catches:
+- "I also need to track unanswered questions even though I'm a Developer Advocate"
+- "I'm a Product Manager but I also post on social media"
+- "I care about conference talks more than most Program Managers"
+
+Turn on the additional features and note the customization in the config's Role section.
 
 ### Group 0 — Product Scope
 
@@ -50,20 +178,20 @@ If multiple products are requested, explain: "Great — I'll collect your role, 
 
 ### Group 1 — Your Role
 
-Ask: **"What's your role? Pick one, or combine multiple roles to get a blended report. This helps me tailor the report, set smart defaults, and focus on what matters most to you."**
+Ask: **"What's your role? You can pick a number from the list, combine multiple roles (e.g., '1, 4'), or just describe what you do in your own words — I'll figure out the right settings."**
 
 | # | Role | What You'll Get |
 |---|------|----------------|
-| 1 | **Program Manager** | Adoption metrics, SDK usage, feature coverage, community feedback signals |
+| 1 | **Program Manager** | Adoption metrics, SDK usage, feature coverage, feature request flagging, community feedback signals |
 | 2 | **Product Manager** | Market signals, competitor mentions, customer requests, sentiment analysis |
-| 3 | **Social Media Manager** | Post-ready content, engagement opportunities, posting calendar, trending topics |
-| 4 | **Product Marketer** | Launch coverage, success stories, analyst mentions, campaign amplification |
+| 3 | **Social Media Manager** | Post-ready content, engagement opportunities, posting calendar, trending topics, conversation sentiment |
+| 4 | **Product Marketer** | Launch coverage, success stories, analyst mentions, campaign amplification, feature request flagging, customer sentiment |
 | 5 | **Developer Advocate / DevRel** | Community projects, tutorials, rising contributors, conference talks |
 | 6 | **Community Manager** | Contributor tracking, sentiment trends, engagement health, unanswered questions |
 | 7 | **Technical Writer** | Doc gap analysis, tutorial patterns, FAQ signals, community-written tutorials vs. official docs |
 | 8 | **Custom** | Cherry-pick exactly the features you want — I'll walk you through each toggle |
 
-Accept a single number/name, a comma-separated list (e.g., "1, 4" or "Program Manager, Product Marketer"), or "Custom".
+Accept a single number/name, a comma-separated list (e.g., "1, 4" or "Program Manager, Product Marketer"), "Custom", or a **natural language description** of the role (see "Natural Language Role Mapping" above).
 
 #### Role Defaults
 
@@ -75,10 +203,10 @@ Each role sets smart defaults for the rest of onboarding. When **multiple roles*
 | Posting calendar | off | off | on | on | on | off | off |
 | Competitor tracking | off | on | off | on | off | off | off |
 | Conference CFP tracking | off | off | off | on | on | off | off |
-| Conversation sentiment | on | on | off | off | on | on | off |
+| Conversation sentiment | on | on | on | on | on | on | on |
 | Community health signals | off | off | off | off | on | on | off |
 | Rising contributors | off | off | off | off | on | on | off |
-| Feature request flagging | off | on | off | off | off | off | off |
+| Feature request flagging | on | on | off | on | off | off | off |
 | Unanswered question tracking | off | off | off | off | off | on | on |
 | Doc gap focus | off | off | off | off | off | off | on |
 | SDK/feature adoption tracking | on | off | off | off | on | off | off |
@@ -124,8 +252,15 @@ Then ask:
 Based on answers, configure defaults and explain: "Here's what I've set up for your role: {summary}. You can adjust any of this in the following steps."
 
 #### Role Refinement
-After the role is selected (single, multi, or custom), ask: **"Does this cover what you need, or should I adjust anything?"**
-If the user wants changes, show the feature toggle table and let them flip individual settings. Any feature can be added or removed regardless of role.
+After the role is selected (single, multi, custom, or natural-language-mapped), ask: **"Does this cover what you need, or is there anything your role cares about that these defaults don't include?"**
+
+This is the moment where the user can say things like:
+- "I also need to track unanswered questions even though I'm a DevRel"
+- "I'm a PM but I also manage our social presence"
+- "I care about conference talks more than most Program Managers"
+- "My team also handles developer education, so I need doc gap signals"
+
+If the user describes additional needs, turn on the relevant features and explain what was added. If they want changes, show the feature toggle table and let them flip individual settings. Any feature can be added or removed regardless of role.
 
 ### Group 2 — Product Identity
 - What is the **full name** of the product, technology, project, or tool you want to track? (e.g., "Azure Cosmos DB", "Python", "Ollama", "GitHub Copilot CLI")
@@ -157,7 +292,7 @@ Present the full source list and ask: **"Select all, or pick the ones you want."
 | 7 | YouTube (community channels) | YouTube Data API v3 key (free) |
 | 8 | GitHub (community repos) | None |
 | 9 | Stack Overflow | None |
-| 10 | Reddit | None |
+| 10 | Reddit | OAuth2 app credentials (free) |
 | 11 | Hacker News | None |
 | 12 | Bluesky | App password (free) |
 | 13 | LinkedIn | None |
@@ -181,9 +316,10 @@ For each custom source, collect: **name**, **URL or search pattern**, and **type
 
 **After selection, ask for API keys ONLY for selected sources that require them.** For each one, explain what the key unlocks, then let the user paste the key or say "skip". Keys are saved to `.env` at the workspace root (not in the config file), so the config can be safely committed or shared.
 
-- If **YouTube** was selected: "YouTube requires a free API key. Without it, YouTube is skipped and community videos won't appear in reports. Paste your YouTube Data API v3 key, or say **skip**."
-- If **Bluesky** was selected: "Bluesky requires a free app password for authenticated search. Without it, Bluesky is skipped and mentions/hashtag posts won't be tracked. Paste your Bluesky handle and app password, or say **skip**."
-- If **X/Twitter** was selected: "X requires a bearer token. The $200/mo Basic plan is typically needed — the free tier is usually too limited for meaningful scanning. Without it, X is skipped and conversations/mentions on X won't be tracked. Paste your X bearer token, or say **skip**."
+- If **YouTube** was selected: "YouTube requires a free API key. Without it, YouTube is skipped and community videos won't appear in reports. Paste your YouTube Data API v3 key, or say **skip**. Get one at: https://console.cloud.google.com/apis/credentials"
+- If **Reddit** was selected: "Reddit requires free OAuth2 app credentials. Without them, Reddit scanning is skipped. Register a 'script' type app at https://www.reddit.com/prefs/apps/ — you'll get a client ID and secret. Paste your Reddit client ID and client secret, or say **skip**."
+- If **Bluesky** was selected: "Bluesky requires a free app password for authenticated search. Without it, Bluesky is skipped and mentions/hashtag posts won't be tracked. Paste your Bluesky handle and app password, or say **skip**. Create one at: https://bsky.app/settings/app-passwords"
+- If **X/Twitter** was selected: "X requires a bearer token. The $200/mo Basic plan is recommended for reliable scanning. Without a key, Content Scout will attempt best-effort public search, but results may be incomplete or blocked. Paste your X bearer token, or say **skip**."
 
 **Saving keys:** When the user provides keys, save them to `.env` at the workspace root. If `.env` doesn't exist, create it from `.env.example`. Never store keys in the config file.
 
@@ -329,6 +465,7 @@ description: "Content Scout configuration for {Product Name}"
 
 ## Role
 - **Role:** {selected role(s), comma-separated, or "Custom"}
+- **Role description:** {user's natural language description of their role, if provided — e.g., "I'm a DevRel who also handles social media and competitive analysis". Omit if the user selected from the role table without customization.}
 - **Social posts:** {on/off}
 - **Posting calendar:** {on/off}
 - **Report focus:** {role-specific focus description, or combined if multi-role}

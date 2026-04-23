@@ -89,7 +89,7 @@ _Keys are stored in `.env` — see `.env.example` for setup._
 3. **Community blogs** — Dev.to, Medium, Hashnode, Blogspot, WordPress, DZone, C# Corner, InfoQ
 4. **Conversation tracking (not numbered):**
    - Stack Overflow (public API v2.3, no auth needed)
-   - Reddit (public JSON API)
+   - Reddit (OAuth2 app-only auth, free)
    - Hacker News (public Algolia API)
    - Bluesky (authenticated, multiple search queries)
    - X/Twitter (authenticated, bearer token required)

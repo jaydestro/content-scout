@@ -102,9 +102,16 @@ These all work out of the box:
 | Source | API Used |
 |--------|----------|
 | Dev.to, Medium, Hashnode, DZone, C# Corner, InfoQ | RSS feeds |
-| GitHub | Public search API |
+| GitHub | Public search API (60 req/hr unauthenticated; set `GITHUB_TOKEN` for 5000/hr) |
 | Stack Overflow | Public API v2.3 (300 req/day free) |
-| Reddit | Public JSON API (append `.json` to any URL) |
 | Hacker News | Public Algolia API |
 | LinkedIn | Best-effort public search |
 | Custom sources (blogs, feeds, docs) | Direct HTTP/RSS |
+
+## Sources That Need Free Auth
+
+| Source | How to Get Credentials | Cost |
+|--------|----------------------|------|
+| Reddit | Register an app at [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps/) ("script" type). Set `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET` in `.env`. | Free |
+| YouTube | Get an API key at [console.cloud.google.com](https://console.cloud.google.com/apis/credentials). Set `YOUTUBE_API_KEY` in `.env`. | Free |
+| Bluesky | Create an app password at [bsky.app/settings/app-passwords](https://bsky.app/settings/app-passwords). Set `BLUESKY_HANDLE` and `BLUESKY_APP_PASSWORD` in `.env`. | Free |
