@@ -39,7 +39,7 @@ Read the corresponding prompt file for each command's detailed flow. Ignore VS C
 
 ## Key Rules
 
-1. Read product config before every operation
+1. Read topic config before every operation
 2. Check `.env` for API keys before scanning
 3. Apply quality filter strictly (date gate + relevancy gate + score ≥ 5/9)
 4. Deduplicate against `reports/.seen-links.json`
