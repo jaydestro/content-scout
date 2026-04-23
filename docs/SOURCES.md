@@ -19,11 +19,11 @@ Select all or pick individually during onboarding.
 | 7 | C# Corner | Blog | None (RSS) | Search by keywords |
 | 8 | InfoQ | Blog | None (RSS) | Search by keywords |
 | 9 | Stack Overflow | Forum | None (public API v2.3, 300 req/day free) | Questions tagged with product terms |
-| 10 | Reddit | Forum | None (public JSON API) | Posts in relevant subreddits |
+| 10 | Reddit | Forum | OAuth2 app credentials (free) | Posts in relevant subreddits. Register at reddit.com/prefs/apps |
 | 11 | Hacker News | Forum | None (public Algolia API) | Submissions and comments mentioning product |
 | 12 | Bluesky | Social | App password (free) | Authenticated search by product terms, hashtags, mentions |
 | 13 | LinkedIn | Social | None | Best-effort search by product name |
-| 14 | X/Twitter | Social | X API bearer token ($200/mo Basic recommended) | Authenticated search by terms, hashtags, mentions. Free tier is typically too limited. |
+| 14 | X/Twitter | Social | X API bearer token ($200/mo Basic recommended) | Authenticated search by terms, hashtags, mentions. Without a key, best-effort public search is attempted but may be blocked. |
 
 ### Community Blog Platforms
 

@@ -1,6 +1,8 @@
 # API Keys
 
-All API keys are optional. Without them, the agent skips those sources and scans everything else. Most sources (blogs, GitHub, Stack Overflow, Reddit, Hacker News, LinkedIn, and all custom sources) work without any keys.
+All API keys are optional. Without them, the agent skips those sources and scans everything else. Most sources (blogs, GitHub, Stack Overflow, Hacker News, LinkedIn, and all custom sources) work without any keys.
+
+**Keys are stored in `.env` at the workspace root** — not in config files. This means your config can be safely committed and shared. Copy `.env.example` to `.env` and fill in your keys. The `.env` file is gitignored.
 
 ---
 
@@ -33,7 +35,7 @@ All API keys are optional. Without them, the agent skips those sources and scans
 - That's ~100 searches/day — more than enough for monthly scans
 
 ### In Content Scout
-When you select YouTube during onboarding, the agent asks for this key. Paste it or say "skip". Stored in your config under `## API Keys`.
+When you select YouTube during onboarding, the agent asks for this key. Paste it or say "skip". Stored in `.env` as `YOUTUBE_API_KEY`.
 
 ---
 
@@ -48,7 +50,7 @@ When you select YouTube during onboarding, the agent asks for this key. Paste it
 4. Copy the generated password
 
 ### In Content Scout
-When you select Bluesky during onboarding, the agent asks for your handle and app password. Stored in your config under `## API Keys`.
+When you select Bluesky during onboarding, the agent asks for your handle and app password. Stored in `.env` as `BLUESKY_HANDLE` and `BLUESKY_APP_PASSWORD`.
 
 > **Note:** This is an app-specific password, not your main Bluesky password. You can revoke it anytime from the same settings page.
 
@@ -77,15 +79,16 @@ When you select Bluesky during onboarding, the agent asks for your handle and ap
 The Basic plan is recommended. The free tier's rate limits usually prevent meaningful scanning of conversations and mentions.
 
 ### In Content Scout
-When you select X/Twitter during onboarding, the agent asks for your bearer token. Paste it or say "skip". Stored in your config under `## API Keys`.
+When you select X/Twitter during onboarding, the agent asks for your bearer token. Paste it or say "skip". Stored in `.env` as `X_BEARER_TOKEN`.
 
 ---
 
 ## Security
 
-- Config files containing API keys are **gitignored by default** (`.github/prompts/scout-config-*.prompt.md`, except the example template)
-- Never commit API keys to a public repository
-- The example config (`scout-config-example.prompt.md`) uses placeholder values and is safe to commit
+- API keys are stored in `.env` at the workspace root, which is **gitignored by default**
+- Config files no longer contain API keys — they can be safely committed and shared
+- `.env.example` is committed as a template with placeholder values
+- Never commit `.env` to a public repository
 - Bluesky app passwords can be revoked anytime from your Bluesky settings
 - YouTube API keys can be restricted by HTTP referrer or IP in Google Cloud Console
 - X bearer tokens can be regenerated from the developer portal
@@ -99,9 +102,16 @@ These all work out of the box:
 | Source | API Used |
 |--------|----------|
 | Dev.to, Medium, Hashnode, DZone, C# Corner, InfoQ | RSS feeds |
-| GitHub | Public search API |
+| GitHub | Public search API (60 req/hr unauthenticated; set `GITHUB_TOKEN` for 5000/hr) |
 | Stack Overflow | Public API v2.3 (300 req/day free) |
-| Reddit | Public JSON API (append `.json` to any URL) |
 | Hacker News | Public Algolia API |
 | LinkedIn | Best-effort public search |
 | Custom sources (blogs, feeds, docs) | Direct HTTP/RSS |
+
+## Sources That Need Free Auth
+
+| Source | How to Get Credentials | Cost |
+|--------|----------------------|------|
+| Reddit | Register an app at [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps/) ("script" type). Set `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET` in `.env`. | Free |
+| YouTube | Get an API key at [console.cloud.google.com](https://console.cloud.google.com/apis/credentials). Set `YOUTUBE_API_KEY` in `.env`. | Free |
+| Bluesky | Create an app password at [bsky.app/settings/app-passwords](https://bsky.app/settings/app-passwords). Set `BLUESKY_HANDLE` and `BLUESKY_APP_PASSWORD` in `.env`. | Free |

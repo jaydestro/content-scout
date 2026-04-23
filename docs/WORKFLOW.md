@@ -12,7 +12,7 @@ Content Scout follows a repeatable cycle:
 Onboard (once) → Scan (monthly) → Post (ongoing) → Analyze (monthly)
 ```
 
-1. **Onboard** — configure the agent for your product and role
+1. **Onboard** — configure the agent for your product, technology, project, or tool and role
 2. **Scan** — discover and catalog community content
 3. **Post** — generate social media posts from discovered content
 4. **Analyze** — identify gaps, track trends, plan content strategy
@@ -21,17 +21,22 @@ Onboard (once) → Scan (monthly) → Post (ongoing) → Analyze (monthly)
 
 ## Step 1: Onboarding (`/scout-onboard`)
 
-Run once per product. The onboarding wizard walks you through 9 groups of questions. You can say "none" or "skip" to any optional question.
+Run once per topic. The onboarding wizard offers two modes:
 
-**Multiple products:** The first question asks whether you're tracking one product or several. If you choose multiple, onboarding collects shared settings (role, brand, networks) once, then loops product-specific details (search terms, exclusions, topic tags) for each product. Each product gets its own config file. Run `/scout-onboard` again later to add more products without re-entering shared settings.
+- **Quick setup** — 3 questions (topic name, role, networks). Everything else uses smart defaults. Best for tracking many topics or getting started fast.
+- **Full setup** — Walk through all 9 groups for maximum customization.
+
+**Multiple topics:** The first question asks whether you're tracking one topic or several. If you choose multiple, onboarding collects shared settings (role, brand, networks) once, then loops topic-specific details (search terms, exclusions, topic tags) for each topic. Each topic gets its own config file. Run `/scout-onboard` again later to add more topics without re-entering shared settings.
+
+**Topic types:** Content Scout supports products (Azure Cosmos DB), technologies (Python), open-source projects (Ollama), and tools (Copilot CLI). The topic type shapes report sections and search strategy automatically.
 
 ### What It Asks
 
 | Group | Questions | Required |
 |-------|-----------|----------|
 | 1. Role | Your role(s) — determines which features are enabled and which report sections appear | Yes |
-| 2. Product | Product name, search terms, hashtags | Yes |
-| 3. Networks | Which of the 14 standard sources to scan, plus custom sources. API keys collected inline for YouTube, Bluesky, X | Yes (at least 1 source) |
+| 2. Topic | Topic name, type (product/technology/project/tool), search terms, hashtags | Yes |
+| 3. Networks | Which of the 14 standard sources to scan, plus custom sources. API keys saved to `.env` (not config) | Yes (at least 1 source) |
 | 4. Exclusions | Your official blog, YouTube channel, social handles, team members to filter out | Recommended |
 | 5. People | Known external authors (bypass quality filter), influencers to monitor | Optional |
 | 6. Social Posts | Platforms, brand identity, target audience, brand name rules, tone, post standards | Only if role includes social posts |
@@ -45,13 +50,13 @@ Choose one or more roles (comma-separated). Multi-role configs merge features as
 
 | Role | Social Posts | Posting Calendar | Key Report Sections |
 |------|-------------|-----------------|---------------------|
-| Program Manager | Off | Off | Adoption metrics, SDK breakdown, feature frequency, ecosystem health |
+| Program Manager | Off | Off | Adoption metrics, SDK breakdown, feature frequency, feature request flagging, ecosystem health |
 | Product Manager | Off | Off | Competitor signals, feature requests, pain points, customer sentiment |
-| Social Media Manager | On | On | Engagement scoring, timing suggestions, trending topics |
-| Product Marketer | On | On | Launch coverage, analyst mentions, success stories, competitive landscape |
+| Social Media Manager | On | On | Engagement scoring, timing suggestions, trending topics, conversation sentiment |
+| Product Marketer | On | On | Launch coverage, analyst mentions, success stories, competitive landscape, feature request flagging, customer sentiment |
 | Developer Advocate | On | On | Rising contributors, community projects, conference content, SDK adoption |
 | Community Manager | Off | Off | Sentiment breakdown, unanswered questions, new contributors, engagement trend |
-| Technical Writer | Off | Off | FAQ patterns, doc confusion signals, tutorial gaps, content freshness |
+| Technical Writer | Off | Off | FAQ patterns, doc confusion signals, tutorial gaps, content freshness, conversation sentiment |
 | Custom | Choose | Choose | Cherry-pick from 12 individual features |
 
 ### Brand Identity (Group 6)
