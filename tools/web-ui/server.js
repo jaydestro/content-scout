@@ -152,25 +152,63 @@ async function readMarkdown(dir, name) {
   return { name, raw, html: marked.parse(raw) };
 }
 
-async function readEnv() {
+// Parse a .env-style string into { key, value } entries. Preserves insertion order.
+// Values may be unquoted, "double", or 'single' quoted. Comments/blank lines are ignored for the key list.
+function parseEnv(raw) {
+  const entries = [];
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line || line.trim().startsWith('#')) continue;
+    const idx = line.indexOf('=');
+    if (idx === -1) continue;
+    const key = line.slice(0, idx).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    let value = line.slice(idx + 1).trim();
+    // strip inline comments only when value is unquoted
+    if (value.startsWith('"') && value.endsWith('"') && value.length >= 2) {
+      value = value.slice(1, -1);
+    } else if (value.startsWith("'") && value.endsWith("'") && value.length >= 2) {
+      value = value.slice(1, -1);
+    }
+    entries.push({ key, value });
+  }
+  return entries;
+}
+
+async function readEnvRaw() {
   let raw = '';
+  let source = 'missing';
   try {
     raw = await fs.readFile(ENV_FILE, 'utf8');
+    source = 'env';
   } catch {
     try {
       raw = await fs.readFile(ENV_EXAMPLE, 'utf8');
+      source = 'example';
     } catch {
       raw = '';
     }
   }
-  const entries = raw
-    .split(/\r?\n/)
-    .filter((l) => l && !l.startsWith('#') && l.includes('='))
-    .map((l) => {
-      const idx = l.indexOf('=');
-      return { key: l.slice(0, idx), hasValue: l.slice(idx + 1).trim().length > 0 };
-    });
-  return { exists: raw.length > 0, keys: entries };
+  return { raw, source };
+}
+
+async function readEnv() {
+  const { raw, source } = await readEnvRaw();
+  const entries = parseEnv(raw);
+  return {
+    exists: source === 'env',
+    keys: entries.map((e) => ({ key: e.key, hasValue: e.value.length > 0 })),
+  };
+}
+
+// Serialize values back to .env, double-quoting anything that contains whitespace or # or quotes.
+function serializeEnv(entries) {
+  const lines = entries.map(({ key, value }) => {
+    const v = value ?? '';
+    const needsQuote = /[\s#"'\\]/.test(v) || v === '';
+    const escaped = v.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return `${key}=${needsQuote ? `"${escaped}"` : v}`;
+  });
+  return lines.join('\n') + '\n';
 }
 
 // --- API -----------------------------------------------------------
@@ -225,6 +263,44 @@ app.post('/api/settings', async (req, res) => {
   try {
     await saveSettings({ agent, runner: effectiveRunner });
     res.json({ ok: true, agent, runner: effectiveRunner });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+// Read .env values (server is localhost-only; treat host as trusted).
+app.get('/api/env', async (_req, res) => {
+  const { raw, source } = await readEnvRaw();
+  const entries = parseEnv(raw);
+  // If .env is missing, seed the key list from .env.example but return empty values.
+  const values = source === 'env'
+    ? entries
+    : entries.map((e) => ({ key: e.key, value: '' }));
+  res.json({ exists: source === 'env', source, entries: values });
+});
+
+app.post('/api/env', async (req, res) => {
+  const incoming = req.body?.entries;
+  if (!Array.isArray(incoming)) {
+    return res.status(400).json({ error: 'entries must be an array of {key,value}' });
+  }
+  const cleaned = [];
+  for (const e of incoming) {
+    if (!e || typeof e.key !== 'string') continue;
+    const key = e.key.trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      return res.status(400).json({ error: `invalid key: ${key}` });
+    }
+    const value = typeof e.value === 'string' ? e.value : '';
+    // Disallow newlines in values; .env can't represent them safely here.
+    if (/\r|\n/.test(value)) {
+      return res.status(400).json({ error: `value for ${key} contains a newline` });
+    }
+    cleaned.push({ key, value });
+  }
+  try {
+    await fs.writeFile(ENV_FILE, serializeEnv(cleaned), 'utf8');
+    res.json({ ok: true, count: cleaned.length });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
   }
