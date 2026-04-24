@@ -52,68 +52,187 @@
         <div class="card">
           <h3>2. Create a product config</h3>
           <p id="setup-config-status" class="hint"></p>
-          <p class="hint">
-            Tell Content Scout what to research. You can refine brand assets, competitors, conferences, and
-            more later in the <a href="#" data-goto="configs">Configs</a> view.
-          </p>
-          <div class="config-form">
-            <label class="field">
-              <span>Product / topic name <span class="req">*</span></span>
-              <input id="cfg-name" type="text" placeholder="e.g., Azure Cosmos DB" />
-            </label>
-            <label class="field">
-              <span>Slug <span class="hint">(auto — URL-safe identifier)</span></span>
-              <input id="cfg-slug" type="text" placeholder="auto-derived from name" />
-            </label>
-            <label class="field">
-              <span>Type</span>
-              <select id="cfg-type">
-                <option value="product">Product</option>
-                <option value="technology">Technology</option>
-                <option value="project">Open-source project</option>
-                <option value="tool">Tool</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>Your role</span>
-              <select id="cfg-role">
-                <option value="Developer Advocate">Developer Advocate</option>
-                <option value="Product Marketer">Product Marketer</option>
-                <option value="Developer">Developer</option>
-                <option value="Community Manager">Community Manager</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>Search terms <span class="hint">(comma-separated, used for source queries)</span></span>
-              <input id="cfg-terms" type="text" placeholder="e.g., Azure Cosmos DB, Cosmos DB" />
-            </label>
-            <label class="field">
-              <span>Hashtags <span class="hint">(comma-separated, without #)</span></span>
-              <input id="cfg-hashtags" type="text" placeholder="e.g., CosmosDB, Azure" />
-            </label>
-            <label class="field">
-              <span>Topic tags <span class="hint">(comma-separated, used to categorize content)</span></span>
-              <input id="cfg-topic-tags" type="text" placeholder="e.g., partitioning, sdk-dotnet, query-perf" />
-            </label>
-            <label class="field-inline">
-              <input id="cfg-social" type="checkbox" checked />
-              <span>Auto-generate social posts after scans</span>
-            </label>
-            <label class="field-inline">
-              <input id="cfg-calendar" type="checkbox" />
-              <span>Generate a weekly posting calendar</span>
-            </label>
+          <div class="tier-picker">
+            <span class="hint">How much do you want to customize?</span>
+            <label class="field-inline"><input type="radio" name="cfg-tier" value="quick" /><span>Quick (3 fields)</span></label>
+            <label class="field-inline"><input type="radio" name="cfg-tier" value="standard" checked /><span>Standard (recommended)</span></label>
+            <label class="field-inline"><input type="radio" name="cfg-tier" value="full" /><span>Full (every setting)</span></label>
           </div>
+
+          <div class="config-form">
+
+            <!-- Always visible: product basics -->
+            <fieldset class="cfg-group">
+              <legend>Product</legend>
+              <label class="field">
+                <span>Name <span class="req">*</span></span>
+                <input id="cfg-name" type="text" placeholder="e.g., Azure Cosmos DB" />
+              </label>
+              <label class="field">
+                <span>Slug <span class="hint">(auto — URL-safe identifier)</span></span>
+                <input id="cfg-slug" type="text" placeholder="auto-derived from name" />
+              </label>
+              <label class="field">
+                <span>Type</span>
+                <select id="cfg-type">
+                  <option value="product">Product</option>
+                  <option value="technology">Technology</option>
+                  <option value="project">Open-source project</option>
+                  <option value="tool">Tool</option>
+                </select>
+              </label>
+            </fieldset>
+
+            <!-- Always visible: roles (multi-select) -->
+            <fieldset class="cfg-group">
+              <legend>Your role(s) — pick one or more</legend>
+              <div id="cfg-roles" class="role-grid">
+                <!-- populated at runtime from /api/role-presets -->
+              </div>
+              <label class="field">
+                <span>Custom role label <span class="hint">(optional — used if you skip the presets)</span></span>
+                <input id="cfg-custom-role" type="text" placeholder='e.g., "Developer Experience Lead"' />
+              </label>
+            </fieldset>
+
+            <!-- Standard + Full: search/tag identity -->
+            <fieldset class="cfg-group tier-standard tier-full">
+              <legend>Search identity</legend>
+              <label class="field">
+                <span>Search terms <span class="hint">(comma-separated)</span></span>
+                <input id="cfg-terms" type="text" placeholder="e.g., Azure Cosmos DB, Cosmos DB" />
+              </label>
+              <label class="field">
+                <span>Hashtags <span class="hint">(comma-separated, without #)</span></span>
+                <input id="cfg-hashtags" type="text" placeholder="e.g., CosmosDB, Azure" />
+              </label>
+              <label class="field">
+                <span>Topic tags <span class="hint">(comma-separated)</span></span>
+                <input id="cfg-topic-tags" type="text" placeholder="e.g., partitioning, sdk-dotnet, query-perf" />
+              </label>
+            </fieldset>
+
+            <!-- Standard + Full: networks -->
+            <fieldset class="cfg-group tier-standard tier-full">
+              <legend>Networks to scan</legend>
+              <div class="network-grid">
+                <label class="field-inline"><input type="checkbox" class="cfg-network" value="github" checked /><span>GitHub</span></label>
+                <label class="field-inline"><input type="checkbox" class="cfg-network" value="blogs" checked /><span>Community blogs</span></label>
+                <label class="field-inline"><input type="checkbox" class="cfg-network" value="stackoverflow" checked /><span>Stack Overflow</span></label>
+                <label class="field-inline"><input type="checkbox" class="cfg-network" value="reddit" checked /><span>Reddit</span></label>
+                <label class="field-inline"><input type="checkbox" class="cfg-network" value="hackernews" checked /><span>Hacker News</span></label>
+                <label class="field-inline"><input type="checkbox" class="cfg-network" value="bluesky" checked /><span>Bluesky</span></label>
+                <label class="field-inline"><input type="checkbox" class="cfg-network" value="x" /><span>X/Twitter</span></label>
+                <label class="field-inline"><input type="checkbox" class="cfg-network" value="linkedin" /><span>LinkedIn</span></label>
+                <label class="field-inline"><input type="checkbox" class="cfg-network" value="youtube" /><span>YouTube (requires key)</span></label>
+              </div>
+            </fieldset>
+
+            <!-- Standard + Full: social posts toggle -->
+            <fieldset class="cfg-group tier-standard tier-full">
+              <legend>Output</legend>
+              <label class="field-inline"><input id="cfg-social" type="checkbox" checked /><span>Auto-generate social posts after scans</span></label>
+              <label class="field-inline"><input id="cfg-calendar" type="checkbox" /><span>Generate a weekly posting calendar</span></label>
+            </fieldset>
+
+            <!-- Full only: exclusions -->
+            <fieldset class="cfg-group tier-full">
+              <legend>Official channels to exclude</legend>
+              <p class="hint">These get tracked separately and are filtered out of the community scan.</p>
+              <label class="field">
+                <span>Official blog URL</span>
+                <input id="cfg-excl-blog" type="text" placeholder="e.g., https://aka.ms/cosmosdbblog" />
+              </label>
+              <label class="field">
+                <span>Official YouTube channel</span>
+                <input id="cfg-excl-youtube" type="text" placeholder="Channel ID or URL" />
+              </label>
+              <label class="field">
+                <span>Official social handles <span class="hint">(comma-separated)</span></span>
+                <input id="cfg-excl-handles" type="text" placeholder="@AzureCosmosDB, @Microsoft" />
+              </label>
+            </fieldset>
+
+            <!-- Full only: feature toggles -->
+            <fieldset class="cfg-group tier-full">
+              <legend>Feature toggles <span class="hint">(overrides role defaults)</span></legend>
+              <p class="hint">Leave blank to use the defaults for your selected role(s).</p>
+              <div class="toggle-grid">
+                <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="competitorTracking" /><span>Competitor tracking</span></label>
+                <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="conferenceCfp" /><span>Conference CFP tracking</span></label>
+                <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="launchCoverage" /><span>Launch coverage tracking</span></label>
+                <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="risingContributors" /><span>Rising contributors</span></label>
+                <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="communityHealth" /><span>Community health signals</span></label>
+                <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="docGapFocus" /><span>Doc gap focus</span></label>
+                <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="sdkAdoption" /><span>SDK adoption tracking</span></label>
+                <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="featureRequests" /><span>Feature request flagging</span></label>
+                <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="unansweredQuestions" /><span>Unanswered question tracking</span></label>
+              </div>
+            </fieldset>
+
+            <!-- Full only: brand -->
+            <fieldset class="cfg-group tier-full">
+              <legend>Brand assets</legend>
+              <label class="field">
+                <span>Logo directory</span>
+                <input id="cfg-brand-logodir" type="text" placeholder="e.g., social-posts/images/brand/cosmosdb/" />
+              </label>
+              <label class="field">
+                <span>Thumbnail style</span>
+                <select id="cfg-brand-thumb">
+                  <option value="text-only">Text-only</option>
+                  <option value="logo-plus-text">Logo + text</option>
+                  <option value="logo-only">Logo only</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Background theme</span>
+                <select id="cfg-brand-theme">
+                  <option value="dark">Dark</option>
+                  <option value="light">Light</option>
+                  <option value="branded">Branded</option>
+                </select>
+              </label>
+            </fieldset>
+
+            <!-- Full only: competitors -->
+            <fieldset class="cfg-group tier-full">
+              <legend>Competitors <span class="hint">(comma-separated)</span></legend>
+              <input id="cfg-competitors" type="text" placeholder="e.g., MongoDB, DynamoDB, CockroachDB" />
+            </fieldset>
+
+            <!-- Full only: conferences -->
+            <fieldset class="cfg-group tier-full">
+              <legend>Conferences to track <span class="hint">(comma-separated)</span></legend>
+              <input id="cfg-conferences" type="text" placeholder="e.g., KubeCon, re:Invent, Build" />
+            </fieldset>
+
+            <!-- Full only: watchlist -->
+            <fieldset class="cfg-group tier-full">
+              <legend>Known author watchlist</legend>
+              <p class="hint">Community developers whose content always passes the quality filter. One per line: <code>Name | Affiliation | @handle</code></p>
+              <textarea id="cfg-watchlist" rows="4" placeholder="Jane Doe | Acme Corp | @janedoe
+John Smith | Independent | @jsmith"></textarea>
+            </fieldset>
+
+            <!-- Full only: custom sources -->
+            <fieldset class="cfg-group tier-full">
+              <legend>Custom sources</legend>
+              <p class="hint">Blogs, newsletters, podcasts, or other URLs. One per line: <code>Name | Type | URL</code></p>
+              <textarea id="cfg-custom-sources" rows="4" placeholder="Dev Blog | blog | https://example.com/feed.xml
+My Podcast | podcast | https://example.com/podcast.rss"></textarea>
+            </fieldset>
+
+          </div>
+
           <div class="toolbar" style="margin-top:0.75rem">
             <button id="cfg-create">Create config</button>
             <span id="cfg-status" class="hint"></span>
           </div>
           <details style="margin-top:0.75rem">
-            <summary class="hint">Want the full-depth onboarding conversation instead?</summary>
+            <summary class="hint">Prefer the guided chat wizard?</summary>
             <p class="hint" style="margin-top:0.5rem">
-              The form above covers the essentials (role, product, search terms, topic tags). For brand assets,
-              conference tracking, competitor lists, or detailed social-post standards, open your editor's chat
-              panel and say <code>/scout-onboard</code>, or
+              Open your editor's chat panel and say <code>/scout-onboard</code>, or
               <button id="setup-run-onboard" class="linklike" type="button">run /scout-onboard in the Run view</button>.
             </p>
           </details>
