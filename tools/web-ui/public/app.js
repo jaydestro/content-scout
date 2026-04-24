@@ -191,6 +191,60 @@ $('setup-run-onboard').addEventListener('click', async () => {
   $('run-command').dispatchEvent(new Event('change'));
 });
 
+// --- New config form ------------------------------------------------
+function slugify(s) {
+  return String(s).toLowerCase().trim().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+}
+let cfgSlugEdited = false;
+$('cfg-slug').addEventListener('input', () => { cfgSlugEdited = true; });
+$('cfg-name').addEventListener('input', () => {
+  if (!cfgSlugEdited) $('cfg-slug').value = slugify($('cfg-name').value);
+});
+
+$('cfg-create').addEventListener('click', async () => {
+  const name = $('cfg-name').value.trim();
+  if (!name) {
+    $('cfg-status').textContent = 'Product name is required.';
+    return;
+  }
+  const body = {
+    name,
+    slug: $('cfg-slug').value.trim() || slugify(name),
+    type: $('cfg-type').value,
+    role: $('cfg-role').value,
+    searchTerms: $('cfg-terms').value.split(',').map((s) => s.trim()).filter(Boolean),
+    hashtags: $('cfg-hashtags').value.split(',').map((s) => s.trim()).filter(Boolean),
+    topicTags: $('cfg-topic-tags').value.split(',').map((s) => s.trim()).filter(Boolean),
+    socialPosts: $('cfg-social').checked,
+    postingCalendar: $('cfg-calendar').checked,
+  };
+  $('cfg-create').disabled = true;
+  $('cfg-status').textContent = 'creating…';
+  try {
+    const res = await fetch('/api/configs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      $('cfg-status').textContent = `error: ${data.error || res.statusText}`;
+      return;
+    }
+    $('cfg-status').innerHTML = `<span class="ok">Created ${data.file}. Opening in Configs…</span>`;
+    await loadStatus();
+    setTimeout(() => {
+      gotoView('configs');
+      // Refresh the list then select the new config.
+      loadConfigList().then(() => loadConfig(data.slug));
+    }, 400);
+  } catch (err) {
+    $('cfg-status').textContent = `error: ${err.message}`;
+  } finally {
+    $('cfg-create').disabled = false;
+  }
+});
+
 $('env-add').addEventListener('click', () => {
   const grid = document.querySelector('#setup-env .env-grid') || $('setup-env');
   if (!grid.classList.contains('env-grid')) {

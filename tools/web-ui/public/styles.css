@@ -147,3 +147,22 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .env-row .env-key { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.85rem; }
 .env-row .env-key[readonly] { background: var(--panel-2); color: var(--muted); }
 .env-row button { padding: 0.35rem 0.55rem; }
+
+.config-form { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem; }
+.config-form .field { display: flex; flex-direction: column; gap: 0.25rem; }
+.config-form .field > span { font-size: 0.85rem; color: var(--muted); }
+.config-form .field input,
+.config-form .field select {
+  padding: 0.4rem 0.5rem;
+  background: var(--panel-2);
+  color: inherit;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+}
+.config-form .field-inline { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
+.req { color: var(--accent); }
+.linklike {
+  background: none; border: none; padding: 0; color: var(--accent-2);
+  text-decoration: underline; cursor: pointer; font: inherit;
+}
