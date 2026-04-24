@@ -52,12 +52,24 @@ cd content-scout
 ```
 
 ### VS Code
+
+**Prerequisites:**
+- **GitHub Copilot** and **GitHub Copilot Chat** extensions installed and signed in
+- An active Copilot subscription
+- VS Code 1.90 or newer
+
 ```
 code .
 ```
-1. Switch to the **Content Scout** agent mode in Copilot Chat
-2. Run `/scout-onboard` — choose **quick setup** (3 questions) or **full setup** (detailed customization)
-3. Run `/scout-scan` to discover content
+The repo ships a `.vscode/settings.json` that automatically enables Copilot prompt files and agent mode for this workspace — the first time you open the folder, VS Code will ask you to **Trust the authors** (click yes) so those settings apply.
+
+1. Open the **Copilot Chat panel** with `Ctrl+Alt+I` (not the inline `Ctrl+I` box — slash commands only appear in the panel)
+2. Set the chat mode dropdown at the top of the panel to **Agent**
+3. Switch the agent picker to **Content Scout**
+4. Type `/` — you should see `/scout-onboard`, `/scout-scan`, etc. in the picker. Run `/scout-onboard` (choose **quick setup** for 3 questions or **full setup** for detailed customization)
+5. Run `/scout-scan` to discover content
+
+Not seeing the slash commands? See [Troubleshooting (VS Code)](#troubleshooting-vs-code) below.
 
 ### Claude Code
 ```
@@ -79,6 +91,42 @@ gh copilot
 2. Say "scout scan" to discover content
 
 Your config saves to `.github/prompts/scout-config-{slug}.prompt.md` (gitignored). API keys are stored in `.env` (also gitignored) — see `.env.example` for the template. See the [workflow guide](docs/WORKFLOW.md) for the full onboarding walkthrough.
+
+### Troubleshooting (VS Code)
+
+If `/scout-onboard` doesn't appear when you type `/` in Copilot Chat:
+
+1. **Copilot installed & signed in?** Install the **GitHub Copilot** and **GitHub Copilot Chat** extensions and sign in. The status bar Copilot icon should not show a warning.
+2. **Using the Chat panel, not inline chat?** Slash commands only appear in the dedicated Chat panel (`Ctrl+Alt+I`), not in the inline `Ctrl+I` box.
+3. **Chat mode set to Agent?** The dropdown at the top of the chat panel must say **Agent** (not Ask or Edit).
+4. **Prompt files enabled?** Open settings (`Ctrl+,`), search for `chat.promptFiles`, and make sure it's checked. Also verify `chat.agent.enabled` is on.
+5. **Correct folder open?** You must open the `content-scout` folder itself (not a parent or subfolder). Verify from a terminal in the folder: `Get-ChildItem .github\prompts` should list `scout-onboard.prompt.md`.
+6. **VS Code up to date?** Prompt files and agent mode require VS Code 1.90 or newer.
+
+### Troubleshooting (other editors)
+
+If the agent doesn't seem to be loaded when you ask it to "scout onboard":
+
+**Claude Code**
+- Make sure you ran `claude` from inside the `content-scout` folder (not a parent directory). Claude Code only auto-loads `CLAUDE.md` from the current working directory.
+- Confirm the file exists: `Get-ChildItem CLAUDE.md`.
+
+**Cursor**
+- Open the `content-scout` folder as the workspace (File → Open Folder), not as a file or a parent directory. Project rules in `.cursor/rules/` only apply when the repo is the workspace root.
+- Check **Settings → Rules for AI → Project Rules** — `content-scout.mdc` should be listed.
+
+**Windsurf**
+- Open the `content-scout` folder as the workspace root. `.windsurfrules` only loads for the top-level workspace.
+- Restart Windsurf after opening the folder if the rules don't seem to apply on the first message.
+
+**Cline**
+- `.clinerules` only loads for the workspace root — open `content-scout` itself, not a subfolder.
+- In the Cline side panel, verify it shows the rules file as active.
+
+**GitHub Copilot CLI**
+- Sign in: `gh auth status` — if not authenticated, run `gh auth login`.
+- Install the extension if needed: `gh extension install github/gh-copilot`.
+- Run `gh copilot` from inside the `content-scout` folder so it picks up `.github/copilot-instructions.md`.
 
 ## Commands
 
