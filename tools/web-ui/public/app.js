@@ -608,14 +608,14 @@ function escape(s) {
 }
 
 // --- Boot ----------------------------------------------------------
+// Only land on the dashboard once the user has actually finished setup:
+// both an agent runner AND at least one config must exist. Otherwise,
+// send them straight to Setup.
 loadStatus().then((s) => {
-  // If there are no configs yet, route to Setup so the user can create one.
-  if (!s.hasConfigs) {
-    gotoView('setup');
-  } else {
-    loadDashboard();
-  }
+  const isSetUp = s.runnerConfigured && s.hasConfigs;
+  gotoView(isSetUp ? 'dashboard' : 'setup');
 }).catch((err) => {
   $('status-pill').textContent = 'error';
   console.error(err);
+  gotoView('setup');
 });
