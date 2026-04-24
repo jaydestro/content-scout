@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Content Scout</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Content Scout</h1>
+      <nav>
+        <button data-view="dashboard" class="active">Dashboard</button>
+        <button data-view="configs">Configs</button>
+        <button data-view="run">Run</button>
+        <button data-view="reports">Reports</button>
+        <button data-view="social">Social posts</button>
+      </nav>
+      <div id="status-pill" class="pill"></div>
+    </header>
+
+    <main>
+      <!-- Dashboard -->
+      <section id="view-dashboard" class="view active">
+        <h2>Dashboard</h2>
+        <div class="cards">
+          <div class="card">
+            <h3>Configs</h3>
+            <ul id="dash-configs"><li>Loading…</li></ul>
+          </div>
+          <div class="card">
+            <h3>Recent reports</h3>
+            <ul id="dash-reports"><li>Loading…</li></ul>
+          </div>
+          <div class="card">
+            <h3>Recent runs</h3>
+            <ul id="dash-runs"><li>No runs yet</li></ul>
+          </div>
+          <div class="card">
+            <h3>Environment</h3>
+            <div id="dash-env">Loading…</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Configs -->
+      <section id="view-configs" class="view">
+        <h2>Configs</h2>
+        <p class="hint">
+          Pick a config to edit its role flags, search terms, and topic tags. New configs are created by
+          running the <code>/scout-onboard</code> command in your editor or the standalone CLI
+          (<code>tools/onboard-cli</code>).
+        </p>
+        <div class="split">
+          <aside>
+            <ul id="config-list"></ul>
+          </aside>
+          <div>
+            <div class="toolbar">
+              <span id="config-title">Select a config</span>
+              <button id="config-save" disabled>Save</button>
+              <span id="config-status" class="hint"></span>
+            </div>
+            <textarea id="config-editor" spellcheck="false" disabled></textarea>
+          </div>
+        </div>
+      </section>
+
+      <!-- Run -->
+      <section id="view-run" class="view">
+        <h2>Run a command</h2>
+        <div class="run-form">
+          <label>
+            Command
+            <select id="run-command">
+              <option value="scout-scan">/scout-scan — scan all sources</option>
+              <option value="scout-post">/scout-post — generate social posts</option>
+              <option value="scout-calendar">/scout-calendar — weekly posting schedule</option>
+              <option value="scout-gaps">/scout-gaps — content gap analysis</option>
+              <option value="scout-trends">/scout-trends — month-over-month trends</option>
+              <option value="custom">Custom prompt</option>
+            </select>
+          </label>
+          <label>
+            Config slug (optional)
+            <select id="run-slug"><option value="">— none —</option></select>
+          </label>
+          <label id="run-extra-wrap">
+            Extra args (optional)
+            <input id="run-extra" type="text" placeholder="e.g. a URL, item number, or date range" />
+          </label>
+          <label id="run-prompt-wrap" hidden>
+            Custom prompt
+            <textarea id="run-prompt" rows="4" placeholder="Type any message to send the agent"></textarea>
+          </label>
+          <div class="toolbar">
+            <button id="run-start">Start run</button>
+            <button id="run-copy" class="secondary">Copy prompt</button>
+          </div>
+        </div>
+        <h3>Output</h3>
+        <div id="run-meta" class="hint"></div>
+        <pre id="run-output">No run started.</pre>
+      </section>
+
+      <!-- Reports -->
+      <section id="view-reports" class="view">
+        <h2>Reports</h2>
+        <div class="split">
+          <aside>
+            <ul id="reports-list"></ul>
+          </aside>
+          <article id="reports-body" class="markdown">Select a report.</article>
+        </div>
+      </section>
+
+      <!-- Social -->
+      <section id="view-social" class="view">
+        <h2>Social posts</h2>
+        <div class="split">
+          <aside>
+            <ul id="social-list"></ul>
+          </aside>
+          <article id="social-body" class="markdown">Select a file.</article>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
