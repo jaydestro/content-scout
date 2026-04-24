@@ -10,27 +10,29 @@ Walk the user through configuring Content Scout for their product, technology, o
 
 ## Interview Flow
 
-Ask these questions **one group at a time**. Do not dump all questions at once.
+**CRITICAL RULE: Ask exactly ONE question per turn.** Never bundle multiple questions in a single message. Wait for the user's answer before asking the next question. This applies to every tier (Quick, Standard, Full) and every group below — even when a group lists several fields, ask about them one at a time. If a group has optional fields, ask about each individually so the user can say "none" or "skip" to just that one item.
+
+Groups in this document describe **topics**, not single prompts. Within each group, walk through the fields sequentially, one question per message.
 
 ### Setup Tiers
 
-Before diving into groups, ask: **"How much do you want to customize? Pick a setup level:"**
+Before diving into groups, ask: **"How much do you want to customize? Pick a number:"**
 
-| Tier | Questions | Time | Best For |
-|------|-----------|------|----------|
-| **Quick** | 3 questions | ~1 min | Tracking many topics, or just want to start fast |
-| **Standard** | ~6 questions | ~3 min | Most users — covers the essentials, agent suggests the rest |
-| **Full** | All groups | ~10 min | Dedicated product owners who want fine-tuned control |
+| # | Tier | Questions | Time | Best For |
+|---|------|-----------|------|----------|
+| 1 | **Quick** | 3 questions | ~1 min | Just want to start fast — agent fills in the rest |
+| 2 | **Standard** | ~6 questions | ~3 min | Most users — covers the essentials, agent suggests the rest |
+| 3 | **Full** | All groups | ~10 min | Want fine-tuned control over every setting |
 
-If the user doesn't express a preference, default to **standard setup**.
+Accept a number (1/2/3), a name ("quick"/"standard"/"full"), or a natural description. If the user doesn't express a preference, default to **standard**.
 
 #### Quick Setup Flow
 
-If the user chooses quick setup:
+If the user chooses quick setup, ask these three questions **one at a time** (wait for each answer before asking the next). Keep wording short and friendly — no long tables or paragraphs of setup text between questions.
 
-1. Ask: **"What product, technology, or project are you tracking?"** (e.g., "Azure Cosmos DB", "Python", "Ollama", "Copilot CLI")
-2. Ask: **"What's your role?"** Show the role table from Group 1 — or accept a natural language description (see "Natural Language Role Mapping" below).
-3. Ask: **"Which networks should I scan? Say 'all' for everything, or pick specific ones."** Show the network table from Group 4.
+1. **Turn 1:** "What product, technology, or project are you tracking?" (e.g., "Azure Cosmos DB", "Python", "Ollama", "Copilot CLI")
+2. **Turn 2:** "What's your role? Pick a number, or just describe what you do." Then show the role table from Group 1. Accept a number, a name, or a natural-language description.
+3. **Turn 3:** "Which networks should I scan? Say **all** for everything, or pick numbers from the list." Then show the network table from Group 4.
 4. Auto-generate everything else using Smart Suggestions (see below):
    - **Search terms** from the product/tech name (full name, common abbreviations, no-space version)
    - **Hashtags** from the name (#ProductName)
@@ -43,18 +45,18 @@ If the user chooses quick setup:
 
 #### Standard Setup Flow
 
-Standard setup covers the essentials and uses Smart Suggestions for the rest. The agent proactively recommends values based on the product — the user confirms, tweaks, or skips.
+Standard setup covers the essentials and uses Smart Suggestions for the rest. The agent proactively recommends values based on the product — the user confirms, tweaks, or skips. **Ask one question per turn.** Do not bundle "name + type + slug" into a single prompt; ask each separately.
 
-1. **Role** — Group 1 (accept natural language or role table selection)
-2. **Product identity** — Group 2 (name, type, slug). Then show Smart Suggestions for search terms, hashtags, and topic tags. User confirms or tweaks.
-3. **Exclusions** — Group 3, but streamlined: "I found these official channels for {product}. Should I exclude them?" Show suggestions. User confirms, adds, or says "none."
-4. **Networks** — Group 4. Show the source table, default to "all". Collect API keys for selected auth sources.
-5. **Social posts** — If the role has social posts enabled, ask: "Want to configure your brand and post standards now, or use defaults?" If "defaults", auto-generate. If "configure", walk through Group 6.
-6. **Review** — Show a summary of the complete config with all Smart Suggestions applied. Ask: "Anything you want to change or add? (competitors, conferences, known authors, content filters, or anything else)" Handle adjustments, then save.
+1. **Role** — Group 1 (one question: pick a role by number/name, or describe it)
+2. **Product identity** — Group 2 fields asked one at a time: (a) full name, (b) type, (c) slug. Then present combined Smart Suggestions for search terms, hashtags, and topic tags as a **single confirm/edit** step.
+3. **Exclusions** — Group 3, streamlined into a single confirm step: "I found these official channels for {product}. Should I exclude them?" Show suggestions. User confirms, adds, or says "none."
+4. **Networks** — Group 4. Show the source table, default to "all". Then, if any selected source requires a key, ask about each key one at a time.
+5. **Social posts** — If the role has social posts enabled, ask once: "Want to configure your brand and post standards now, or use defaults?" If "defaults", auto-generate. If "configure", walk through Group 6 one question at a time.
+6. **Review** — Show a summary of the complete config with all Smart Suggestions applied. Ask one question: "Anything you want to change or add?" Handle adjustments, then save.
 
 #### Full Setup Flow
 
-Walk through all groups (0-12) for maximum customization, as documented in the group sections below. Smart Suggestions are still shown at each step — the user can accept or override them.
+Walk through all groups (0-12) for maximum customization, as documented in the group sections below. Within each group, ask about each field **one at a time** — never bundle multiple fields into one message. Smart Suggestions are still shown at each step — the user can accept or override them.
 
 ---
 
@@ -263,20 +265,22 @@ This is the moment where the user can say things like:
 If the user describes additional needs, turn on the relevant features and explain what was added. If they want changes, show the feature toggle table and let them flip individual settings. Any feature can be added or removed regardless of role.
 
 ### Group 2 — Product Identity
-- What is the **full name** of the product, technology, project, or tool you want to track? (e.g., "Azure Cosmos DB", "Python", "Ollama", "GitHub Copilot CLI")
-- What **type** is this? (product, technology/language, open-source project, tool/CLI) — this shapes report sections and search strategy.
-- What is a **short slug** for file naming? (e.g., "cosmos-db", "python", "ollama", "copilot-cli")
-- What **text search terms** should we use? List all name variations, abbreviations, and related terms. (e.g., "Azure Cosmos DB", "CosmosDB", "Cosmos DB")
-- What **hashtags** are used on social media? (e.g., #CosmosDB, #AzureCosmosDB, #Python, #OllamaAI)
+Ask these fields **one at a time**, waiting for each answer:
+1. What is the **full name** of the product, technology, project, or tool you want to track? (e.g., "Azure Cosmos DB", "Python", "Ollama", "GitHub Copilot CLI")
+2. What **type** is this? Pick a number: **1** product, **2** technology/language, **3** open-source project, **4** tool/CLI — this shapes report sections and search strategy.
+3. What is a **short slug** for file naming? (e.g., "cosmos-db", "python", "ollama", "copilot-cli") — offer a suggestion derived from the name; user confirms or edits.
+4. What **text search terms** should we use? (Offer Smart Suggestions as one prompt; user says "yes" or edits.)
+5. What **hashtags** are used on social media? (Offer Smart Suggestions as one prompt; user says "yes" or edits.)
 
 ### Group 3 — Exclusions (optional)
-We need to exclude your team's own content so we only find community/external content. **Say "none" to skip any of these.**
-- What is the **official blog URL** or blog tag page? *(optional — say "none")*
-- What is the **official YouTube channel** name or URL? *(optional — say "none")*
-- What are the **official social handles**? (LinkedIn, X/Twitter, Bluesky) *(optional — say "none")*
-- Any **GitHub orgs or repos** to exclude? (e.g., "Azure/azure-cosmos-dotnet-v3" — these are team-owned) *(optional — say "none")*
-- Any **other domains or authors** to exclude? *(optional — say "none")*
-- Are there specific **product team members** whose content should be tracked separately? Their content on any platform will appear in a "Team Member Mentions" section for awareness rather than as numbered community items. Provide names and optionally handles/roles. *(optional — say "none")*
+We need to exclude your team's own content so we only find community/external content. **Ask each item one at a time. User can say "none" or "skip" to any individual item.**
+
+1. **Official blog URL** or blog tag page? *(say "none" to skip)*
+2. **Official YouTube channel** name or URL? *(say "none" to skip)*
+3. **Official social handles** — ask each platform separately: LinkedIn? X/Twitter? Bluesky? *(say "none" per platform)*
+4. Any **GitHub orgs or repos** to exclude? (e.g., "Azure/azure-cosmos-dotnet-v3") *(say "none" to skip)*
+5. Any **other domains or authors** to exclude? *(say "none" to skip)*
+6. Any specific **product team members** whose content should be tracked separately in a "Team Member Mentions" section? Provide names and optionally handles/roles. *(say "none" to skip)*
 
 ### Group 4 — Networks to Scan
 Present the full source list and ask: **"Select all, or pick the ones you want."**
@@ -326,9 +330,9 @@ For each custom source, collect: **name**, **URL or search pattern**, and **type
 If none of the selected sources require keys, skip the key prompts entirely and tell the user: "All your selected sources work without API keys — no setup needed."
 
 ### Group 5 — People to Watch (optional)
-Say "none" to skip this group entirely.
-- Any **known external authors** whose content should always be included? (MVP bloggers, community champions — they bypass relevancy filter) *(optional — say "none")*
-- Any **influencers to monitor**? (high-signal accounts whose mentions are important) *(optional — say "none")*
+Say "none" to skip this group entirely. Otherwise ask each item **one at a time**:
+1. Any **known external authors** whose content should always be included? (MVP bloggers, community champions — they bypass relevancy filter) *(say "none" to skip)*
+2. Any **influencers to monitor**? (high-signal accounts whose mentions are important) *(say "none" to skip)*
 
 ### Group 6 — Social Post Configuration
 **Skip this group if the role has social posts off and the user didn't request them.**
@@ -435,15 +439,16 @@ If CFP tracking is enabled for this role, also ask:
 Store the conference categories, must-check conferences, and event region preferences in the config under `## Conferences & Events`.
 
 ### Group 11 — Posting Preferences (optional)
-**Skip this group if the role has posting calendar off and social posts are disabled.**
-- What is your **target posting frequency**? (e.g., "3-5 posts per week", "daily", "when we have content")
-- Any **days or times to avoid**? (e.g., "no posts on Fridays", "avoid holiday weeks")
-- Do you need an **approval workflow**? (e.g., "posts go to a review doc before publishing")
-- Any **team members** who should be tagged or mentioned in posts?
+**Skip this group if the role has posting calendar off and social posts are disabled.** Otherwise ask each item **one at a time**:
+1. What is your **target posting frequency**? (e.g., "3-5 posts per week", "daily", "when we have content")
+2. Any **days or times to avoid**? (e.g., "no posts on Fridays", "avoid holiday weeks") *(say "none" to skip)*
+3. Do you need an **approval workflow**? (e.g., "posts go to a review doc before publishing") *(say "none" to skip)*
+4. Any **team members** who should be tagged or mentioned in posts? *(say "none" to skip)*
 
 ### Group 12 — Language & Region (optional)
-- **Language**: English only, or also track content in other languages? (e.g., Japanese, Portuguese, Spanish)
-- **Region focus**: Global, or prioritize specific regions? (This affects which blog platforms and communities to emphasize.)
+Ask each item **one at a time**:
+1. **Language**: English only, or also track content in other languages? (e.g., Japanese, Portuguese, Spanish)
+2. **Region focus**: Global, or prioritize specific regions? (This affects which blog platforms and communities to emphasize.)
 
 ## Config File Generation
 

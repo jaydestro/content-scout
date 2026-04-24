@@ -1,0 +1,11 @@
+{
+  "chat.promptFiles": true,
+  "chat.promptFilesLocations": {
+    ".github/prompts": true
+  },
+  "chat.agent.enabled": true,
+  "chat.modeFilesLocations": {
+    ".github/agents": true,
+    ".github/chatmodes": true
+  }
+}
