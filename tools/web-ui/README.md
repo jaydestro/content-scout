@@ -10,7 +10,7 @@ A local dashboard for Content Scout. Run it alongside your editor to browse conf
 - **Reports** — browse and render every file in `reports/`
 - **Social posts** — browse and render every file in `social-posts/`
 
-New configs are still created by running `/scout-onboard` in your editor (VS Code Copilot Chat, Claude Code, Cursor, etc.) or the standalone CLI at [`tools/onboard-cli`](../onboard-cli/) — the web UI picks them up as soon as they're saved.
+New configs are still created by running `/scout-onboard` in your editor (VS Code Copilot Chat, Claude Code, Cursor, etc.) — the web UI picks them up as soon as they're saved.
 
 ## Install & start
 
@@ -29,7 +29,7 @@ Change the port with `PORT=5000 npm start`.
 If you have no configs yet, the UI opens on the **Setup** view automatically. From there:
 
 1. **Pick an agent** — choose the AI CLI that should execute Scout commands: Claude Code, GitHub Copilot CLI, OpenAI Codex, a custom command, or *None* (copy prompts manually). Your choice is saved to `tools/web-ui/.scout-web-settings.json` (gitignored).
-2. **Create a config** — either run the onboarding wizard inside your editor's chat panel, use the standalone CLI at `tools/onboard-cli`, or click **Run /scout-onboard now** once you've picked an agent.
+2. **Create a config** — either run the onboarding wizard inside your editor's chat panel, or click **Run /scout-onboard now** once you've picked an agent.
 3. **Add API keys** — optional. Copy `.env.example` to `.env` at the repo root and fill in the sources you want.
 
 ## Agent presets
