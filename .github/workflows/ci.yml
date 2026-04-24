@@ -2,9 +2,17 @@ name: CI
 
 on:
   push:
-    branches: ['**']
+    branches: [main]
+    paths:
+      - '.github/agents/**'
+      - '.github/prompts/**'
+      - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
+    paths:
+      - '.github/agents/**'
+      - '.github/prompts/**'
+      - '.github/workflows/ci.yml'
   workflow_dispatch:
 
 jobs:
