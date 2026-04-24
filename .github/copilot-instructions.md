@@ -25,10 +25,10 @@ Read the corresponding prompt file for each command's detailed flow. Ignore VS C
 
 ## Output Locations
 
-- Reports: `reports/{YYYY-MM}-{slug}-content.md`
-- Social posts: `social-posts/{YYYY-MM}-{slug}-social-posts.md`
-- Calendars: `social-posts/{YYYY-MM}-{slug}-posting-calendar.md`
-- Trends: `reports/{YYYY-MM}-{slug}-trends.md`
+- Reports: `reports/{YYYY-MM-DD-HHmm}-{slug}-content.md`
+- Social posts: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-social-posts.md`
+- Calendars: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-posting-calendar.md`
+- Trends: `reports/{YYYY-MM-DD-HHmm}-{slug}-trends.md`
 - Dedup: `reports/.seen-links.json`
 
 ## Key Rules

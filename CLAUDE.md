@@ -40,11 +40,11 @@ When reading prompt files, the `${{input:...}}` placeholders are VS Code syntax.
 
 ## Output Locations
 
-- Reports: `reports/{YYYY-MM}-{slug}-content.md`
-- Social posts: `social-posts/{YYYY-MM}-{slug}-social-posts.md`
-- Posting calendars: `social-posts/{YYYY-MM}-{slug}-posting-calendar.md`
-- Trends: `reports/{YYYY-MM}-{slug}-trends.md`
-- Thumbnails: `social-posts/images/{YYYY-MM}/`
+- Reports: `reports/{YYYY-MM-DD-HHmm}-{slug}-content.md`
+- Social posts: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-social-posts.md`
+- Posting calendars: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-posting-calendar.md`
+- Trends: `reports/{YYYY-MM-DD-HHmm}-{slug}-trends.md`
+- Thumbnails: `social-posts/images/{YYYY-MM-DD-HHmm}/`
 - Dedup tracker: `reports/.seen-links.json`
 
 ## Key Rules

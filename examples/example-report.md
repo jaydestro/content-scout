@@ -25,53 +25,64 @@
 - **Topics trending down:** `monitoring` (0 items, was 2 last month)
 - **Conversation volume:** 4 (-1)
 
-## Official Announcements & Updates
+## Official Content
+<!-- First-party / Microsoft-made content from official channels and team members. -->
+
+### Official Announcements & Updates
 | # | Date | Title | Source | Tags | EP | Link | Posts |
 |---|------|-------|--------|------|----|------|-------|
 | 1 | 2026-03-27 | Azure Cosmos DB adds priority-based throttling for NoSQL | Azure Updates | `performance`, `throttling` | 4 | https://azure.microsoft.com/updates/cosmos-db-priority-throttling | [posts](../social-posts/2026-03-social-posts.md#1--priority-based-throttling-for-nosql-announcement) |
 | 2 | 2026-03-14 | Azure Cosmos DB for MongoDB vCore -- vector search GA | Azure Updates | `ai`, `vector-search`, `mongodb` | 5 | https://azure.microsoft.com/updates/cosmos-db-mongodb-vector-ga | [posts](../social-posts/2026-03-social-posts.md#2) |
 
-## Blog Posts & Articles
+### Official Blog Posts & Product Site
 | # | Date | Title | Author | Source | Tags | EP | Link | Posts |
 |---|------|-------|--------|--------|------|----|------|-------|
-| 3 | 2026-03-28 | Building a RAG pipeline with Azure Cosmos DB and Semantic Kernel | Justine Park | Dev.to | `ai`, `integrations`, `sdk` | 5 | https://dev.to/justinepark/rag-pipeline-cosmos-db-semantic-kernel | [posts](../social-posts/2026-03-social-posts.md#3--rag-pipeline-with-cosmos-db-and-semantic-kernel-blog-post) |
-| 4 | 2026-03-22 | Partition key design patterns for multi-tenant SaaS | Riccardo Muti | Medium | `data-modeling`, `best-practices`, `performance` | 4 | https://medium.com/@rmuti/partition-key-patterns-saas-cosmos | [posts](../social-posts/2026-03-social-posts.md#4) |
-| 5 | 2026-03-17 | Migrating from DynamoDB to Azure Cosmos DB -- lessons from production | Sarah Chen | Microsoft Tech Community | `migration`, `performance` | 4 | https://techcommunity.microsoft.com/blog/cosmos-dynamodb-migration | [posts](../social-posts/2026-03-social-posts.md#5) |
-| 6 | 2026-03-10 | Change feed processors at scale -- 500K events/sec | Mark Russinovich | Hashnode | `performance`, `change-feed`, `integrations` | 3 | https://hashnode.com/post/change-feed-500k-events | [posts](../social-posts/2026-03-social-posts.md#6) |
-| 7 | 2026-03-05 | Cost optimization strategies for serverless Cosmos DB | Ana Marques | C# Corner | `cost-optimization`, `serverless` | 3 | https://www.c-sharpcorner.com/article/cosmos-serverless-cost-tips | [posts](../social-posts/2026-03-social-posts.md#7) |
+| 3 | 2026-03-17 | Migrating from DynamoDB to Azure Cosmos DB -- lessons from production | Sarah Chen (Microsoft) | Microsoft Tech Community | `migration`, `performance` | 4 | https://techcommunity.microsoft.com/blog/cosmos-dynamodb-migration | [posts](../social-posts/2026-03-social-posts.md#3) |
 
-## Videos & Presentations
+### Official Videos & Presentations
 | # | Date | Title | Channel | Tags | EP | Link | Posts |
 |---|------|-------|---------|------|----|------|-------|
-| 8 | 2026-03-25 | Vector search in Azure Cosmos DB -- live coding session | Tim Corey | `ai`, `vector-search`, `getting-started` | 5 | https://youtube.com/watch?v=abc123example | [posts](../social-posts/2026-03-social-posts.md#8) |
-| 9 | 2026-03-18 | Azure Cosmos DB hierarchical partition keys deep dive | Azure Cosmos DB | `data-modeling`, `performance` | 4 | https://youtube.com/watch?v=def456example | [posts](../social-posts/2026-03-social-posts.md#9) |
-| 10 | 2026-03-08 | Building event-driven microservices with Cosmos DB change feed | Nick Chapsas | `integrations`, `change-feed`, `best-practices` | 4 | https://youtube.com/watch?v=ghi789example | [posts](../social-posts/2026-03-social-posts.md#10) |
+| 4 | 2026-03-18 | Azure Cosmos DB hierarchical partition keys deep dive | Azure Cosmos DB (official) | `data-modeling`, `performance` | 4 | https://youtube.com/watch?v=def456example | [posts](../social-posts/2026-03-social-posts.md#4) |
 
-## SDK Releases & GitHub Activity
-| # | Date | Item | Repo/Source | Tags | EP | Link | Posts |
-|---|------|------|-------------|------|----|------|-------|
-| 11 | 2026-03-26 | cosmos-ai-graph -- Knowledge graph RAG app using Cosmos DB + OpenAI | community/cosmos-ai-graph (Python, azure-cosmos 4.x) | `ai`, `integrations`, `sdk` | 5 | https://github.com/example/cosmos-ai-graph | [posts](../social-posts/2026-03-social-posts.md#11) |
-| 12 | 2026-03-15 | cosmosdb-bulk-toolkit -- High-throughput bulk import library for .NET | community/cosmosdb-bulk-toolkit (C#, Microsoft.Azure.Cosmos 3.x) | `sdk`, `performance` | 4 | https://github.com/example/cosmosdb-bulk-toolkit | [posts](../social-posts/2026-03-social-posts.md#12) |
-| 13 | 2026-03-04 | terraform-cosmos-multiregion -- Terraform module for multi-region Cosmos DB | community/terraform-cosmos-multiregion (HCL) | `best-practices`, `monitoring` | 3 | https://github.com/example/terraform-cosmos-multiregion | [posts](../social-posts/2026-03-social-posts.md#13) |
-
-## Documentation Updates
+### Documentation Updates
 | # | Date | Title | Type | Tags | EP | Link | Posts |
 |---|------|-------|------|------|----|------|-------|
-| 14 | 2026-03-20 | How to use integrated vector search in Azure Cosmos DB for NoSQL | New page | `ai`, `vector-search` | 5 | https://learn.microsoft.com/azure/cosmos-db/nosql/vector-search | [posts](../social-posts/2026-03-social-posts.md#14) |
-| 15 | 2026-03-12 | Best practices for Azure Cosmos DB serverless | Updated | `serverless`, `cost-optimization`, `best-practices` | 4 | https://learn.microsoft.com/azure/cosmos-db/serverless-best-practices | [posts](../social-posts/2026-03-social-posts.md#15) |
+| 5 | 2026-03-20 | How to use integrated vector search in Azure Cosmos DB for NoSQL | New page | `ai`, `vector-search` | 5 | https://learn.microsoft.com/azure/cosmos-db/nosql/vector-search | [posts](../social-posts/2026-03-social-posts.md#5) |
+| 6 | 2026-03-12 | Best practices for Azure Cosmos DB serverless | Updated | `serverless`, `cost-optimization`, `best-practices` | 4 | https://learn.microsoft.com/azure/cosmos-db/serverless-best-practices | [posts](../social-posts/2026-03-social-posts.md#6) |
+
+### Official SDK & Repo Activity
+<!-- No notable releases from Azure/* official repos this month. -->
 
 ## Community Content
+<!-- Third-party content from outside the official channels and team. -->
+
+### Community Blog Posts & Articles
 | # | Date | Title | Author | Source | Tags | EP | Link | Posts |
 |---|------|-------|--------|--------|------|----|------|-------|
-| 16 | 2026-03-24 | How I reduced my Cosmos DB bill by 60% with hierarchical partitions | @devops_diana | Bluesky | `cost-optimization`, `data-modeling` | 4 | https://bsky.app/profile/devops-diana/post/example | [posts](../social-posts/2026-03-social-posts.md#16) |
-| 17 | 2026-03-19 | Talk: Cosmos DB in regulated industries -- compliance patterns | Priya Sharma | InfoQ | `security`, `best-practices` | 5 | https://www.infoq.com/presentations/cosmos-db-compliance-2026 | [posts](../social-posts/2026-03-social-posts.md#17) |
-| 18 | 2026-03-03 | Workshop repo: Hands-on Cosmos DB for Java developers | Martin Lopez (MVP) | freeCodeCamp | `getting-started`, `sdk` | 5 | https://www.freecodecamp.org/news/cosmos-db-java-workshop | [posts](../social-posts/2026-03-social-posts.md#18) |
+| 7 | 2026-03-28 | Building a RAG pipeline with Azure Cosmos DB and Semantic Kernel | Justine Park | Dev.to | `ai`, `integrations`, `sdk` | 5 | https://dev.to/justinepark/rag-pipeline-cosmos-db-semantic-kernel | [posts](../social-posts/2026-03-social-posts.md#7--rag-pipeline-with-cosmos-db-and-semantic-kernel-blog-post) |
+| 8 | 2026-03-22 | Partition key design patterns for multi-tenant SaaS | Riccardo Muti | Medium | `data-modeling`, `best-practices`, `performance` | 4 | https://medium.com/@rmuti/partition-key-patterns-saas-cosmos | [posts](../social-posts/2026-03-social-posts.md#8) |
+| 9 | 2026-03-10 | Change feed processors at scale -- 500K events/sec | Mark Russinovich | Hashnode | `performance`, `change-feed`, `integrations` | 3 | https://hashnode.com/post/change-feed-500k-events | [posts](../social-posts/2026-03-social-posts.md#9) |
+| 10 | 2026-03-05 | Cost optimization strategies for serverless Cosmos DB | Ana Marques | C# Corner | `cost-optimization`, `serverless` | 3 | https://www.c-sharpcorner.com/article/cosmos-serverless-cost-tips | [posts](../social-posts/2026-03-social-posts.md#10) |
+| 11 | 2026-03-19 | Talk: Cosmos DB in regulated industries -- compliance patterns | Priya Sharma | InfoQ | `security`, `best-practices` | 5 | https://www.infoq.com/presentations/cosmos-db-compliance-2026 | [posts](../social-posts/2026-03-social-posts.md#11) |
+| 12 | 2026-03-03 | Workshop repo: Hands-on Cosmos DB for Java developers | Martin Lopez (MVP) | freeCodeCamp | `getting-started`, `sdk` | 5 | https://www.freecodecamp.org/news/cosmos-db-java-workshop | [posts](../social-posts/2026-03-social-posts.md#12) |
 
-## Social Media Highlights
-| # | Date | Summary | Platform | Tags | Link | Posts |
-|---|------|---------|----------|------|------|-------|
+### Community Videos & Presentations
+| # | Date | Title | Channel | Tags | EP | Link | Posts |
+|---|------|-------|---------|------|----|------|-------|
+| 13 | 2026-03-25 | Vector search in Azure Cosmos DB -- live coding session | Tim Corey | `ai`, `vector-search`, `getting-started` | 5 | https://youtube.com/watch?v=abc123example | [posts](../social-posts/2026-03-social-posts.md#13) |
+| 14 | 2026-03-08 | Building event-driven microservices with Cosmos DB change feed | Nick Chapsas | `integrations`, `change-feed`, `best-practices` | 4 | https://youtube.com/watch?v=ghi789example | [posts](../social-posts/2026-03-social-posts.md#14) |
 
-(No standalone social highlights this month -- all social mentions tied to content above.)
+### Community Projects & GitHub Activity
+| # | Date | Item | Repo/Source | Tags | EP | Link | Posts |
+|---|------|------|-------------|------|----|------|-------|
+| 15 | 2026-03-26 | cosmos-ai-graph -- Knowledge graph RAG app using Cosmos DB + OpenAI | community/cosmos-ai-graph (Python, azure-cosmos 4.x) | `ai`, `integrations`, `sdk` | 5 | https://github.com/example/cosmos-ai-graph | [posts](../social-posts/2026-03-social-posts.md#15) |
+| 16 | 2026-03-15 | cosmosdb-bulk-toolkit -- High-throughput bulk import library for .NET | community/cosmosdb-bulk-toolkit (C#, Microsoft.Azure.Cosmos 3.x) | `sdk`, `performance` | 4 | https://github.com/example/cosmosdb-bulk-toolkit | [posts](../social-posts/2026-03-social-posts.md#16) |
+| 17 | 2026-03-04 | terraform-cosmos-multiregion -- Terraform module for multi-region Cosmos DB | community/terraform-cosmos-multiregion (HCL) | `best-practices`, `monitoring` | 3 | https://github.com/example/terraform-cosmos-multiregion | [posts](../social-posts/2026-03-social-posts.md#17) |
+
+### Social Media Highlights
+| # | Date | Summary | Platform | Tags | EP | Link | Posts |
+|---|------|---------|----------|------|----|------|-------|
+| 18 | 2026-03-24 | How I reduced my Cosmos DB bill by 60% with hierarchical partitions | Bluesky (@devops_diana) | `cost-optimization`, `data-modeling` | 4 | https://bsky.app/profile/devops-diana/post/example | [posts](../social-posts/2026-03-social-posts.md#18) |
 
 ## Rising Contributors
 <!-- Enabled for Developer Advocate role -->
