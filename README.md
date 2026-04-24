@@ -92,6 +92,24 @@ gh copilot
 
 Your config saves to `.github/prompts/scout-config-{slug}.prompt.md` (gitignored). API keys are stored in `.env` (also gitignored) — see `.env.example` for the template. See the [workflow guide](docs/WORKFLOW.md) for the full onboarding walkthrough.
 
+### Web UI (browser dashboard)
+
+Prefer a browser? Run the local dashboard at [`tools/web-ui`](tools/web-ui/) to browse configs, edit feature toggles, view reports, and launch scans from a web page:
+
+```
+cd tools/web-ui
+npm install
+npm start
+```
+
+Open <http://localhost:4477>. By default the **Start run** button is disabled and the UI just shows the prompt to copy into your editor's chat. To actually execute runs, point the UI at an AI CLI:
+
+```powershell
+$env:SCOUT_RUNNER = 'claude -p "{prompt}"'; npm start
+```
+
+See [tools/web-ui/README.md](tools/web-ui/README.md) for details.
+
 ### Troubleshooting (VS Code)
 
 If `/scout-onboard` doesn't appear when you type `/` in Copilot Chat:
