@@ -448,14 +448,61 @@ $('config-save').addEventListener('click', async () => {
 async function loadSlugOptions() {
   const { configs } = await api('/api/configs');
   const sel = $('run-slug');
-  sel.innerHTML = '<option value="">— none —</option>' +
+  sel.innerHTML = '<option value="">— all —</option>' +
     configs.map((c) => `<option value="${c.slug}">${c.slug}</option>`).join('');
+
+  // Render subject cards (radio buttons). Keep the hidden <select> in sync.
+  const list = $('run-subject-list');
+  if (list) {
+    const currentVal = sel.value;
+    const cardsHtml =
+      `<label class="subject-card">
+         <input type="radio" name="run-slug-choice" value="" ${!currentVal ? 'checked' : ''} />
+         <span class="subject-name">All subjects</span>
+         <span class="subject-desc">Run against every config${configs.length ? ` (${configs.length})` : ''}</span>
+       </label>` +
+      configs.map((c) => `
+        <label class="subject-card">
+          <input type="radio" name="run-slug-choice" value="${c.slug}" ${currentVal === c.slug ? 'checked' : ''} />
+          <span class="subject-name">${c.name || c.slug}</span>
+          <span class="subject-desc">${c.type || 'subject'} · <code>${c.slug}</code></span>
+        </label>`).join('');
+    list.innerHTML = cardsHtml;
+    list.querySelectorAll('input[name="run-slug-choice"]').forEach((el) => {
+      el.addEventListener('change', () => {
+        if (el.checked) {
+          sel.value = el.value;
+          updateRunPreview();
+        }
+      });
+    });
+    // Hint text — nudge user if they have no configs yet.
+    const hint = $('run-subject-hint');
+    if (hint) {
+      hint.innerHTML = configs.length
+        ? 'Pick one to scan a single subject, or choose <strong>All subjects</strong>.'
+        : 'No configs yet — run <code>/scout-onboard</code> first to create one.';
+    }
+  }
+  updateRunPreview();
 }
+
+function updateRunPreview() {
+  const el = $('run-preview');
+  if (el) el.textContent = buildPrompt();
+}
+
 $('run-command').addEventListener('change', (e) => {
   const custom = e.target.value === 'custom';
   $('run-prompt-wrap').hidden = !custom;
   $('run-extra-wrap').hidden = custom;
+  const subjectWrap = $('run-subject-wrap');
+  if (subjectWrap) subjectWrap.hidden = custom;
+  updateRunPreview();
 });
+$('run-extra').addEventListener('input', updateRunPreview);
+const runPromptEl = $('run-prompt');
+if (runPromptEl) runPromptEl.addEventListener('input', updateRunPreview);
 $('run-copy').addEventListener('click', async () => {
   const prompt = buildPrompt();
   await navigator.clipboard.writeText(prompt);
@@ -468,7 +515,13 @@ function buildPrompt() {
   if (cmd === 'custom') return $('run-prompt').value.trim();
   const slug = $('run-slug').value;
   const extra = $('run-extra').value.trim();
-  return [`/${cmd}`, slug, extra].filter(Boolean).join(' ');
+  // If user picked "All subjects" and there's more than one config, pass "all"
+  // explicitly so the agent doesn't interactively prompt.
+  const configCount = $('run-subject-list')
+    ? $('run-subject-list').querySelectorAll('input[name="run-slug-choice"]').length - 1
+    : 0;
+  const target = slug || (configCount > 1 ? 'all' : '');
+  return [`/${cmd}`, target, extra].filter(Boolean).join(' ');
 }
 
 async function startRun() {
