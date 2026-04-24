@@ -74,10 +74,15 @@ node bin/onboard.js</pre>
         <div class="card">
           <h3>3. Add API keys (optional but recommended)</h3>
           <p class="hint">
-            Some sources (YouTube, Reddit, Bluesky, X) need API keys in <code>.env</code> at the repo root.
-            Copy <code>.env.example</code> to <code>.env</code> and fill in what you have.
+            Some sources (YouTube, Reddit, Bluesky, X) need API keys. Values are saved to <code>.env</code> at the repo root.
+            Leave any you don't have blank — those sources are skipped during a scan.
           </p>
           <div id="setup-env"></div>
+          <div class="toolbar" style="margin-top:0.75rem">
+            <button id="env-save">Save API keys</button>
+            <button id="env-add" class="secondary" type="button">+ Add custom key</button>
+            <span id="env-status" class="hint"></span>
+          </div>
         </div>
       </section>
 

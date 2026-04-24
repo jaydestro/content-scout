@@ -93,10 +93,65 @@ async function loadSetup() {
   $('setup-run-onboard').disabled = !status.runnerConfigured;
   $('setup-run-onboard').title = status.runnerConfigured ? '' : 'Pick an agent above first.';
 
-  // Section 3: env keys
-  $('setup-env').innerHTML = status.env.keys.length
-    ? status.env.keys.map((k) => `<div><code>${escape(k.key)}</code> ${k.hasValue ? '✓ set' : '<span class="hint">(empty)</span>'}</div>`).join('')
-    : '<div class="hint">No <code>.env</code> found. Copy <code>.env.example</code> to <code>.env</code> and edit.</div>';
+  // Section 3: env keys — editable
+  await renderEnvEditor();
+}
+
+async function renderEnvEditor() {
+  try {
+    const { entries, exists } = await api('/api/env');
+    const rows = entries.length
+      ? entries
+      : [
+          { key: 'YOUTUBE_API_KEY', value: '' },
+          { key: 'REDDIT_CLIENT_ID', value: '' },
+          { key: 'REDDIT_CLIENT_SECRET', value: '' },
+          { key: 'BLUESKY_HANDLE', value: '' },
+          { key: 'BLUESKY_APP_PASSWORD', value: '' },
+          { key: 'X_BEARER_TOKEN', value: '' },
+        ];
+    $('setup-env').innerHTML = `
+      <div class="env-grid">
+        ${rows.map((e, i) => envRow(e.key, e.value, i, true)).join('')}
+      </div>
+      ${exists ? '' : '<div class="hint" style="margin-top:0.5rem">No <code>.env</code> file yet — saving will create one.</div>'}
+    `;
+    wireEnvRows();
+  } catch (err) {
+    $('setup-env').innerHTML = `<div class="warn-text">Failed to load env: ${escape(err.message)}</div>`;
+  }
+}
+
+function envRow(key, value, i, keyReadonly) {
+  return `
+    <div class="env-row" data-row="${i}">
+      <input class="env-key" type="text" value="${escape(key)}" ${keyReadonly ? 'readonly' : ''} placeholder="KEY_NAME" />
+      <input class="env-value" type="password" value="${escape(value)}" placeholder="(empty — skip this source)" autocomplete="off" />
+      <button type="button" class="secondary env-toggle" title="Show/hide">👁</button>
+      <button type="button" class="secondary env-remove" title="Remove" ${keyReadonly ? 'hidden' : ''}>✕</button>
+    </div>
+  `;
+}
+
+function wireEnvRows() {
+  document.querySelectorAll('.env-toggle').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const input = btn.parentElement.querySelector('.env-value');
+      input.type = input.type === 'password' ? 'text' : 'password';
+    });
+  });
+  document.querySelectorAll('.env-remove').forEach((btn) => {
+    btn.addEventListener('click', () => btn.parentElement.remove());
+  });
+}
+
+function collectEnvEntries() {
+  return [...document.querySelectorAll('#setup-env .env-row')]
+    .map((row) => ({
+      key: row.querySelector('.env-key').value.trim(),
+      value: row.querySelector('.env-value').value,
+    }))
+    .filter((e) => e.key.length > 0);
 }
 
 $('agent-save').addEventListener('click', async () => {
@@ -129,6 +184,37 @@ $('setup-run-onboard').addEventListener('click', async () => {
   gotoView('run');
   $('run-command').value = 'scout-onboard';
   $('run-command').dispatchEvent(new Event('change'));
+});
+
+$('env-add').addEventListener('click', () => {
+  const grid = document.querySelector('#setup-env .env-grid') || $('setup-env');
+  if (!grid.classList.contains('env-grid')) {
+    $('setup-env').innerHTML = '<div class="env-grid"></div>';
+  }
+  const container = document.querySelector('#setup-env .env-grid');
+  const idx = container.children.length;
+  container.insertAdjacentHTML('beforeend', envRow('', '', idx, false));
+  wireEnvRows();
+  container.lastElementChild.querySelector('.env-key').focus();
+});
+
+$('env-save').addEventListener('click', async () => {
+  const entries = collectEnvEntries();
+  $('env-save').disabled = true;
+  $('env-status').textContent = 'saving…';
+  try {
+    await api('/api/env', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ entries }),
+    });
+    $('env-status').textContent = `saved ${entries.length} key${entries.length === 1 ? '' : 's'}`;
+    await loadStatus();
+  } catch (err) {
+    $('env-status').textContent = `error: ${err.message}`;
+  } finally {
+    $('env-save').disabled = false;
+  }
 });
 
 // --- Dashboard -----------------------------------------------------

@@ -136,3 +136,14 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .pill.warn { color: #0f1115; background: var(--accent); border-color: var(--accent); }
 .ok { color: var(--accent-2); }
 .warn-text { color: var(--accent); }
+
+.env-grid { display: flex; flex-direction: column; gap: 0.5rem; }
+.env-row {
+  display: grid;
+  grid-template-columns: 14rem 1fr auto auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+.env-row .env-key { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.85rem; }
+.env-row .env-key[readonly] { background: var(--panel-2); color: var(--muted); }
+.env-row button { padding: 0.35rem 0.55rem; }
