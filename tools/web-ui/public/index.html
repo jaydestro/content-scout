@@ -4,20 +4,27 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Content Scout</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <header>
-      <h1>Content Scout</h1>
-      <nav>
-        <button data-view="setup">Setup</button>
-        <button data-view="dashboard" class="active">Dashboard</button>
-        <button data-view="configs">Configs</button>
-        <button data-view="run">Run</button>
-        <button data-view="reports">Reports</button>
-        <button data-view="social">Social posts</button>
-      </nav>
-      <div id="status-pill" class="pill"></div>
+    <header class="site-header">
+      <a class="banner" href="#" data-goto="dashboard" aria-label="Content Scout home">
+        <img src="/assets/content-scout-banner-fancy.svg" alt="Content Scout — Your content hunting dog for the developer ecosystem" />
+      </a>
+      <div class="header-bar">
+        <nav>
+          <button data-view="setup">Setup</button>
+          <button data-view="dashboard" class="active">Dashboard</button>
+          <button data-view="configs">Configs</button>
+          <button data-view="run">Run</button>
+          <button data-view="reports">Reports</button>
+          <button data-view="social">Social posts</button>
+        </nav>
+        <div id="status-pill" class="pill"></div>
+      </div>
     </header>
 
     <main>
