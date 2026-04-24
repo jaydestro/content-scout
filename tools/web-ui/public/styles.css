@@ -59,7 +59,9 @@ html, body {
 .site-header .banner img {
   display: block;
   width: 100%;
-  height: clamp(90px, 14vw, 200px);
+  height: auto;
+  aspect-ratio: 1200 / 400;
+  max-height: 400px;
   margin: 0;
   object-fit: cover;
   object-position: center;
@@ -398,7 +400,7 @@ body[data-tier="standard"] .tier-full { display: none; }
     grid-column: 1;
     justify-self: center;
   }
-  .site-header .banner img { height: clamp(70px, 18vw, 120px); }
+  .site-header .banner img { max-height: 220px; }
   nav { gap: 0.15rem; padding: 0.2rem; }
   nav button { padding: 0.35rem 0.7rem; font-size: 0.82rem; }
 
