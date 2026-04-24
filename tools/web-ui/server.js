@@ -125,9 +125,25 @@ function closeRun(run, status) {
 async function listConfigs() {
   try {
     const files = await fs.readdir(PROMPTS_DIR);
-    return files
-      .filter((f) => f.startsWith('scout-config-') && f.endsWith('.prompt.md') && f !== 'scout-config-example.prompt.md')
-      .map((f) => ({ slug: f.replace(/^scout-config-/, '').replace(/\.prompt\.md$/, ''), file: f }));
+    const entries = files.filter(
+      (f) => f.startsWith('scout-config-') && f.endsWith('.prompt.md') && f !== 'scout-config-example.prompt.md'
+    );
+    const configs = await Promise.all(
+      entries.map(async (f) => {
+        const slug = f.replace(/^scout-config-/, '').replace(/\.prompt\.md$/, '');
+        let name = '';
+        let type = '';
+        try {
+          const raw = await fs.readFile(path.join(PROMPTS_DIR, f), 'utf8');
+          const nameM = raw.match(/^\s*-\s*\*\*Name:\*\*\s*(.+)$/m);
+          const typeM = raw.match(/^\s*-\s*\*\*Type:\*\*\s*(.+)$/m);
+          if (nameM) name = nameM[1].trim();
+          if (typeM) type = typeM[1].trim();
+        } catch {}
+        return { slug, file: f, name, type };
+      })
+    );
+    return configs;
   } catch {
     return [];
   }
