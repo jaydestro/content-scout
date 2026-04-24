@@ -7,28 +7,129 @@ const api = async (path, opts) => {
 };
 
 // --- Navigation ----------------------------------------------------
+function gotoView(view) {
+  document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
+  document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${view}`));
+  if (view === 'setup') loadSetup();
+  if (view === 'configs') loadConfigList();
+  if (view === 'reports') loadReports();
+  if (view === 'social') loadSocial();
+  if (view === 'run') loadSlugOptions();
+  if (view === 'dashboard') loadDashboard();
+}
 document.querySelectorAll('nav button').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('nav button').forEach((b) => b.classList.remove('active'));
-    btn.classList.add('active');
-    document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
-    $(`view-${btn.dataset.view}`).classList.add('active');
-    if (btn.dataset.view === 'configs') loadConfigList();
-    if (btn.dataset.view === 'reports') loadReports();
-    if (btn.dataset.view === 'social') loadSocial();
-    if (btn.dataset.view === 'run') loadSlugOptions();
-    if (btn.dataset.view === 'dashboard') loadDashboard();
-  });
+  btn.addEventListener('click', () => gotoView(btn.dataset.view));
+});
+document.addEventListener('click', (e) => {
+  const goto = e.target.closest?.('[data-goto]');
+  if (goto) {
+    e.preventDefault();
+    gotoView(goto.dataset.goto);
+  }
 });
 
 // --- Status pill ---------------------------------------------------
+let cachedStatus = null;
 async function loadStatus() {
   const s = await api('/api/status');
-  const runner = s.runnerConfigured ? 'runner ready' : 'no runner';
-  $('status-pill').textContent = runner;
-  $('status-pill').title = s.runner || 'SCOUT_RUNNER not set — run buttons will show copyable prompt only.';
+  cachedStatus = s;
+  const pill = $('status-pill');
+  if (s.runnerConfigured) {
+    pill.textContent = `agent: ${s.agent || 'custom'}`;
+    pill.title = `Runner: ${s.runner}${s.runnerLocked ? ' (from SCOUT_RUNNER env)' : ''}`;
+    pill.classList.remove('warn');
+  } else {
+    pill.textContent = 'no agent — setup needed';
+    pill.title = 'Open Setup to pick an agent.';
+    pill.classList.add('warn');
+  }
   return s;
 }
+
+// --- Setup ---------------------------------------------------------
+let agentChoice = null;
+async function loadSetup() {
+  const [{ agents }, settings, status] = await Promise.all([
+    api('/api/agents'),
+    api('/api/settings'),
+    api('/api/status'),
+  ]);
+  cachedStatus = status;
+  agentChoice = settings.agent || status.agent || null;
+
+  const locked = status.runnerLocked;
+  $('agent-locked-note').hidden = !locked;
+
+  const options = [...agents, { id: 'custom', label: 'Custom command', runner: settings.agent === 'custom' ? settings.runner : '', note: 'Provide any shell command; use {prompt} as placeholder.' }];
+  $('agent-list').innerHTML = options.map((a) => `
+    <label class="agent-option ${agentChoice === a.id ? 'selected' : ''}">
+      <input type="radio" name="agent" value="${a.id}" ${agentChoice === a.id ? 'checked' : ''} ${locked ? 'disabled' : ''} />
+      <div>
+        <div><strong>${escape(a.label)}</strong></div>
+        ${a.runner ? `<div class="hint"><code>${escape(a.runner)}</code></div>` : ''}
+        ${a.note ? `<div class="hint">${escape(a.note)}</div>` : ''}
+        ${a.install ? `<div class="hint"><a href="${escape(a.install)}" target="_blank" rel="noopener">Install instructions</a></div>` : ''}
+      </div>
+    </label>
+  `).join('');
+
+  document.querySelectorAll('input[name="agent"]').forEach((r) => {
+    r.addEventListener('change', () => {
+      agentChoice = r.value;
+      $('agent-custom-wrap').hidden = r.value !== 'custom';
+      document.querySelectorAll('.agent-option').forEach((lbl) => {
+        lbl.classList.toggle('selected', lbl.querySelector('input').value === r.value);
+      });
+    });
+  });
+  $('agent-custom-wrap').hidden = agentChoice !== 'custom';
+  if (settings.agent === 'custom') $('agent-custom-runner').value = settings.runner || '';
+  $('agent-save').disabled = locked;
+
+  // Section 2 status
+  $('setup-config-status').innerHTML = status.hasConfigs
+    ? `<span class="ok">${status.configCount} config${status.configCount === 1 ? '' : 's'} detected.</span>`
+    : `<span class="warn-text">No configs yet — create one below.</span>`;
+  $('setup-run-onboard').disabled = !status.runnerConfigured;
+  $('setup-run-onboard').title = status.runnerConfigured ? '' : 'Pick an agent above first.';
+
+  // Section 3: env keys
+  $('setup-env').innerHTML = status.env.keys.length
+    ? status.env.keys.map((k) => `<div><code>${escape(k.key)}</code> ${k.hasValue ? '✓ set' : '<span class="hint">(empty)</span>'}</div>`).join('')
+    : '<div class="hint">No <code>.env</code> found. Copy <code>.env.example</code> to <code>.env</code> and edit.</div>';
+}
+
+$('agent-save').addEventListener('click', async () => {
+  if (!agentChoice) {
+    $('agent-status').textContent = 'pick an agent first';
+    return;
+  }
+  const body = { agent: agentChoice };
+  if (agentChoice === 'custom') body.runner = $('agent-custom-runner').value.trim();
+  $('agent-save').disabled = true;
+  $('agent-status').textContent = 'saving…';
+  try {
+    await api('/api/settings', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    $('agent-status').textContent = 'saved';
+    await loadStatus();
+    await loadSetup();
+  } catch (err) {
+    $('agent-status').textContent = `error: ${err.message}`;
+  } finally {
+    $('agent-save').disabled = false;
+  }
+});
+
+$('setup-run-onboard').addEventListener('click', async () => {
+  // Jump to Run view with scout-onboard preselected.
+  gotoView('run');
+  $('run-command').value = 'scout-onboard';
+  $('run-command').dispatchEvent(new Event('change'));
+});
 
 // --- Dashboard -----------------------------------------------------
 async function loadDashboard() {
@@ -38,10 +139,23 @@ async function loadDashboard() {
     api('/api/reports'),
     api('/api/runs'),
   ]);
+  cachedStatus = status;
+
+  $('dash-empty').hidden = status.hasConfigs && status.runnerConfigured;
+  if (!status.runnerConfigured && !status.hasConfigs) {
+    $('dash-empty').querySelector('p').innerHTML =
+      'No agent configured and no configs yet. Open <a href="#" data-goto="setup">Setup</a> to get started.';
+  } else if (!status.runnerConfigured) {
+    $('dash-empty').querySelector('p').innerHTML =
+      'No agent configured. Open <a href="#" data-goto="setup">Setup</a> to pick one so you can run commands.';
+  } else if (!status.hasConfigs) {
+    $('dash-empty').querySelector('p').innerHTML =
+      'No configs yet. Open <a href="#" data-goto="setup">Setup</a> to run <code>/scout-onboard</code> and create one.';
+  }
 
   $('dash-configs').innerHTML = configs.configs.length
-    ? configs.configs.map((c) => `<li><code>${c.slug}</code></li>`).join('')
-    : '<li class="hint">No configs yet — run <code>/scout-onboard</code>.</li>';
+    ? configs.configs.map((c) => `<li><code>${escape(c.slug)}</code></li>`).join('')
+    : '<li class="hint">No configs yet — see <a href="#" data-goto="setup">Setup</a>.</li>';
 
   const recent = reports.reports.slice(0, 5);
   $('dash-reports').innerHTML = recent.length
@@ -222,7 +336,14 @@ function escape(s) {
 }
 
 // --- Boot ----------------------------------------------------------
-loadStatus().then(loadDashboard).catch((err) => {
+loadStatus().then((s) => {
+  // If no agent AND no configs, route to Setup on first load.
+  if (!s.runnerConfigured && !s.hasConfigs) {
+    gotoView('setup');
+  } else {
+    loadDashboard();
+  }
+}).catch((err) => {
   $('status-pill').textContent = 'error';
   console.error(err);
 });

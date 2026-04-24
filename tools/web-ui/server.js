@@ -15,20 +15,74 @@ const REPORTS_DIR = path.join(REPO_ROOT, 'reports');
 const SOCIAL_DIR = path.join(REPO_ROOT, 'social-posts');
 const ENV_FILE = path.join(REPO_ROOT, '.env');
 const ENV_EXAMPLE = path.join(REPO_ROOT, '.env.example');
+const SETTINGS_FILE = path.join(__dirname, '.scout-web-settings.json');
 
 const PORT = Number(process.env.PORT || 4477);
-// How runs are executed. `{prompt}` is substituted with the slash-style command.
-// Set SCOUT_RUNNER="" to disable execution (UI will show copy-to-clipboard only).
-const DEFAULT_RUNNER = 'claude -p "{prompt}"';
-const SCOUT_RUNNER =
-  process.env.SCOUT_RUNNER === undefined ? DEFAULT_RUNNER : process.env.SCOUT_RUNNER;
+
+// Built-in agent presets. `{prompt}` is replaced with the slash-style command.
+const AGENT_PRESETS = {
+  claude: {
+    id: 'claude',
+    label: 'Claude Code',
+    runner: 'claude -p "{prompt}"',
+    install: 'https://docs.anthropic.com/en/docs/claude-code/overview',
+    note: 'Runs /scout-* commands non-interactively via the Claude Code CLI.',
+  },
+  copilot: {
+    id: 'copilot',
+    label: 'GitHub Copilot CLI',
+    runner: 'copilot -p "{prompt}"',
+    install: 'https://docs.github.com/en/copilot/github-copilot-in-the-cli',
+    note: 'Requires the newer `copilot` CLI (not `gh copilot`). Agent mode + prompt files supported.',
+  },
+  codex: {
+    id: 'codex',
+    label: 'OpenAI Codex CLI',
+    runner: 'codex exec "{prompt}"',
+    install: 'https://github.com/openai/codex',
+    note: 'Non-interactive exec mode. Reads repo context automatically.',
+  },
+  none: {
+    id: 'none',
+    label: 'None — copy prompts manually',
+    runner: '',
+    note: 'No automated execution. The Run view will show a prompt you can paste into any chat panel.',
+  },
+};
+
+// --- Settings persistence -----------------------------------------
+async function loadSettings() {
+  try {
+    const raw = await fs.readFile(SETTINGS_FILE, 'utf8');
+    const data = JSON.parse(raw);
+    return {
+      agent: typeof data.agent === 'string' ? data.agent : null,
+      runner: typeof data.runner === 'string' ? data.runner : '',
+    };
+  } catch {
+    return { agent: null, runner: '' };
+  }
+}
+
+async function saveSettings(settings) {
+  await fs.writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2) + '\n', 'utf8');
+}
+
+// Effective runner: env var wins, then saved settings.
+async function getRunner() {
+  if (typeof process.env.SCOUT_RUNNER === 'string' && process.env.SCOUT_RUNNER.length > 0) {
+    return { runner: process.env.SCOUT_RUNNER, source: 'env' };
+  }
+  const s = await loadSettings();
+  return { runner: s.runner || '', source: s.runner ? 'settings' : 'none' };
+}
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- in-memory run log ---------------------------------------------
-const runs = new Map(); // id -> { id, status, command, startedAt, finishedAt, output, listeners }
+const runs = new Map();
 
 function pushRunOutput(run, chunk) {
   run.output += chunk;
@@ -121,13 +175,59 @@ async function readEnv() {
 
 // --- API -----------------------------------------------------------
 app.get('/api/status', async (_req, res) => {
-  const env = await readEnv();
+  const [env, configs, settings, runnerInfo] = await Promise.all([
+    readEnv(),
+    listConfigs(),
+    loadSettings(),
+    getRunner(),
+  ]);
   res.json({
     repoRoot: REPO_ROOT,
-    runner: SCOUT_RUNNER || null,
-    runnerConfigured: !!SCOUT_RUNNER,
+    runner: runnerInfo.runner || null,
+    runnerSource: runnerInfo.source,
+    runnerConfigured: !!runnerInfo.runner,
+    runnerLocked: runnerInfo.source === 'env',
+    agent: settings.agent,
+    hasConfigs: configs.length > 0,
+    configCount: configs.length,
     env,
   });
+});
+
+app.get('/api/agents', (_req, res) => {
+  res.json({
+    agents: Object.values(AGENT_PRESETS).map(({ id, label, runner, install, note }) => ({
+      id, label, runner, install, note,
+    })),
+  });
+});
+
+app.get('/api/settings', async (_req, res) => {
+  res.json(await loadSettings());
+});
+
+app.post('/api/settings', async (req, res) => {
+  const { agent, runner } = req.body || {};
+  if (typeof agent !== 'string') {
+    return res.status(400).json({ error: 'agent required' });
+  }
+  let effectiveRunner = '';
+  if (agent === 'custom') {
+    if (typeof runner !== 'string') {
+      return res.status(400).json({ error: 'runner required for custom agent' });
+    }
+    effectiveRunner = runner.trim();
+  } else if (AGENT_PRESETS[agent]) {
+    effectiveRunner = AGENT_PRESETS[agent].runner;
+  } else {
+    return res.status(400).json({ error: `unknown agent: ${agent}` });
+  }
+  try {
+    await saveSettings({ agent, runner: effectiveRunner });
+    res.json({ ok: true, agent, runner: effectiveRunner });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
 });
 
 app.get('/api/configs', async (_req, res) => {
@@ -203,9 +303,7 @@ app.get('/api/runs/:id', (req, res) => {
   });
 });
 
-// Build the slash-style prompt from a command + args
 function buildPrompt(command, args = {}) {
-  // Allow commands like "scout-scan", "scout-post", or free-form "custom"
   const safe = (s) => String(s).replace(/["`$\\]/g, '');
   if (command === 'custom' && typeof args.prompt === 'string') {
     return safe(args.prompt);
@@ -216,22 +314,23 @@ function buildPrompt(command, args = {}) {
   return parts.join(' ');
 }
 
-app.post('/api/runs', (req, res) => {
+app.post('/api/runs', async (req, res) => {
   const { command, args } = req.body || {};
   if (!command || typeof command !== 'string') {
     return res.status(400).json({ error: 'command required' });
   }
   const prompt = buildPrompt(command, args || {});
+  const { runner } = await getRunner();
 
-  if (!SCOUT_RUNNER) {
+  if (!runner) {
     return res.status(400).json({
-      error: 'No runner configured. Set SCOUT_RUNNER environment variable or copy the prompt manually.',
+      error: 'No agent configured. Pick one on the Setup view, or set SCOUT_RUNNER env var. You can also copy the prompt and run it manually.',
       prompt,
     });
   }
 
   const id = randomUUID();
-  const commandLine = SCOUT_RUNNER.replace('{prompt}', prompt);
+  const commandLine = runner.replace('{prompt}', prompt);
   const run = {
     id,
     status: 'running',
@@ -243,7 +342,6 @@ app.post('/api/runs', (req, res) => {
   };
   runs.set(id, run);
 
-  // Spawn via shell so SCOUT_RUNNER can be a full command line.
   const child = spawn(commandLine, {
     shell: true,
     cwd: REPO_ROOT,
@@ -269,7 +367,6 @@ app.get('/api/runs/:id/stream', (req, res) => {
     Connection: 'keep-alive',
   });
   res.flushHeaders();
-  // Send existing output immediately
   if (run.output) {
     res.write(`data: ${JSON.stringify({ chunk: run.output })}\n\n`);
   }
@@ -281,8 +378,9 @@ app.get('/api/runs/:id/stream', (req, res) => {
   req.on('close', () => run.listeners.delete(res));
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
+  const { runner, source } = await getRunner();
   console.log(`Content Scout web UI running at http://localhost:${PORT}`);
   console.log(`Repo root: ${REPO_ROOT}`);
-  console.log(`Runner: ${SCOUT_RUNNER || '(none — run buttons disabled)'}`);
+  console.log(`Runner: ${runner || '(none — pick an agent on the Setup view)'}${source !== 'none' ? ` [${source}]` : ''}`);
 });

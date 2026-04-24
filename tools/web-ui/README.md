@@ -24,25 +24,36 @@ Then open http://localhost:4477.
 
 Change the port with `PORT=5000 npm start`.
 
-## Connecting it to an AI runner
+## First run
 
-The web UI can actually execute `/scout-*` commands if you point it at a CLI that talks to a model. Set `SCOUT_RUNNER` to a command line with `{prompt}` as a placeholder:
+If you have no configs yet, the UI opens on the **Setup** view automatically. From there:
 
-| Runner | `SCOUT_RUNNER` value |
-|---|---|
-| Claude Code (default) | `claude -p "{prompt}"` |
-| GitHub Copilot CLI | `gh copilot suggest -t shell "{prompt}"` |
-| Custom script | `./my-runner.sh "{prompt}"` |
+1. **Pick an agent** — choose the AI CLI that should execute Scout commands: Claude Code, GitHub Copilot CLI, OpenAI Codex, a custom command, or *None* (copy prompts manually). Your choice is saved to `tools/web-ui/.scout-web-settings.json` (gitignored).
+2. **Create a config** — either run the onboarding wizard inside your editor's chat panel, use the standalone CLI at `tools/onboard-cli`, or click **Run /scout-onboard now** once you've picked an agent.
+3. **Add API keys** — optional. Copy `.env.example` to `.env` at the repo root and fill in the sources you want.
 
-PowerShell:
+## Agent presets
+
+| Agent | Built-in command | Install |
+|---|---|---|
+| Claude Code | `claude -p "{prompt}"` | https://docs.anthropic.com/en/docs/claude-code/overview |
+| GitHub Copilot CLI | `copilot -p "{prompt}"` | https://docs.github.com/en/copilot/github-copilot-in-the-cli |
+| OpenAI Codex CLI | `codex exec "{prompt}"` | https://github.com/openai/codex |
+| Custom | any shell command with `{prompt}` placeholder | — |
+| None | (disabled — copy prompt manually) | — |
+
+### Override with an env var
+
+`SCOUT_RUNNER` takes precedence over the saved choice. Useful for one-off sessions or CI:
+
 ```powershell
 $env:SCOUT_RUNNER = 'claude -p "{prompt}"'; npm start
 ```
 
-If `SCOUT_RUNNER` is empty, the **Start run** button is disabled and the UI shows a "Copy prompt" button instead — paste the prompt into your editor's chat panel manually.
+When `SCOUT_RUNNER` is set, the Setup view shows the locked value and disables the picker.
 
 ## Security notes
 
 - Binds to `localhost` only. Do not expose to the network without adding auth.
-- `SCOUT_RUNNER` is executed via `spawn(..., { shell: true })` — it runs arbitrary commands. Only use trusted values.
+- The runner command is executed via `spawn(..., { shell: true })` — it runs arbitrary commands. Only use trusted values.
 - Config edits overwrite files in `.github/prompts/`. Commit changes you want to keep.
