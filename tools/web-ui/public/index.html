@@ -10,6 +10,7 @@
     <header>
       <h1>Content Scout</h1>
       <nav>
+        <button data-view="setup">Setup</button>
         <button data-view="dashboard" class="active">Dashboard</button>
         <button data-view="configs">Configs</button>
         <button data-view="run">Run</button>
@@ -20,8 +21,72 @@
     </header>
 
     <main>
+      <!-- Setup -->
+      <section id="view-setup" class="view">
+        <h2>Setup</h2>
+
+        <div class="card">
+          <h3>1. Pick an agent</h3>
+          <p class="hint">
+            Content Scout runs as prompts against an AI coding agent. Pick which one the web UI should invoke
+            when you press <strong>Start run</strong>. You can change this any time.
+          </p>
+          <div id="agent-list"></div>
+          <div id="agent-custom-wrap" hidden>
+            <label>
+              Custom runner command
+              <input id="agent-custom-runner" type="text" placeholder='e.g. my-cli run "{prompt}"' />
+            </label>
+            <p class="hint">Use <code>{prompt}</code> as the placeholder for the Scout command.</p>
+          </div>
+          <div class="toolbar">
+            <button id="agent-save">Save agent choice</button>
+            <span id="agent-status" class="hint"></span>
+          </div>
+          <p id="agent-locked-note" class="hint" hidden>
+            <strong>Note:</strong> <code>SCOUT_RUNNER</code> env var is set — it overrides any choice saved here.
+            Unset it and restart to edit.
+          </p>
+        </div>
+
+        <div class="card">
+          <h3>2. Create a product config</h3>
+          <p id="setup-config-status" class="hint"></p>
+          <p class="hint">
+            Content Scout needs a config file describing what to search for. Run the onboarding wizard one of
+            these ways:
+          </p>
+          <ul>
+            <li><strong>In your editor:</strong> open Copilot Chat / Claude Code / Cursor in this repo and say <code>/scout-onboard</code> (or "scout onboard")</li>
+            <li>
+              <strong>Standalone CLI:</strong>
+              <pre class="codeblock">cd tools/onboard-cli
+npm install
+node bin/onboard.js</pre>
+            </li>
+            <li>
+              <strong>From this UI (needs a configured agent above):</strong>
+              <button id="setup-run-onboard" class="secondary">Run /scout-onboard now</button>
+            </li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>3. Add API keys (optional but recommended)</h3>
+          <p class="hint">
+            Some sources (YouTube, Reddit, Bluesky, X) need API keys in <code>.env</code> at the repo root.
+            Copy <code>.env.example</code> to <code>.env</code> and fill in what you have.
+          </p>
+          <div id="setup-env"></div>
+        </div>
+      </section>
+
       <!-- Dashboard -->
       <section id="view-dashboard" class="view active">
+        <div id="dash-empty" class="empty-banner" hidden>
+          <h3>Welcome to Content Scout</h3>
+          <p>No configs detected yet. Open <a href="#" data-goto="setup">Setup</a> to pick an agent and create your first product config.</p>
+        </div>
         <h2>Dashboard</h2>
         <div class="cards">
           <div class="card">
@@ -73,7 +138,8 @@
           <label>
             Command
             <select id="run-command">
-              <option value="scout-scan">/scout-scan — scan all sources</option>
+              <option value="scout-onboard">/scout-onboard — interactive setup wizard</option>
+              <option value="scout-scan" selected>/scout-scan — scan all sources</option>
               <option value="scout-post">/scout-post — generate social posts</option>
               <option value="scout-calendar">/scout-calendar — weekly posting schedule</option>
               <option value="scout-gaps">/scout-gaps — content gap analysis</option>

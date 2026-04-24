@@ -96,3 +96,43 @@ textarea, input, select {
 .markdown th, .markdown td { border: 1px solid var(--border); padding: 0.4em 0.6em; }
 .hint { color: var(--muted); font-size: 0.85rem; }
 code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+
+/* --- Setup view --- */
+.empty-banner {
+  background: linear-gradient(135deg, rgba(122, 167, 255, 0.15), rgba(86, 211, 138, 0.1));
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+.empty-banner h3 { margin: 0 0 0.4rem; color: var(--text); text-transform: none; letter-spacing: 0; font-size: 1.05rem; }
+.empty-banner p { margin: 0; }
+.empty-banner a { color: var(--accent); font-weight: 600; }
+
+.agent-option {
+  display: flex; gap: 0.75rem; align-items: flex-start;
+  padding: 0.75rem; margin-bottom: 0.5rem;
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 6px; cursor: pointer;
+}
+.agent-option:hover { border-color: var(--muted); }
+.agent-option.selected { border-color: var(--accent); background: rgba(122, 167, 255, 0.1); }
+.agent-option input[type="radio"] { width: auto; margin-top: 0.25rem; }
+.agent-option code { font-size: 0.8rem; }
+.agent-option a { color: var(--accent); }
+
+#view-setup .card { margin-bottom: 1rem; }
+#view-setup .card h3 { text-transform: none; letter-spacing: 0; color: var(--text); font-size: 1rem; }
+#view-setup ul { padding-left: 1.2rem; }
+#view-setup ul li { margin-bottom: 0.6rem; }
+
+.codeblock {
+  background: #000; color: #cfe;
+  padding: 0.6rem 0.8rem; border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.85rem; overflow: auto;
+}
+
+.pill.warn { color: #0f1115; background: var(--accent); border-color: var(--accent); }
+.ok { color: var(--accent-2); }
+.warn-text { color: var(--accent); }
