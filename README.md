@@ -52,12 +52,22 @@ cd content-scout
 ```
 
 ### VS Code
+
+**Prerequisites:**
+- **GitHub Copilot** and **GitHub Copilot Chat** extensions installed and signed in
+- An active Copilot subscription
+- VS Code 1.90 or newer
+
 ```
 code .
 ```
-1. Switch to the **Content Scout** agent mode in Copilot Chat
-2. Run `/scout-onboard` — choose **quick setup** (3 questions) or **full setup** (detailed customization)
-3. Run `/scout-scan` to discover content
+1. Open the **Copilot Chat panel** with `Ctrl+Alt+I` (not the inline `Ctrl+I` box — slash commands only appear in the panel)
+2. Set the chat mode dropdown at the top of the panel to **Agent**
+3. Switch the agent picker to **Content Scout**
+4. Type `/` — you should see `/scout-onboard`, `/scout-scan`, etc. in the picker. Run `/scout-onboard` (choose **quick setup** for 3 questions or **full setup** for detailed customization)
+5. Run `/scout-scan` to discover content
+
+Not seeing the slash commands? See [Troubleshooting (VS Code)](#troubleshooting-vs-code) below.
 
 ### Claude Code
 ```
@@ -79,6 +89,17 @@ gh copilot
 2. Say "scout scan" to discover content
 
 Your config saves to `.github/prompts/scout-config-{slug}.prompt.md` (gitignored). API keys are stored in `.env` (also gitignored) — see `.env.example` for the template. See the [workflow guide](docs/WORKFLOW.md) for the full onboarding walkthrough.
+
+### Troubleshooting (VS Code)
+
+If `/scout-onboard` doesn't appear when you type `/` in Copilot Chat:
+
+1. **Copilot installed & signed in?** Install the **GitHub Copilot** and **GitHub Copilot Chat** extensions and sign in. The status bar Copilot icon should not show a warning.
+2. **Using the Chat panel, not inline chat?** Slash commands only appear in the dedicated Chat panel (`Ctrl+Alt+I`), not in the inline `Ctrl+I` box.
+3. **Chat mode set to Agent?** The dropdown at the top of the chat panel must say **Agent** (not Ask or Edit).
+4. **Prompt files enabled?** Open settings (`Ctrl+,`), search for `chat.promptFiles`, and make sure it's checked. Also verify `chat.agent.enabled` is on.
+5. **Correct folder open?** You must open the `content-scout` folder itself (not a parent or subfolder). Verify from a terminal in the folder: `Get-ChildItem .github\prompts` should list `scout-onboard.prompt.md`.
+6. **VS Code up to date?** Prompt files and agent mode require VS Code 1.90 or newer.
 
 ## Commands
 
