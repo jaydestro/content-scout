@@ -142,6 +142,119 @@ async function writeConfig(slug, raw) {
   await fs.writeFile(file, raw, 'utf8');
 }
 
+// Build a Quick-tier scout-config markdown from form fields. The output is a complete,
+// valid config — users can enrich brand assets, conferences, competitors, etc. via the
+// Configs editor or by running /scout-onboard in a chat agent.
+function renderConfigTemplate({ name, slug, role, type, socialPosts, postingCalendar, searchTerms, hashtags, topicTags }) {
+  const terms = searchTerms.length ? searchTerms.map((t) => `"${t}"`).join(', ') : `"${name}"`;
+  const tags = hashtags.length ? hashtags.map((h) => `#${h}`).join(', ') : 'none';
+  const topicList = topicTags.length ? topicTags.join(', ') : 'architecture, integration, sdk, performance, release, tutorial';
+  const roleFlags = role.toLowerCase().includes('advocate')
+    ? {
+        focus: 'Community projects, tutorials, conference talks, contributor spotlights',
+        ordering: 'community first',
+      }
+    : role.toLowerCase().includes('marketer')
+      ? { focus: 'Customer stories, launch coverage, competitive signals, adoption trends', ordering: 'launches first' }
+      : { focus: 'Tutorials, SDK releases, integration content, performance deep-dives', ordering: 'SDK first' };
+  return [
+    '---',
+    `description: Content Scout configuration for ${name}`,
+    'mode: content-scout',
+    '---',
+    '',
+    `# scout-config: ${name}`,
+    '',
+    `Apply this configuration to the Content Scout agent.`,
+    '',
+    '## Role',
+    '',
+    `- **Role:** ${role}`,
+    `- **Social posts:** ${socialPosts ? 'on' : 'off'}`,
+    `- **Posting calendar:** ${postingCalendar ? 'on' : 'off'}`,
+    `- **Report focus:** ${roleFlags.focus}`,
+    `- **Report section ordering:** ${roleFlags.ordering}`,
+    `- **Engagement scoring:** on`,
+    `- **Conversation sentiment:** on`,
+    `- **Feature request flagging:** on`,
+    `- **Unanswered question tracking:** on`,
+    `- **Rising contributors:** on`,
+    `- **SDK/feature adoption tracking:** on`,
+    `- **Competitor tracking:** off`,
+    `- **Conference CFP tracking:** off`,
+    `- **Launch coverage tracking:** off`,
+    `- **Doc gap focus:** on`,
+    '',
+    '## Topic Identity',
+    '',
+    `- **Name:** ${name}`,
+    `- **Slug:** ${slug}`,
+    `- **Type:** ${type}`,
+    `- **Search terms (text):** ${terms}`,
+    `- **Search hashtags:** ${tags}`,
+    '',
+    '## Official Channels to EXCLUDE (already tracked separately)',
+    '',
+    '- **Official blog:** (add during refinement)',
+    '- **Official YouTube channel:** (add during refinement)',
+    '- **Official social handles to exclude from conversation tracking:** (add during refinement)',
+    '',
+    '## Known Author Watchlist',
+    '',
+    'External community developers whose content always passes quality filter. Fill in as you identify them.',
+    '',
+    '| Name | Affiliation | Handle |',
+    '|------|-------------|--------|',
+    '|      |             |        |',
+    '',
+    '## Brand Assets',
+    '',
+    '- **Logo directory:** none',
+    '- **Logos available:** none',
+    '- **Thumbnail style:** text-only',
+    '- **Background theme:** dark',
+    '',
+    '## API Keys',
+    '',
+    '_Keys are stored in `.env` — see `.env.example` for setup._',
+    '',
+    '## Content Sources (scan order)',
+    '',
+    '### Standard Sources',
+    '1. **YouTube** (excluding official channel) — community tutorials, demos, talks via Data API v3',
+    '2. **GitHub** — community repos, SDK releases, samples',
+    '3. **Community blogs** — Dev.to, Medium, Hashnode, Blogspot, WordPress, DZone, C# Corner, InfoQ',
+    '4. **Conversation tracking (not numbered):** Stack Overflow, Reddit, Hacker News, Bluesky, X/Twitter, LinkedIn',
+    '',
+    '### Custom Sources',
+    '',
+    '| Name | Type | URL |',
+    '|------|------|-----|',
+    '|      |      |     |',
+    '',
+    '## Content Quality Filter',
+    '',
+    '**INCLUDE:** tutorials, architecture deep-dives, problem-solving stories, demos, SDK releases, conference talks, performance deep-dives, integration content, success stories, educational content with depth',
+    '',
+    '**EXCLUDE:** "What is" intros, shallow listicles, name-drop posts, AI content farms, job postings, certification guides, YouTube videos with no description',
+    '',
+    '**Scoring:** Product depth (1-3) + practical value (1-3) + originality (1-3) >= 5/9 to include',
+    '',
+    '## Topic Tags',
+    '',
+    topicList,
+    '',
+    '## Output Files',
+    '',
+    `- Reports: \`reports/{YYYY-MM}-${slug}-content.md\``,
+    '- Dedup tracker: `reports/.seen-links.json`',
+    `- Social posts: \`social-posts/{YYYY-MM}-${slug}-social-posts.md\``,
+    `- Thumbnails: \`social-posts/images/{YYYY-MM}/{N}-{platform}-${slug}.png\``,
+    `- Posting calendar: \`social-posts/{YYYY-MM}-${slug}-posting-calendar.md\``,
+    '',
+  ].join('\n');
+}
+
 async function listMarkdownFiles(dir) {
   try {
     const files = await fs.readdir(dir);
@@ -344,6 +457,44 @@ app.post('/api/env', async (req, res) => {
 
 app.get('/api/configs', async (_req, res) => {
   res.json({ configs: await listConfigs() });
+});
+
+// Create a new config from form input. Generates a Quick-tier scout-config file
+// with sensible defaults; users can refine details in the Configs editor or via /scout-onboard.
+app.post('/api/configs', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    if (!name) return res.status(400).json({ error: 'name is required' });
+    const slug = (typeof body.slug === 'string' && body.slug.trim())
+      ? body.slug.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '')
+      : name.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) {
+      return res.status(400).json({ error: 'invalid slug (derived from name)' });
+    }
+    const existing = await listConfigs();
+    if (existing.some((c) => c.slug === slug)) {
+      return res.status(409).json({ error: `config already exists for slug "${slug}"` });
+    }
+    const role = typeof body.role === 'string' ? body.role.trim() : 'Developer Advocate';
+    const type = ['product', 'technology', 'project', 'tool'].includes(body.type) ? body.type : 'product';
+    const socialPosts = body.socialPosts === true || body.socialPosts === 'on';
+    const postingCalendar = body.postingCalendar === true || body.postingCalendar === 'on';
+    const searchTerms = Array.isArray(body.searchTerms)
+      ? body.searchTerms.map((s) => String(s).trim()).filter(Boolean)
+      : [name];
+    const hashtags = Array.isArray(body.hashtags)
+      ? body.hashtags.map((s) => String(s).trim().replace(/^#/, '')).filter(Boolean)
+      : [];
+    const topicTags = Array.isArray(body.topicTags)
+      ? body.topicTags.map((s) => String(s).trim()).filter(Boolean)
+      : [];
+    const raw = renderConfigTemplate({ name, slug, role, type, socialPosts, postingCalendar, searchTerms, hashtags, topicTags });
+    await writeConfig(slug, raw);
+    res.json({ ok: true, slug, file: `scout-config-${slug}.prompt.md` });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
 });
 
 app.get('/api/configs/:slug', async (req, res) => {

@@ -53,17 +53,70 @@
           <h3>2. Create a product config</h3>
           <p id="setup-config-status" class="hint"></p>
           <p class="hint">
-            Content Scout needs a config file describing what to search for. Run the onboarding wizard one of
-            these ways:
+            Tell Content Scout what to research. You can refine brand assets, competitors, conferences, and
+            more later in the <a href="#" data-goto="configs">Configs</a> view.
           </p>
-          <ul>
-            <li><strong>In your editor:</strong> open Copilot Chat / Claude Code / Cursor in this repo and say <code>/scout-onboard</code> (or "scout onboard")</li>
-            <li>
-              <strong>From this UI:</strong>
-              <button id="setup-run-onboard" class="secondary">Create product config →</button>
-              <span class="hint">(opens the Run view preloaded with <code>/scout-onboard</code>)</span>
-            </li>
-          </ul>
+          <div class="config-form">
+            <label class="field">
+              <span>Product / topic name <span class="req">*</span></span>
+              <input id="cfg-name" type="text" placeholder="e.g., Azure Cosmos DB" />
+            </label>
+            <label class="field">
+              <span>Slug <span class="hint">(auto — URL-safe identifier)</span></span>
+              <input id="cfg-slug" type="text" placeholder="auto-derived from name" />
+            </label>
+            <label class="field">
+              <span>Type</span>
+              <select id="cfg-type">
+                <option value="product">Product</option>
+                <option value="technology">Technology</option>
+                <option value="project">Open-source project</option>
+                <option value="tool">Tool</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Your role</span>
+              <select id="cfg-role">
+                <option value="Developer Advocate">Developer Advocate</option>
+                <option value="Product Marketer">Product Marketer</option>
+                <option value="Developer">Developer</option>
+                <option value="Community Manager">Community Manager</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Search terms <span class="hint">(comma-separated, used for source queries)</span></span>
+              <input id="cfg-terms" type="text" placeholder="e.g., Azure Cosmos DB, Cosmos DB" />
+            </label>
+            <label class="field">
+              <span>Hashtags <span class="hint">(comma-separated, without #)</span></span>
+              <input id="cfg-hashtags" type="text" placeholder="e.g., CosmosDB, Azure" />
+            </label>
+            <label class="field">
+              <span>Topic tags <span class="hint">(comma-separated, used to categorize content)</span></span>
+              <input id="cfg-topic-tags" type="text" placeholder="e.g., partitioning, sdk-dotnet, query-perf" />
+            </label>
+            <label class="field-inline">
+              <input id="cfg-social" type="checkbox" checked />
+              <span>Auto-generate social posts after scans</span>
+            </label>
+            <label class="field-inline">
+              <input id="cfg-calendar" type="checkbox" />
+              <span>Generate a weekly posting calendar</span>
+            </label>
+          </div>
+          <div class="toolbar" style="margin-top:0.75rem">
+            <button id="cfg-create">Create config</button>
+            <span id="cfg-status" class="hint"></span>
+          </div>
+          <details style="margin-top:0.75rem">
+            <summary class="hint">Want the full-depth onboarding conversation instead?</summary>
+            <p class="hint" style="margin-top:0.5rem">
+              The form above covers the essentials (role, product, search terms, topic tags). For brand assets,
+              conference tracking, competitor lists, or detailed social-post standards, open your editor's chat
+              panel and say <code>/scout-onboard</code>, or
+              <button id="setup-run-onboard" class="linklike" type="button">run /scout-onboard in the Run view</button>.
+            </p>
+          </details>
         </div>
 
         <div class="card">
