@@ -42,11 +42,25 @@ const AGENT_PRESETS = {
     install: 'https://github.com/openai/codex',
     note: 'Non-interactive exec mode. Reads repo context automatically.',
   },
+  cursor: {
+    id: 'cursor',
+    label: 'Cursor Agent CLI',
+    runner: 'cursor-agent -p "{prompt}"',
+    install: 'https://docs.cursor.com/en/cli/overview',
+    note: 'Headless Cursor agent. Reads `.cursor/rules/content-scout.mdc` automatically.',
+  },
+  gemini: {
+    id: 'gemini',
+    label: 'Gemini CLI',
+    runner: 'gemini -p "{prompt}"',
+    install: 'https://github.com/google-gemini/gemini-cli',
+    note: 'Google Gemini CLI in non-interactive prompt mode.',
+  },
   none: {
     id: 'none',
-    label: 'None — copy prompts manually',
+    label: 'In-editor only (VS Code Copilot / Windsurf / Cline) — copy prompts manually',
     runner: '',
-    note: 'No automated execution. The Run view will show a prompt you can paste into any chat panel.',
+    note: 'For editor-embedded agents without a headless CLI. The Run view will show the prompt text so you can paste it into your editor\'s chat panel.',
   },
 };
 
