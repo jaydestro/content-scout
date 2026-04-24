@@ -142,21 +142,136 @@ async function writeConfig(slug, raw) {
   await fs.writeFile(file, raw, 'utf8');
 }
 
+// Built-in role presets. Each sets smart defaults matching the /scout-onboard role table.
+// Keys are short ids; `label` is the human name written into the config.
+const ROLE_PRESETS = {
+  'program-manager': {
+    label: 'Program Manager',
+    focus: 'Adoption metrics, SDK usage, feature coverage, feature request flagging, community feedback',
+    ordering: 'adoption first',
+    flags: { socialPosts: false, postingCalendar: false, competitorTracking: false, conferenceCfp: false, launchCoverage: false, risingContributors: false, communityHealth: false, docGapFocus: false, sdkAdoption: true, featureRequests: true, unansweredQuestions: true },
+  },
+  'product-manager': {
+    label: 'Product Manager',
+    focus: 'Market signals, competitor mentions, customer requests, sentiment analysis',
+    ordering: 'market signals first',
+    flags: { socialPosts: false, postingCalendar: false, competitorTracking: true, conferenceCfp: false, launchCoverage: false, risingContributors: false, communityHealth: false, docGapFocus: false, sdkAdoption: true, featureRequests: true, unansweredQuestions: true },
+  },
+  'social-media-manager': {
+    label: 'Social Media Manager',
+    focus: 'Post-ready content, engagement opportunities, trending topics, conversation sentiment',
+    ordering: 'trending first',
+    flags: { socialPosts: true, postingCalendar: true, competitorTracking: false, conferenceCfp: false, launchCoverage: false, risingContributors: false, communityHealth: false, docGapFocus: false, sdkAdoption: false, featureRequests: false, unansweredQuestions: false },
+  },
+  'product-marketer': {
+    label: 'Product Marketer',
+    focus: 'Launch coverage, success stories, analyst mentions, campaign amplification',
+    ordering: 'launches first',
+    flags: { socialPosts: true, postingCalendar: true, competitorTracking: true, conferenceCfp: true, launchCoverage: true, risingContributors: false, communityHealth: false, docGapFocus: false, sdkAdoption: false, featureRequests: true, unansweredQuestions: false },
+  },
+  'developer-advocate': {
+    label: 'Developer Advocate',
+    focus: 'Community projects, tutorials, rising contributors, conference talks',
+    ordering: 'community first',
+    flags: { socialPosts: true, postingCalendar: true, competitorTracking: false, conferenceCfp: true, launchCoverage: false, risingContributors: true, communityHealth: true, docGapFocus: false, sdkAdoption: false, featureRequests: false, unansweredQuestions: true },
+  },
+  'community-manager': {
+    label: 'Community Manager',
+    focus: 'Contributor tracking, sentiment trends, engagement health, unanswered questions',
+    ordering: 'community first',
+    flags: { socialPosts: false, postingCalendar: false, competitorTracking: false, conferenceCfp: false, launchCoverage: false, risingContributors: true, communityHealth: true, docGapFocus: false, sdkAdoption: false, featureRequests: false, unansweredQuestions: true },
+  },
+  'technical-writer': {
+    label: 'Technical Writer',
+    focus: 'Doc gap analysis, tutorial patterns, FAQ signals, community tutorials vs. official docs',
+    ordering: 'doc gaps first',
+    flags: { socialPosts: false, postingCalendar: false, competitorTracking: false, conferenceCfp: false, launchCoverage: false, risingContributors: false, communityHealth: false, docGapFocus: true, sdkAdoption: false, featureRequests: false, unansweredQuestions: true },
+  },
+};
+
+app.get('/api/role-presets', (_req, res) => {
+  const presets = Object.entries(ROLE_PRESETS).map(([id, p]) => ({
+    id,
+    label: p.label,
+    focus: p.focus,
+    ordering: p.ordering,
+    flags: p.flags,
+  }));
+  res.json({ presets });
+});
+
 // Build a Quick-tier scout-config markdown from form fields. The output is a complete,
 // valid config — users can enrich brand assets, conferences, competitors, etc. via the
 // Configs editor or by running /scout-onboard in a chat agent.
-function renderConfigTemplate({ name, slug, role, type, socialPosts, postingCalendar, searchTerms, hashtags, topicTags }) {
+function renderConfigTemplate(opts) {
+  const {
+    name, slug, type,
+    roleIds = [], customRoleLabel = '',
+    flags = {},
+    focusOverride = '', orderingOverride = '',
+    searchTerms = [], hashtags = [], topicTags = [],
+    exclusions = {}, // { blog, youtube, handles: [] }
+    watchlist = [],  // [{ name, affiliation, handle }]
+    brand = {},      // { logoDir, thumbnailStyle, theme }
+    competitors = [], // ["MongoDB", "DynamoDB"]
+    conferences = [], // ["KubeCon", "re:Invent"]
+    customSources = [], // [{ name, type, url }]
+    standardSources = null, // optional array to override the default standard-source list
+  } = opts;
   const terms = searchTerms.length ? searchTerms.map((t) => `"${t}"`).join(', ') : `"${name}"`;
   const tags = hashtags.length ? hashtags.map((h) => `#${h}`).join(', ') : 'none';
   const topicList = topicTags.length ? topicTags.join(', ') : 'architecture, integration, sdk, performance, release, tutorial';
-  const roleFlags = role.toLowerCase().includes('advocate')
-    ? {
-        focus: 'Community projects, tutorials, conference talks, contributor spotlights',
-        ordering: 'community first',
-      }
-    : role.toLowerCase().includes('marketer')
-      ? { focus: 'Customer stories, launch coverage, competitive signals, adoption trends', ordering: 'launches first' }
-      : { focus: 'Tutorials, SDK releases, integration content, performance deep-dives', ordering: 'SDK first' };
+
+  // Resolve role label(s) and default flags by merging selected presets (any-true wins).
+  const selected = roleIds.map((id) => ROLE_PRESETS[id]).filter(Boolean);
+  const roleLabel = selected.length
+    ? selected.map((p) => p.label).join(', ')
+    : (customRoleLabel || 'Custom');
+  const mergedFlags = selected.reduce((acc, p) => {
+    for (const [k, v] of Object.entries(p.flags)) acc[k] = acc[k] || v;
+    return acc;
+  }, {});
+  // Explicit form overrides win over preset defaults.
+  const f = { ...mergedFlags, ...flags };
+  const focus = focusOverride || selected[0]?.focus || 'Tutorials, SDK releases, integration content, performance deep-dives';
+  const ordering = orderingOverride || selected[0]?.ordering || 'SDK first';
+  const on = (v) => (v ? 'on' : 'off');
+
+  const exclusionBlog = exclusions.blog?.trim() || '(add during refinement)';
+  const exclusionYouTube = exclusions.youtube?.trim() || '(add during refinement)';
+  const exclusionHandles = Array.isArray(exclusions.handles) && exclusions.handles.length
+    ? exclusions.handles.map((h) => String(h).trim()).filter(Boolean).join(', ')
+    : '(add during refinement)';
+
+  const watchRows = Array.isArray(watchlist) && watchlist.length
+    ? watchlist.map((w) => `| ${w.name || ''} | ${w.affiliation || ''} | ${w.handle || ''} |`)
+    : ['|      |             |        |'];
+
+  const brandLogoDir = brand.logoDir?.trim() || 'none';
+  const brandThumbStyle = brand.thumbnailStyle?.trim() || 'text-only';
+  const brandTheme = brand.theme?.trim() || 'dark';
+
+  const competitorList = Array.isArray(competitors) && competitors.length
+    ? competitors.map((c) => `- ${c}`).join('\n')
+    : '_None tracked. Add to enable competitor mention tracking._';
+
+  const conferenceList = Array.isArray(conferences) && conferences.length
+    ? conferences.map((c) => `- ${c}`).join('\n')
+    : '_None tracked. Add to enable CFP and talk tracking._';
+
+  const defaultStandardSources = [
+    '1. **GitHub** — community repos, SDK releases, samples',
+    '2. **Community blogs** — Dev.to, Medium, Hashnode, Blogspot, WordPress, DZone, C# Corner, InfoQ',
+    '3. **Conversation tracking (not numbered):** Stack Overflow, Reddit, Hacker News, Bluesky, X/Twitter, LinkedIn',
+  ];
+  const standardSourceList = Array.isArray(standardSources) && standardSources.length
+    ? standardSources
+    : defaultStandardSources;
+
+  const customSourceRows = Array.isArray(customSources) && customSources.length
+    ? customSources.map((s) => `| ${s.name || ''} | ${s.type || ''} | ${s.url || ''} |`)
+    : [];
+
   return [
     '---',
     `description: Content Scout configuration for ${name}`,
@@ -169,21 +284,22 @@ function renderConfigTemplate({ name, slug, role, type, socialPosts, postingCale
     '',
     '## Role',
     '',
-    `- **Role:** ${role}`,
-    `- **Social posts:** ${socialPosts ? 'on' : 'off'}`,
-    `- **Posting calendar:** ${postingCalendar ? 'on' : 'off'}`,
-    `- **Report focus:** ${roleFlags.focus}`,
-    `- **Report section ordering:** ${roleFlags.ordering}`,
+    `- **Role:** ${roleLabel}`,
+    `- **Social posts:** ${on(f.socialPosts)}`,
+    `- **Posting calendar:** ${on(f.postingCalendar)}`,
+    `- **Report focus:** ${focus}`,
+    `- **Report section ordering:** ${ordering}`,
     `- **Engagement scoring:** on`,
     `- **Conversation sentiment:** on`,
-    `- **Feature request flagging:** on`,
-    `- **Unanswered question tracking:** on`,
-    `- **Rising contributors:** on`,
-    `- **SDK/feature adoption tracking:** on`,
-    `- **Competitor tracking:** off`,
-    `- **Conference CFP tracking:** off`,
-    `- **Launch coverage tracking:** off`,
-    `- **Doc gap focus:** on`,
+    `- **Feature request flagging:** ${on(f.featureRequests)}`,
+    `- **Unanswered question tracking:** ${on(f.unansweredQuestions)}`,
+    `- **Rising contributors:** ${on(f.risingContributors)}`,
+    `- **SDK/feature adoption tracking:** ${on(f.sdkAdoption)}`,
+    `- **Competitor tracking:** ${on(f.competitorTracking)}`,
+    `- **Conference CFP tracking:** ${on(f.conferenceCfp)}`,
+    `- **Launch coverage tracking:** ${on(f.launchCoverage)}`,
+    `- **Community health signals:** ${on(f.communityHealth)}`,
+    `- **Doc gap focus:** ${on(f.docGapFocus)}`,
     '',
     '## Topic Identity',
     '',
@@ -195,9 +311,9 @@ function renderConfigTemplate({ name, slug, role, type, socialPosts, postingCale
     '',
     '## Official Channels to EXCLUDE (already tracked separately)',
     '',
-    '- **Official blog:** (add during refinement)',
-    '- **Official YouTube channel:** (add during refinement)',
-    '- **Official social handles to exclude from conversation tracking:** (add during refinement)',
+    `- **Official blog:** ${exclusionBlog}`,
+    `- **Official YouTube channel:** ${exclusionYouTube}`,
+    `- **Official social handles to exclude from conversation tracking:** ${exclusionHandles}`,
     '',
     '## Known Author Watchlist',
     '',
@@ -205,14 +321,22 @@ function renderConfigTemplate({ name, slug, role, type, socialPosts, postingCale
     '',
     '| Name | Affiliation | Handle |',
     '|------|-------------|--------|',
-    '|      |             |        |',
+    ...watchRows,
     '',
     '## Brand Assets',
     '',
-    '- **Logo directory:** none',
-    '- **Logos available:** none',
-    '- **Thumbnail style:** text-only',
-    '- **Background theme:** dark',
+    `- **Logo directory:** ${brandLogoDir}`,
+    `- **Logos available:** ${brandLogoDir === 'none' ? 'none' : '(auto-discovered from directory)'}`,
+    `- **Thumbnail style:** ${brandThumbStyle}`,
+    `- **Background theme:** ${brandTheme}`,
+    '',
+    '## Competitors',
+    '',
+    competitorList,
+    '',
+    '## Conferences',
+    '',
+    conferenceList,
     '',
     '## API Keys',
     '',
@@ -221,18 +345,14 @@ function renderConfigTemplate({ name, slug, role, type, socialPosts, postingCale
     '## Content Sources (scan order)',
     '',
     '### Standard Sources',
-    '1. **GitHub** — community repos, SDK releases, samples',
-    '2. **Community blogs** — Dev.to, Medium, Hashnode, Blogspot, WordPress, DZone, C# Corner, InfoQ',
-    '3. **Conversation tracking (not numbered):** Stack Overflow, Reddit, Hacker News, Bluesky, X/Twitter, LinkedIn',
+    ...standardSourceList,
     '',
     '_To enable YouTube scanning, add it here along with your official channel ID to exclude (e.g., `YouTube (excluding UCxxxx) — community tutorials via Data API v3`)._',
     '',
     '### Custom Sources',
     '',
-    '_None configured. Add rows to the table below to track specific blogs, newsletters, podcasts, or other sources._',
-    '',
-    '| Name | Type | URL |',
-    '|------|------|-----|',
+    customSourceRows.length ? '| Name | Type | URL |' : '_None configured. Add rows to the table below to track specific blogs, newsletters, podcasts, or other sources._',
+    ...(customSourceRows.length ? ['|------|------|-----|', ...customSourceRows] : ['', '| Name | Type | URL |', '|------|------|-----|']),
     '',
     '## Content Quality Filter',
     '',
@@ -478,10 +598,7 @@ app.post('/api/configs', async (req, res) => {
     if (existing.some((c) => c.slug === slug)) {
       return res.status(409).json({ error: `config already exists for slug "${slug}"` });
     }
-    const role = typeof body.role === 'string' ? body.role.trim() : 'Developer Advocate';
     const type = ['product', 'technology', 'project', 'tool'].includes(body.type) ? body.type : 'product';
-    const socialPosts = body.socialPosts === true || body.socialPosts === 'on';
-    const postingCalendar = body.postingCalendar === true || body.postingCalendar === 'on';
     const searchTerms = Array.isArray(body.searchTerms)
       ? body.searchTerms.map((s) => String(s).trim()).filter(Boolean)
       : [name];
@@ -491,7 +608,89 @@ app.post('/api/configs', async (req, res) => {
     const topicTags = Array.isArray(body.topicTags)
       ? body.topicTags.map((s) => String(s).trim()).filter(Boolean)
       : [];
-    const raw = renderConfigTemplate({ name, slug, role, type, socialPosts, postingCalendar, searchTerms, hashtags, topicTags });
+
+    // Roles: accept an array of role ids. Fall back to legacy `role` string for back-compat.
+    let roleIds = Array.isArray(body.roleIds) ? body.roleIds.filter((r) => typeof r === 'string') : [];
+    let customRoleLabel = typeof body.customRoleLabel === 'string' ? body.customRoleLabel.trim() : '';
+    if (!roleIds.length && typeof body.role === 'string') {
+      // Legacy shape — try to match by label.
+      const match = Object.entries(ROLE_PRESETS).find(([, p]) => p.label.toLowerCase() === body.role.trim().toLowerCase());
+      if (match) roleIds = [match[0]];
+      else customRoleLabel = body.role.trim();
+    }
+
+    // Build flags — start from defaults (handled in renderConfigTemplate by merging presets),
+    // then apply any explicit flag overrides from the form.
+    const flagKeys = [
+      'socialPosts', 'postingCalendar', 'competitorTracking', 'conferenceCfp',
+      'launchCoverage', 'risingContributors', 'communityHealth', 'docGapFocus',
+      'sdkAdoption', 'featureRequests', 'unansweredQuestions',
+    ];
+    const flags = {};
+    for (const k of flagKeys) {
+      if (k in (body.flags || {})) flags[k] = !!body.flags[k];
+      else if (k in body) flags[k] = body[k] === true || body[k] === 'on';
+    }
+
+    const exclusions = {
+      blog: body.exclusions?.blog || '',
+      youtube: body.exclusions?.youtube || '',
+      handles: Array.isArray(body.exclusions?.handles) ? body.exclusions.handles : [],
+    };
+    const watchlist = Array.isArray(body.watchlist)
+      ? body.watchlist.filter((w) => w && (w.name || w.handle)).map((w) => ({
+          name: String(w.name || '').trim(),
+          affiliation: String(w.affiliation || '').trim(),
+          handle: String(w.handle || '').trim(),
+        }))
+      : [];
+    const brand = {
+      logoDir: body.brand?.logoDir || '',
+      thumbnailStyle: body.brand?.thumbnailStyle || '',
+      theme: body.brand?.theme || '',
+    };
+    const competitors = Array.isArray(body.competitors)
+      ? body.competitors.map((c) => String(c).trim()).filter(Boolean)
+      : [];
+    const conferences = Array.isArray(body.conferences)
+      ? body.conferences.map((c) => String(c).trim()).filter(Boolean)
+      : [];
+    const customSources = Array.isArray(body.customSources)
+      ? body.customSources.filter((s) => s && (s.name || s.url)).map((s) => ({
+          name: String(s.name || '').trim(),
+          type: String(s.type || '').trim(),
+          url: String(s.url || '').trim(),
+        }))
+      : [];
+
+    // Optional: override standard sources. For now the form sends a list of network ids
+    // and we render the default table for anything selected.
+    let standardSources = null;
+    if (Array.isArray(body.networks) && body.networks.length) {
+      const lines = [];
+      let n = 1;
+      const convoBits = [];
+      if (body.networks.includes('github')) lines.push(`${n++}. **GitHub** — community repos, SDK releases, samples`);
+      if (body.networks.includes('youtube')) lines.push(`${n++}. **YouTube** (excluding official channel) — community tutorials, demos, talks via Data API v3`);
+      if (body.networks.includes('blogs')) lines.push(`${n++}. **Community blogs** — Dev.to, Medium, Hashnode, Blogspot, WordPress, DZone, C# Corner, InfoQ`);
+      if (body.networks.includes('stackoverflow')) convoBits.push('Stack Overflow');
+      if (body.networks.includes('reddit')) convoBits.push('Reddit');
+      if (body.networks.includes('hackernews')) convoBits.push('Hacker News');
+      if (body.networks.includes('bluesky')) convoBits.push('Bluesky');
+      if (body.networks.includes('x')) convoBits.push('X/Twitter');
+      if (body.networks.includes('linkedin')) convoBits.push('LinkedIn');
+      if (convoBits.length) lines.push(`${n}. **Conversation tracking (not numbered):** ${convoBits.join(', ')}`);
+      standardSources = lines;
+    }
+
+    const raw = renderConfigTemplate({
+      name, slug, type,
+      roleIds, customRoleLabel, flags,
+      focusOverride: typeof body.focus === 'string' ? body.focus.trim() : '',
+      orderingOverride: typeof body.ordering === 'string' ? body.ordering.trim() : '',
+      searchTerms, hashtags, topicTags,
+      exclusions, watchlist, brand, competitors, conferences, customSources, standardSources,
+    });
     await writeConfig(slug, raw);
     res.json({ ok: true, slug, file: `scout-config-${slug}.prompt.md` });
   } catch (err) {

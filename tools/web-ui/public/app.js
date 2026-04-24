@@ -201,23 +201,98 @@ $('cfg-name').addEventListener('input', () => {
   if (!cfgSlugEdited) $('cfg-slug').value = slugify($('cfg-name').value);
 });
 
+// Tier picker — toggles a data-tier attribute on <body> so CSS can show/hide sections.
+function setTier(tier) {
+  document.body.dataset.tier = tier;
+}
+document.querySelectorAll('input[name="cfg-tier"]').forEach((el) => {
+  el.addEventListener('change', () => { if (el.checked) setTier(el.value); });
+});
+setTier(document.querySelector('input[name="cfg-tier"]:checked')?.value || 'standard');
+
+// Role presets — fetch and render as checkable cards.
+async function loadRolePresets() {
+  try {
+    const { presets } = await api('/api/role-presets');
+    const container = $('cfg-roles');
+    container.innerHTML = presets.map((p) => `
+      <label class="role-card">
+        <span><input type="checkbox" class="cfg-role" value="${p.id}" /> <span class="role-name">${p.label}</span></span>
+        <span class="role-desc">${p.focus}</span>
+      </label>
+    `).join('');
+  } catch (err) {
+    console.error('failed to load roles', err);
+  }
+}
+loadRolePresets();
+
+// Parse "Name | Affiliation | @handle" lines into [{name, affiliation, handle}, ...].
+function parseWatchlist(text) {
+  return (text || '').split(/\r?\n/).map((line) => {
+    const parts = line.split('|').map((s) => s.trim());
+    if (!parts[0]) return null;
+    return { name: parts[0] || '', affiliation: parts[1] || '', handle: parts[2] || '' };
+  }).filter(Boolean);
+}
+// Parse "Name | Type | URL" lines.
+function parseCustomSources(text) {
+  return (text || '').split(/\r?\n/).map((line) => {
+    const parts = line.split('|').map((s) => s.trim());
+    if (!parts[0] && !parts[2]) return null;
+    return { name: parts[0] || '', type: parts[1] || '', url: parts[2] || '' };
+  }).filter(Boolean);
+}
+function splitList(s) { return (s || '').split(',').map((x) => x.trim()).filter(Boolean); }
+
 $('cfg-create').addEventListener('click', async () => {
   const name = $('cfg-name').value.trim();
   if (!name) {
     $('cfg-status').textContent = 'Product name is required.';
     return;
   }
+  const tier = document.body.dataset.tier || 'standard';
+  const roleIds = Array.from(document.querySelectorAll('.cfg-role:checked')).map((el) => el.value);
+  const customRoleLabel = $('cfg-custom-role').value.trim();
+
   const body = {
     name,
     slug: $('cfg-slug').value.trim() || slugify(name),
     type: $('cfg-type').value,
-    role: $('cfg-role').value,
-    searchTerms: $('cfg-terms').value.split(',').map((s) => s.trim()).filter(Boolean),
-    hashtags: $('cfg-hashtags').value.split(',').map((s) => s.trim()).filter(Boolean),
-    topicTags: $('cfg-topic-tags').value.split(',').map((s) => s.trim()).filter(Boolean),
-    socialPosts: $('cfg-social').checked,
-    postingCalendar: $('cfg-calendar').checked,
+    roleIds,
+    customRoleLabel,
+    searchTerms: splitList($('cfg-terms').value),
+    hashtags: splitList($('cfg-hashtags').value),
+    topicTags: splitList($('cfg-topic-tags').value),
   };
+
+  // Tier-gated fields.
+  if (tier === 'standard' || tier === 'full') {
+    body.networks = Array.from(document.querySelectorAll('.cfg-network:checked')).map((el) => el.value);
+    body.socialPosts = $('cfg-social').checked;
+    body.postingCalendar = $('cfg-calendar').checked;
+  }
+  if (tier === 'full') {
+    body.exclusions = {
+      blog: $('cfg-excl-blog').value.trim(),
+      youtube: $('cfg-excl-youtube').value.trim(),
+      handles: splitList($('cfg-excl-handles').value),
+    };
+    // Feature-toggle overrides — only include flags the user explicitly checked.
+    const flags = {};
+    document.querySelectorAll('.cfg-flag:checked').forEach((el) => { flags[el.dataset.flag] = true; });
+    body.flags = flags;
+    body.brand = {
+      logoDir: $('cfg-brand-logodir').value.trim(),
+      thumbnailStyle: $('cfg-brand-thumb').value,
+      theme: $('cfg-brand-theme').value,
+    };
+    body.competitors = splitList($('cfg-competitors').value);
+    body.conferences = splitList($('cfg-conferences').value);
+    body.watchlist = parseWatchlist($('cfg-watchlist').value);
+    body.customSources = parseCustomSources($('cfg-custom-sources').value);
+  }
+
   $('cfg-create').disabled = true;
   $('cfg-status').textContent = 'creating…';
   try {
@@ -235,7 +310,6 @@ $('cfg-create').addEventListener('click', async () => {
     await loadStatus();
     setTimeout(() => {
       gotoView('configs');
-      // Refresh the list then select the new config.
       loadConfigList().then(() => loadConfig(data.slug));
     }, 400);
   } catch (err) {

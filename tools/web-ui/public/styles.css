@@ -166,3 +166,35 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
   background: none; border: none; padding: 0; color: var(--accent-2);
   text-decoration: underline; cursor: pointer; font: inherit;
 }
+
+.tier-picker {
+  display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;
+  margin: 0.5rem 0 0.75rem; padding: 0.5rem 0.75rem;
+  background: var(--panel-2); border-radius: 4px;
+}
+.cfg-group {
+  border: 1px solid var(--border); border-radius: 4px; padding: 0.75rem 1rem 0.85rem;
+  margin: 0 0 0.75rem; display: flex; flex-direction: column; gap: 0.5rem;
+}
+.cfg-group legend { padding: 0 0.4rem; font-weight: 600; font-size: 0.9rem; color: var(--accent-2); }
+.cfg-group textarea {
+  width: 100%; padding: 0.5rem; font: inherit; font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.85rem; background: var(--panel-2); color: inherit;
+  border: 1px solid var(--border); border-radius: 4px; resize: vertical;
+}
+.role-grid, .network-grid, .toggle-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.4rem;
+}
+.role-card {
+  border: 1px solid var(--border); border-radius: 4px; padding: 0.5rem 0.6rem;
+  display: flex; flex-direction: column; gap: 0.15rem; cursor: pointer;
+}
+.role-card:hover { border-color: var(--accent-2); }
+.role-card input { margin-right: 0.35rem; }
+.role-card .role-name { font-weight: 600; font-size: 0.9rem; }
+.role-card .role-desc { font-size: 0.8rem; color: var(--muted); }
+
+/* Tier visibility — JS toggles body[data-tier] */
+body[data-tier="quick"] .tier-standard,
+body[data-tier="quick"] .tier-full { display: none; }
+body[data-tier="standard"] .tier-full { display: none; }
