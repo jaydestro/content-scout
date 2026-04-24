@@ -103,6 +103,31 @@ If `/scout-onboard` doesn't appear when you type `/` in Copilot Chat:
 5. **Correct folder open?** You must open the `content-scout` folder itself (not a parent or subfolder). Verify from a terminal in the folder: `Get-ChildItem .github\prompts` should list `scout-onboard.prompt.md`.
 6. **VS Code up to date?** Prompt files and agent mode require VS Code 1.90 or newer.
 
+### Troubleshooting (other editors)
+
+If the agent doesn't seem to be loaded when you ask it to "scout onboard":
+
+**Claude Code**
+- Make sure you ran `claude` from inside the `content-scout` folder (not a parent directory). Claude Code only auto-loads `CLAUDE.md` from the current working directory.
+- Confirm the file exists: `Get-ChildItem CLAUDE.md`.
+
+**Cursor**
+- Open the `content-scout` folder as the workspace (File → Open Folder), not as a file or a parent directory. Project rules in `.cursor/rules/` only apply when the repo is the workspace root.
+- Check **Settings → Rules for AI → Project Rules** — `content-scout.mdc` should be listed.
+
+**Windsurf**
+- Open the `content-scout` folder as the workspace root. `.windsurfrules` only loads for the top-level workspace.
+- Restart Windsurf after opening the folder if the rules don't seem to apply on the first message.
+
+**Cline**
+- `.clinerules` only loads for the workspace root — open `content-scout` itself, not a subfolder.
+- In the Cline side panel, verify it shows the rules file as active.
+
+**GitHub Copilot CLI**
+- Sign in: `gh auth status` — if not authenticated, run `gh auth login`.
+- Install the extension if needed: `gh extension install github/gh-copilot`.
+- Run `gh copilot` from inside the `content-scout` folder so it picks up `.github/copilot-instructions.md`.
+
 ## Commands
 
 | Command | What It Does |
