@@ -482,8 +482,8 @@ function escape(s) {
 
 // --- Boot ----------------------------------------------------------
 loadStatus().then((s) => {
-  // If no agent AND no configs, route to Setup on first load.
-  if (!s.runnerConfigured && !s.hasConfigs) {
+  // If there are no configs yet, route to Setup so the user can create one.
+  if (!s.hasConfigs) {
     gotoView('setup');
   } else {
     loadDashboard();
