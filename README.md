@@ -65,9 +65,10 @@ The repo ships a `.vscode/settings.json` that automatically enables Copilot prom
 
 1. Open the **Copilot Chat panel** with `Ctrl+Alt+I` (not the inline `Ctrl+I` box — slash commands only appear in the panel)
 2. Set the chat mode dropdown at the top of the panel to **Agent**
-3. Switch the agent picker to **Content Scout**
-4. Type `/` — you should see `/scout-onboard`, `/scout-scan`, etc. in the picker. Run `/scout-onboard` (choose **quick setup** for 3 questions or **full setup** for detailed customization)
-5. Run `/scout-scan` to discover content
+3. Type `/scout-onboard` and press Enter (choose **quick setup** for 3 questions or **full setup** for detailed customization)
+4. Run `/scout-scan` to discover content
+
+You do **not** need to switch to the "Content Scout" agent in the picker — the `/scout-*` commands are workspace-scoped and work in default Agent mode. Selecting the Content Scout agent is optional (it just loads the agent-level system prompt).
 
 Not seeing the slash commands? See [Troubleshooting (VS Code)](#troubleshooting-vs-code) below.
 
