@@ -268,15 +268,37 @@ app.post('/api/settings', async (req, res) => {
   }
 });
 
-// Read .env values (server is localhost-only; treat host as trusted).
+// Read .env values merged with the key superset from .env.example so preset keys
+// always appear in the form even if the user's .env is missing some of them.
 app.get('/api/env', async (_req, res) => {
   const { raw, source } = await readEnvRaw();
-  const entries = parseEnv(raw);
-  // If .env is missing, seed the key list from .env.example but return empty values.
-  const values = source === 'env'
-    ? entries
-    : entries.map((e) => ({ key: e.key, value: '' }));
-  res.json({ exists: source === 'env', source, entries: values });
+  const envEntries = parseEnv(raw);
+  let templateKeys = [];
+  if (source === 'example') {
+    templateKeys = envEntries.map((e) => e.key);
+  } else {
+    try {
+      const exampleRaw = await fs.readFile(ENV_EXAMPLE, 'utf8');
+      templateKeys = parseEnv(exampleRaw).map((e) => e.key);
+    } catch {
+      templateKeys = [];
+    }
+  }
+  const byKey = new Map(envEntries.map((e) => [e.key, e.value]));
+  const orderedKeys = [];
+  const seen = new Set();
+  for (const k of templateKeys) {
+    if (!seen.has(k)) { orderedKeys.push(k); seen.add(k); }
+  }
+  for (const e of envEntries) {
+    if (!seen.has(e.key)) { orderedKeys.push(e.key); seen.add(e.key); }
+  }
+  const entries = orderedKeys.map((key) => ({
+    key,
+    value: byKey.get(key) || '',
+    preset: templateKeys.includes(key),
+  }));
+  res.json({ exists: source === 'env', source, entries });
 });
 
 app.post('/api/env', async (req, res) => {

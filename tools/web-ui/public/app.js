@@ -103,16 +103,16 @@ async function renderEnvEditor() {
     const rows = entries.length
       ? entries
       : [
-          { key: 'YOUTUBE_API_KEY', value: '' },
-          { key: 'REDDIT_CLIENT_ID', value: '' },
-          { key: 'REDDIT_CLIENT_SECRET', value: '' },
-          { key: 'BLUESKY_HANDLE', value: '' },
-          { key: 'BLUESKY_APP_PASSWORD', value: '' },
-          { key: 'X_BEARER_TOKEN', value: '' },
+          { key: 'YOUTUBE_API_KEY', value: '', preset: true },
+          { key: 'REDDIT_CLIENT_ID', value: '', preset: true },
+          { key: 'REDDIT_CLIENT_SECRET', value: '', preset: true },
+          { key: 'BLUESKY_HANDLE', value: '', preset: true },
+          { key: 'BLUESKY_APP_PASSWORD', value: '', preset: true },
+          { key: 'X_BEARER_TOKEN', value: '', preset: true },
         ];
     $('setup-env').innerHTML = `
       <div class="env-grid">
-        ${rows.map((e, i) => envRow(e.key, e.value, i, true)).join('')}
+        ${rows.map((e, i) => envRow(e.key, e.value, i, e.preset !== false)).join('')}
       </div>
       ${exists ? '' : '<div class="hint" style="margin-top:0.5rem">No <code>.env</code> file yet — saving will create one.</div>'}
     `;
