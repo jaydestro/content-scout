@@ -216,13 +216,42 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
   background: linear-gradient(135deg, rgba(122, 167, 255, 0.18), rgba(86, 211, 138, 0.12));
   border: 1px solid rgba(122,167,255,0.45);
   border-radius: var(--radius-md);
-  padding: 1.1rem 1.35rem;
+  padding: 1.75rem 1.75rem 1.5rem;
   margin-bottom: 1.25rem;
   box-shadow: var(--shadow-md);
+  text-align: center;
 }
-.empty-banner h3 { margin: 0 0 0.4rem; color: var(--text); text-transform: none; letter-spacing: 0; font-size: 1.05rem; }
-.empty-banner p { margin: 0; }
+.empty-banner h3 { margin: 0 0 0.6rem; color: var(--text); text-transform: none; letter-spacing: 0; font-size: 1.35rem; }
+.empty-banner p { margin: 0; font-size: 1rem; }
 .empty-banner a { color: var(--accent); font-weight: 600; }
+.empty-banner .toolbar { justify-content: center; }
+
+/* Tier description hint — appears under the tier picker. */
+.tier-desc {
+  padding: 0.5rem 0.75rem;
+  background: rgba(122,167,255,0.06);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  font-size: 0.88rem;
+}
+
+/* Custom-role row (user adds extra role labels beyond the presets). */
+.custom-roles-block { margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.4rem; }
+.custom-roles-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;
+}
+.cfg-custom-roles { display: flex; flex-direction: column; gap: 0.35rem; }
+.cfg-custom-role-row {
+  display: flex; gap: 0.4rem; align-items: stretch;
+}
+.cfg-custom-role-row input {
+  flex: 1; padding: 0.45rem 0.6rem; font: inherit;
+  background: var(--panel-2); color: inherit;
+  border: 1px solid var(--border); border-radius: 4px;
+}
+.cfg-custom-role-row button.cfg-custom-role-remove {
+  padding: 0 0.7rem; font-size: 1.1rem; line-height: 1;
+}
 
 .agent-option {
   display: flex; gap: 0.75rem; align-items: flex-start;
@@ -283,12 +312,34 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 }
 
 .tier-picker {
-  display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;
+  display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap;
   margin: 0.5rem 0 1rem; padding: 0.75rem 1rem;
   background: linear-gradient(135deg, rgba(122,167,255,0.10), rgba(86,211,138,0.08));
   border: 1px solid var(--border); border-radius: var(--radius-md);
 }
+.tier-picker > .hint { margin-right: 0.5rem; }
 .tier-picker input[type="radio"] { accent-color: var(--accent); }
+/* Make the three tier radios look like segmented buttons. */
+.tier-picker .field-inline {
+  position: relative;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  padding: 0.35rem 0.8rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.tier-picker .field-inline:hover { border-color: var(--accent); background: var(--panel-3); }
+.tier-picker .field-inline input[type="radio"] {
+  position: absolute; opacity: 0; pointer-events: none;
+}
+.tier-picker .field-inline:has(input:checked) {
+  border-color: var(--accent);
+  background: rgba(122,167,255,0.18);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+  color: var(--fg);
+  font-weight: 600;
+}
 .cfg-group {
   border: 1px solid var(--border); border-radius: var(--radius-md);
   padding: 1rem 1.15rem 1.1rem;
@@ -307,6 +358,29 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .role-grid, .network-grid, .toggle-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.4rem;
 }
+
+/* Inline checkbox chips inside config fieldsets (networks, output,
+   feature toggles, exclusions). Turns plain checkboxes into a bordered
+   card that clearly shows its checked state. */
+.cfg-group .field-inline {
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.75rem;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.cfg-group .field-inline:hover { border-color: var(--accent); background: var(--panel-3); }
+.cfg-group .field-inline:has(input[type="checkbox"]:checked) {
+  border-color: var(--accent);
+  background: rgba(122,167,255,0.10);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.cfg-group .field-inline input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 1rem; height: 1rem;
+}
+.cfg-group .field-inline > span { font-size: 0.9rem; }
 .role-card {
   border: 1px solid var(--border); border-radius: var(--radius-sm);
   padding: 0.65rem 0.8rem;
@@ -350,10 +424,12 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 #run-preview:empty { display: none; }
 #run-preview { font-size: 0.82rem; opacity: 0.8; }
 
-/* Tier visibility — JS toggles body[data-tier] */
-body[data-tier="quick"] .tier-standard,
-body[data-tier="quick"] .tier-full { display: none; }
-body[data-tier="standard"] .tier-full { display: none; }
+/* Tier visibility — JS toggles body[data-tier] on <body>.
+   - .tier-plus-standard = shown in Standard + Full (hidden in Quick)
+   - .tier-only-full     = shown in Full only (hidden in Quick and Standard) */
+body[data-tier="quick"] .tier-plus-standard,
+body[data-tier="quick"] .tier-only-full,
+body[data-tier="standard"] .tier-only-full { display: none; }
 
 /* ------------------------------------------------------------------
    Responsive breakpoints
@@ -446,3 +522,202 @@ code, pre { overflow-wrap: anywhere; }
 ::-webkit-scrollbar-thumb { background: var(--panel-3); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
 ::-webkit-scrollbar-thumb:hover { background: var(--border-strong); background-clip: content-box; border: 2px solid transparent; }
 
+
+/* --- Setup wizard --- */
+.wizard { display: flex; flex-direction: column; gap: 1rem; }
+.wiz-progress {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-wrap: wrap; gap: 0.4rem;
+}
+.wiz-step-pill {
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  padding: 0.4rem 0.85rem; border-radius: 999px;
+  background: var(--panel-2); border: 1px solid var(--border);
+  font-size: 0.85rem; color: var(--muted-2);
+  cursor: pointer; user-select: none;
+}
+.wiz-step-pill:hover { border-color: var(--border-strong); }
+.wiz-step-pill.done { opacity: 0.75; border-color: var(--border-strong); }
+.wiz-step-pill.active {
+  background: var(--accent); color: #0b0d12;
+  border-color: var(--accent); font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+.wiz-step-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.4rem; height: 1.4rem; border-radius: 999px;
+  background: rgba(0,0,0,0.25); font-size: 0.75rem; font-weight: 700;
+}
+.wiz-step-pill.active .wiz-step-num { background: rgba(255,255,255,0.35); color: #fff; }
+.wiz-step { display: none; }
+.wiz-step.active { display: block; }
+.wiz-nav {
+  display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+  padding-top: 0.5rem; border-top: 1px solid var(--border);
+}
+.wiz-nav button[disabled] { opacity: 0.45; cursor: not-allowed; }
+.wiz-summary { margin: 0.5rem 0 0; display: grid; grid-template-columns: max-content 1fr; gap: 0.35rem 1rem; }
+.wiz-summary dt { font-weight: 600; color: var(--muted-2); margin: 0; }
+.wiz-summary dd { margin: 0; color: var(--text); }
+/* Role picker */
+.role-picker { display: flex; gap: 0.75rem; align-items: flex-end; flex-wrap: wrap; }
+.role-picker .field { flex: 1 1 220px; }
+.role-picker button { align-self: flex-end; }
+.role-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.75rem; min-height: 1.25rem; }
+.role-chip {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.3rem 0.5rem 0.3rem 0.75rem; border-radius: 999px;
+  background: rgba(122,167,255,0.18); border: 1px solid rgba(122,167,255,0.4);
+  font-size: 0.9rem;
+}
+.role-chip-remove {
+  background: none; border: 0; color: inherit; cursor: pointer;
+  padding: 0 0.25rem; font-size: 1.05rem; line-height: 1;
+}
+.role-chip-remove:hover { color: var(--danger); }
+
+
+/* Embedded scout-onboard CLI (inside Setup "Prefer guided chat wizard?" disclosure) */
+.embedded-cli { margin-top: 1rem; border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.75rem; }
+.embedded-cli > summary { cursor: pointer; padding: 0.25rem 0; }
+.embedded-cli[open] > summary { margin-bottom: 0.5rem; }
+.embedded-cli-body { display: flex; flex-direction: column; gap: 0.6rem; }
+.cli-toolbar { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.cli-toolbar .hint[data-tone="error"] { color: var(--danger); }
+.cli-toolbar .hint[data-tone="ok"] { color: var(--ok, #6ec17a); }
+.cli-output {
+  background: rgba(0,0,0,0.35); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 0.6rem 0.75rem; margin: 0;
+  min-height: 10rem; max-height: 24rem; overflow: auto;
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85rem;
+  white-space: pre-wrap; word-break: break-word;
+}
+.cli-input-row { display: flex; gap: 0.5rem; }
+.cli-input-row input {
+  flex: 1 1 auto; padding: 0.4rem 0.6rem; border-radius: 4px;
+  border: 1px solid var(--border); background: var(--bg-2, rgba(0,0,0,0.2)); color: var(--text);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+.cli-input-row input:disabled { opacity: 0.55; }
+.visually-hidden {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+
+/* Existing subjects list shown at the top of the wizard Subject step */
+.existing-subjects { list-style: none; padding: 0; margin: 0.5rem 0 0.75rem; display: flex; flex-direction: column; gap: 0.35rem; }
+.existing-subject {
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: 4px;
+  background: rgba(255,255,255,0.02);
+}
+.existing-subject-name { font-weight: 600; }
+.existing-subject-type { font-size: 0.8rem; color: var(--muted-2); text-transform: capitalize; }
+.existing-subject-slug { font-size: 0.8rem; color: var(--muted-2); }
+.existing-subject-remove { margin-left: auto; }
+
+/* Suggest-tags chips */
+.tag-suggest-row { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.4rem; flex-wrap: wrap; }
+.tag-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.4rem; }
+.tag-chip-wrap { display: inline-flex; align-items: stretch; border-radius: 999px; overflow: hidden; }
+.tag-chip-wrap .tag-chip { border-radius: 999px 0 0 999px; border-right: none; }
+.tag-chip {
+  padding: 0.25rem 0.6rem; border-radius: 999px;
+  background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+  color: var(--text); cursor: pointer; font-size: 0.85rem;
+}
+.tag-chip:hover { background: rgba(122,167,255,0.12); }
+.tag-chip.selected {
+  background: rgba(122,167,255,0.22); border-color: rgba(122,167,255,0.55);
+}
+.tag-chip-x {
+  padding: 0.25rem 0.5rem; border-radius: 0 999px 999px 0;
+  background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+  color: var(--muted); cursor: pointer; font-size: 0.85rem; line-height: 1;
+}
+.tag-chip-x:hover { background: rgba(244,114,114,0.18); color: #fff; border-color: rgba(244,114,114,0.55); }
+
+/* Logo picker */
+.logo-picker { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.3rem; }
+.logo-preview { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.6rem; }
+.logo-thumb {
+  margin: 0; display: flex; flex-direction: column; align-items: center;
+  gap: 0.25rem; padding: 0.4rem; border: 1px solid var(--border); border-radius: 6px;
+  background: rgba(255,255,255,0.03); max-width: 120px;
+}
+.logo-thumb img { max-width: 96px; max-height: 96px; object-fit: contain; background: #fff; border-radius: 4px; }
+.logo-thumb figcaption { font-size: 0.72rem; color: var(--muted); word-break: break-all; text-align: center; }
+.advanced-toggle { margin-top: 0.5rem; }
+.advanced-toggle summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; }
+
+/* Collapsible Advanced sub-sections */
+.advanced-section {
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 0.5rem 0.75rem; margin-top: 0.6rem;
+  background: rgba(255,255,255,0.02);
+}
+.advanced-section > summary {
+  cursor: pointer; font-weight: 600; padding: 0.2rem 0;
+}
+.advanced-section[open] > summary { margin-bottom: 0.5rem; border-bottom: 1px solid var(--border); padding-bottom: 0.4rem; }
+.advanced-body { display: flex; flex-direction: column; gap: 0.6rem; padding-top: 0.2rem; }
+.brand-color-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.5rem;
+}
+.social-accts-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.5rem;
+}
+
+/* Add-one-at-a-time list (used by official social accounts). */
+.chip-list {
+  display: flex; flex-wrap: wrap; gap: 0.35rem;
+  margin: 0.4rem 0;
+}
+.chip-list .chip {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  background: var(--accent, #2563eb);
+  color: #fff;
+  padding: 0.2rem 0.5rem; border-radius: 999px; font-size: 0.85rem;
+}
+.chip-list .chip button {
+  background: transparent; border: 0; color: #fff;
+  cursor: pointer; font-size: 1rem; line-height: 1; padding: 0;
+}
+.chip-list .chip button:hover { opacity: 0.7; }
+.inline-add {
+  display: flex; gap: 0.4rem; align-items: center;
+}
+.inline-add input { flex: 1; }
+
+/* Social "Create posts for me" panel */
+.social-generate { margin-bottom: 1rem; }
+.social-generate h3 { margin-top: 0; }
+.social-generate-form { display: flex; flex-direction: column; gap: 0.6rem; }
+.social-generate-toolbar { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.social-generate .cli-output { max-height: 360px; overflow: auto; }
+
+/* Run view: date range picker */
+.run-range { border: 1px solid var(--border); border-radius: 4px; padding: 0.6rem 0.75rem; margin: 0; }
+.run-range legend { padding: 0 0.4rem; font-size: 0.9rem; color: var(--muted); }
+.run-range-choices { display: flex; flex-wrap: wrap; gap: 0.6rem 1.1rem; margin-bottom: 0.4rem; }
+.run-range-detail { display: flex; gap: 0.75rem; margin-top: 0.4rem; flex-wrap: wrap; }
+.run-range-detail .field { max-width: 220px; }
+
+/* Bulk select (Select all / Clear) controls */
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--accent, #4a7bd4);
+  cursor: pointer;
+  font-size: 0.85em;
+  font-weight: 500;
+  padding: 0 0.15rem;
+  text-decoration: underline;
+}
+.link-btn:hover { color: var(--accent-hover, #2e5cb5); }
+legend .link-btn { margin-left: 0.4rem; font-weight: 500; }
+.sep { color: var(--muted, #888); font-size: 0.85em; }
+.chip-bulk-bar {
+  margin: 0.25rem 0;
+  font-size: 0.85em;
+}

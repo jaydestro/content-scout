@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Content Scout</title>
+    <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -30,58 +31,82 @@
     <main>
       <!-- Setup -->
       <section id="view-setup" class="view">
-        <h2>Setup</h2>
+        <h2>Setup wizard</h2>
 
-        <div class="card">
-          <h3>1. Pick an agent</h3>
-          <p class="hint">
-            Content Scout runs as prompts against an AI coding agent. Pick which one the web UI should invoke
-            when you press <strong>Start run</strong>. You can change this any time.
-          </p>
-          <div id="agent-list"></div>
-          <div id="agent-custom-wrap" hidden>
-            <label>
-              Custom runner command
-              <input id="agent-custom-runner" type="text" placeholder='e.g. my-cli run "{prompt}"' />
-            </label>
-            <p class="hint">Use <code>{prompt}</code> as the placeholder for the Scout command.</p>
-          </div>
-          <div class="toolbar">
-            <button id="agent-save">Save agent choice</button>
-            <span id="agent-status" class="hint"></span>
-          </div>
-          <p id="agent-locked-note" class="hint" hidden>
-            <strong>Note:</strong> <code>SCOUT_RUNNER</code> env var is set — it overrides any choice saved here.
-            Unset it and restart to edit.
-          </p>
-        </div>
+        <div class="wizard" id="wizard">
+          <!-- Progress indicator (populated by JS based on current tier) -->
+          <ol class="wiz-progress" id="wiz-progress"></ol>
 
-        <div class="card">
-          <h3>2. Create a product config</h3>
-          <p id="setup-config-status" class="hint"></p>
-          <div class="tier-picker">
-            <span class="hint">How much do you want to customize?</span>
-            <label class="field-inline"><input type="radio" name="cfg-tier" value="quick" /><span>Quick (3 fields)</span></label>
-            <label class="field-inline"><input type="radio" name="cfg-tier" value="standard" checked /><span>Standard (recommended)</span></label>
-            <label class="field-inline"><input type="radio" name="cfg-tier" value="full" /><span>Full (every setting)</span></label>
+          <!-- STEP 1: Agent -->
+          <div class="wiz-step" data-step="agent">
+            <div class="card">
+              <h3>Pick an agent</h3>
+              <p class="hint">
+                Content Scout runs as prompts against an AI coding agent. Pick which one the web UI should invoke
+                when you press <strong>Start run</strong>. You can change this any time.
+              </p>
+              <div id="agent-list"></div>
+              <div id="agent-custom-wrap" hidden>
+                <label>
+                  Custom runner command
+                  <input id="agent-custom-runner" type="text" placeholder='e.g. my-cli run "{prompt}"' />
+                </label>
+                <p class="hint">Use <code>{prompt}</code> as the placeholder for the Scout command.</p>
+              </div>
+              <p id="agent-status" class="hint" aria-live="polite"></p>
+              <p id="agent-locked-note" class="hint" hidden>
+                <strong>Note:</strong> <code>SCOUT_RUNNER</code> env var is set — it overrides any choice saved here.
+                Unset it and restart to edit.
+              </p>
+            </div>
           </div>
 
-          <p class="hint" style="margin-top:0.25rem">
-            Track one or many subjects — products, projects, programming languages, frameworks, tools,
-            or any topic you want to follow. Hit <strong>+ Add another subject</strong> to track more,
-            and <strong>Save all</strong> creates every config in one click.
-          </p>
-
-          <div class="config-form">
-            <div id="cfg-entries">
-              <!-- First entry (template clone source) -->
-              <div class="cfg-entry" data-idx="0">
-                <div class="cfg-entry-head">
-                  <h4 class="cfg-entry-title">Subject #1</h4>
-                  <button type="button" class="cfg-entry-remove secondary" hidden>Remove</button>
+          <!-- STEP 2: Tier -->
+          <div class="wiz-step" data-step="tier">
+            <div class="card">
+              <h3>How much do you want to customize?</h3>
+              <p id="setup-config-status" class="hint"></p>
+              <div class="tier-picker">
+                <label class="field-inline"><input type="radio" name="cfg-tier" value="quick" /><span>Quick (3 fields)</span></label>
+                <label class="field-inline"><input type="radio" name="cfg-tier" value="standard" checked /><span>Standard (recommended)</span></label>
+                <label class="field-inline"><input type="radio" name="cfg-tier" value="full" /><span>Full (every setting)</span></label>
+              </div>
+              <p id="cfg-tier-desc" class="hint tier-desc"></p>
+              <details class="embedded-cli" id="onboard-cli-details">
+                <summary class="hint">Prefer the guided chat wizard?</summary>
+                <div class="embedded-cli-body">
+                  <p class="hint">
+                    Chat with the agent right here, or
+                    <button id="setup-run-onboard" class="linklike" type="button">open /scout-onboard in the Run view</button>
+                    — or paste <code>/scout-onboard</code> into your editor's chat panel.
+                  </p>
+                  <div class="cli-toolbar">
+                    <button id="onboard-cli-start" type="button">Start /scout-onboard</button>
+                    <button id="onboard-cli-stop" type="button" class="secondary" disabled>Stop</button>
+                    <span id="onboard-cli-status" class="hint"></span>
+                  </div>
+                  <pre id="onboard-cli-output" class="cli-output" aria-live="polite"></pre>
+                  <form id="onboard-cli-form" class="cli-input-row">
+                    <label class="visually-hidden" for="onboard-cli-input">Reply to the agent</label>
+                    <input id="onboard-cli-input" type="text" placeholder="Type a reply and press Enter…" disabled autocomplete="off" />
+                    <button type="submit" id="onboard-cli-send" disabled>Send</button>
+                  </form>
                 </div>
+              </details>
+            </div>
+          </div>
 
-                <!-- Always visible: subject basics -->
+          <!-- STEP 3: Subject basics -->
+          <div class="wiz-step" data-step="subject">
+            <div class="card">
+              <h3>What are you tracking?</h3>
+              <p class="hint">Track a product, project, programming language, framework, tool, or any topic you want to follow.</p>
+              <div id="cfg-existing-wrap" hidden>
+                <p id="cfg-existing-summary" class="hint"></p>
+                <ul id="cfg-existing-list" class="existing-subjects"></ul>
+                <p class="hint">Fill in the form below to add another subject, or remove any you no longer want to track.</p>
+              </div>
+              <div class="cfg-entry" data-idx="0">
                 <fieldset class="cfg-group">
                   <legend>Subject</legend>
                   <label class="field">
@@ -106,205 +131,384 @@
                     </select>
                   </label>
                 </fieldset>
-
-                <!-- Always visible: roles (multi-select) -->
-                <fieldset class="cfg-group">
-                  <legend>Your role(s) — pick one or more</legend>
-                  <div data-field="roles" class="role-grid cfg-roles">
-                    <!-- populated at runtime from /api/role-presets -->
-                  </div>
-                  <label class="field">
-                    <span>Custom role label <span class="hint">(optional — used if you skip the presets)</span></span>
-                    <input data-field="customRole" type="text" placeholder='e.g., "Developer Experience Lead"' />
-                  </label>
-                </fieldset>
-
-                <!-- Standard + Full: search/tag identity -->
-                <fieldset class="cfg-group tier-standard tier-full">
-                  <legend>Search identity</legend>
-                  <label class="field">
-                    <span>Search terms <span class="hint">(comma-separated)</span></span>
-                    <input data-field="terms" type="text" placeholder="e.g., Azure Cosmos DB, Cosmos DB" />
-                  </label>
-                  <label class="field">
-                    <span>Hashtags <span class="hint">(comma-separated, without #)</span></span>
-                    <input data-field="hashtags" type="text" placeholder="e.g., CosmosDB, Azure" />
-                  </label>
-                  <label class="field">
-                    <span>Topic tags <span class="hint">(comma-separated)</span></span>
-                    <input data-field="topicTags" type="text" placeholder="e.g., partitioning, sdk-dotnet, query-perf" />
-                  </label>
-                </fieldset>
-
-                <!-- Standard + Full: networks -->
-                <fieldset class="cfg-group tier-standard tier-full">
-                  <legend>Networks to scan</legend>
-                  <div class="network-grid">
-                    <label class="field-inline"><input type="checkbox" class="cfg-network" value="github" checked /><span>GitHub</span></label>
-                    <label class="field-inline"><input type="checkbox" class="cfg-network" value="blogs" checked /><span>Community blogs</span></label>
-                    <label class="field-inline"><input type="checkbox" class="cfg-network" value="stackoverflow" checked /><span>Stack Overflow</span></label>
-                    <label class="field-inline"><input type="checkbox" class="cfg-network" value="reddit" checked /><span>Reddit</span></label>
-                    <label class="field-inline"><input type="checkbox" class="cfg-network" value="hackernews" checked /><span>Hacker News</span></label>
-                    <label class="field-inline"><input type="checkbox" class="cfg-network" value="bluesky" checked /><span>Bluesky</span></label>
-                    <label class="field-inline"><input type="checkbox" class="cfg-network" value="x" /><span>X/Twitter</span></label>
-                    <label class="field-inline"><input type="checkbox" class="cfg-network" value="linkedin" /><span>LinkedIn</span></label>
-                    <label class="field-inline"><input type="checkbox" class="cfg-network" value="youtube" /><span>YouTube (requires key)</span></label>
-                  </div>
-                </fieldset>
-
-                <!-- Standard + Full: social posts toggle -->
-                <fieldset class="cfg-group tier-standard tier-full">
-                  <legend>Output</legend>
-                  <label class="field-inline"><input data-field="social" type="checkbox" checked /><span>Auto-generate social posts after scans</span></label>
-                  <label class="field-inline"><input data-field="calendar" type="checkbox" /><span>Generate a weekly posting calendar</span></label>
-                </fieldset>
-
-                <!-- Full only: exclusions -->
-                <fieldset class="cfg-group tier-full">
-                  <legend>Official channels to exclude</legend>
-                  <p class="hint">These get tracked separately and are filtered out of the community scan.</p>
-                  <label class="field">
-                    <span>Official blog URL</span>
-                    <input data-field="exclBlog" type="text" placeholder="e.g., https://aka.ms/cosmosdbblog" />
-                  </label>
-                  <label class="field">
-                    <span>Official YouTube channel</span>
-                    <input data-field="exclYoutube" type="text" placeholder="Channel ID or URL" />
-                  </label>
-                  <label class="field">
-                    <span>Official social handles <span class="hint">(comma-separated)</span></span>
-                    <input data-field="exclHandles" type="text" placeholder="@AzureCosmosDB, @Microsoft" />
-                  </label>
-                </fieldset>
-
-                <!-- Full only: feature toggles -->
-                <fieldset class="cfg-group tier-full">
-                  <legend>Feature toggles <span class="hint">(overrides role defaults)</span></legend>
-                  <p class="hint">Leave blank to use the defaults for your selected role(s).</p>
-                  <div class="toggle-grid">
-                    <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="competitorTracking" /><span>Competitor tracking</span></label>
-                    <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="conferenceCfp" /><span>Conference CFP tracking</span></label>
-                    <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="launchCoverage" /><span>Launch coverage tracking</span></label>
-                    <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="risingContributors" /><span>Rising contributors</span></label>
-                    <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="communityHealth" /><span>Community health signals</span></label>
-                    <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="docGapFocus" /><span>Doc gap focus</span></label>
-                    <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="sdkAdoption" /><span>SDK adoption tracking</span></label>
-                    <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="featureRequests" /><span>Feature request flagging</span></label>
-                    <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="unansweredQuestions" /><span>Unanswered question tracking</span></label>
-                  </div>
-                </fieldset>
-
-                <!-- Full only: brand -->
-                <fieldset class="cfg-group tier-full">
-                  <legend>Brand assets</legend>
-                  <label class="field">
-                    <span>Logo directory</span>
-                    <input data-field="brandLogoDir" type="text" placeholder="e.g., social-posts/images/brand/cosmosdb/" />
-                  </label>
-                  <label class="field">
-                    <span>Thumbnail style</span>
-                    <select data-field="brandThumb">
-                      <option value="text-only">Text-only</option>
-                      <option value="logo-plus-text">Logo + text</option>
-                      <option value="logo-only">Logo only</option>
-                    </select>
-                  </label>
-                  <label class="field">
-                    <span>Background theme</span>
-                    <select data-field="brandTheme">
-                      <option value="dark">Dark</option>
-                      <option value="light">Light</option>
-                      <option value="branded">Branded</option>
-                    </select>
-                  </label>
-                </fieldset>
-
-                <!-- Full only: competitors -->
-                <fieldset class="cfg-group tier-full">
-                  <legend>Competitors / alternatives <span class="hint">(comma-separated)</span></legend>
-                  <input data-field="competitors" type="text" placeholder="e.g., MongoDB, DynamoDB, CockroachDB" />
-                </fieldset>
-
-                <!-- Full only: conferences -->
-                <fieldset class="cfg-group tier-full">
-                  <legend>Conferences to track <span class="hint">(comma-separated)</span></legend>
-                  <input data-field="conferences" type="text" placeholder="e.g., KubeCon, re:Invent, Build" />
-                </fieldset>
-
-                <!-- Full only: watchlist -->
-                <fieldset class="cfg-group tier-full">
-                  <legend>Known author watchlist</legend>
-                  <p class="hint">Community developers whose content always passes the quality filter. One per line: <code>Name | Affiliation | @handle</code></p>
-                  <textarea data-field="watchlist" rows="4" placeholder="Jane Doe | Acme Corp | @janedoe
-John Smith | Independent | @jsmith"></textarea>
-                </fieldset>
-
-                <!-- Full only: custom sources -->
-                <fieldset class="cfg-group tier-full">
-                  <legend>Custom sources</legend>
-                  <p class="hint">Blogs, newsletters, podcasts, or other URLs. One per line: <code>Name | Type | URL</code></p>
-                  <textarea data-field="customSources" rows="4" placeholder="Dev Blog | blog | https://example.com/feed.xml
-My Podcast | podcast | https://example.com/podcast.rss"></textarea>
-                </fieldset>
               </div>
             </div>
+          </div>
 
-            <div class="toolbar" style="margin-top:0.5rem">
-              <button id="cfg-add-entry" type="button" class="secondary">+ Add another subject</button>
+          <!-- STEP 4: Roles — dropdown + chips -->
+          <div class="wiz-step" data-step="roles">
+            <div class="card">
+              <h3>Your role</h3>
+              <p class="hint">Roles shape defaults (what to track, tone of social posts). Pick one or many.</p>
+
+              <div class="role-picker">
+                <label class="field" style="flex:1">
+                  <span>Choose a role</span>
+                  <select id="cfg-role-select">
+                    <option value="">— select a preset role —</option>
+                    <!-- presets populated at runtime -->
+                    <option value="__custom__">Other (type your own)…</option>
+                  </select>
+                </label>
+                <label class="field" id="cfg-role-custom-wrap" hidden style="flex:1">
+                  <span>Custom role label</span>
+                  <input id="cfg-role-custom-input" type="text" placeholder='e.g., "Developer Experience Lead"' />
+                </label>
+                <button id="cfg-role-add" type="button">+ Add role</button>
+              </div>
+              <p id="cfg-role-hint" class="hint"></p>
+
+              <div id="cfg-roles-chosen" class="role-chips" aria-live="polite">
+                <!-- chips appended here -->
+              </div>
             </div>
           </div>
 
-          <div class="toolbar" style="margin-top:0.75rem">
-            <button id="cfg-create">Save all</button>
-            <span id="cfg-status" class="hint"></span>
+          <!-- STEP 5: Search identity (standard+) -->
+          <div class="wiz-step" data-step="search" data-tiers="standard full">
+            <div class="card">
+              <h3>Search identity</h3>
+              <fieldset class="cfg-group">
+                <legend>Terms and tags</legend>
+                <label class="field">
+                  <span>Search terms <span class="hint">(comma-separated)</span></span>
+                  <input data-field="terms" id="cfg-terms" type="text" placeholder="e.g., Azure Cosmos DB, Cosmos DB" />
+                  <div class="tag-suggest-row">
+                    <button type="button" id="cfg-terms-suggest" class="secondary">✨ Suggest terms</button>
+                    <span id="cfg-terms-suggest-status" class="hint"></span>
+                  </div>
+                  <div id="cfg-terms-suggest-chips" class="tag-chips" hidden></div>
+                </label>
+                <label class="field">
+                  <span>Hashtags <span class="hint">(comma-separated, without #)</span></span>
+                  <input data-field="hashtags" id="cfg-hashtags" type="text" placeholder="e.g., CosmosDB, Azure" />
+                  <div class="tag-suggest-row">
+                    <button type="button" id="cfg-hashtags-suggest" class="secondary">✨ Suggest hashtags</button>
+                    <span id="cfg-hashtags-suggest-status" class="hint"></span>
+                  </div>
+                  <div id="cfg-hashtags-suggest-chips" class="tag-chips" hidden></div>
+                </label>
+                <label class="field">
+                  <span>Topic tags <span class="hint">(comma-separated)</span></span>
+                  <input data-field="topicTags" id="cfg-topic-tags" type="text" placeholder="e.g., partitioning, sdk-dotnet, query-perf" />
+                  <p class="hint">
+                    Canonical labels applied to every report item (1–4 per item). Used by <code>scout gaps</code>
+                    and <code>scout trends</code> to find uncovered feature areas and track month-over-month shifts.
+                  </p>
+                  <div class="tag-suggest-row">
+                    <button type="button" id="cfg-topic-suggest" class="secondary">✨ Suggest tags</button>
+                    <span id="cfg-topic-suggest-status" class="hint"></span>
+                  </div>
+                  <div id="cfg-topic-suggest-chips" class="tag-chips" hidden></div>
+                </label>
+              </fieldset>
+            </div>
           </div>
-          <details style="margin-top:0.75rem">
-            <summary class="hint">Prefer the guided chat wizard?</summary>
-            <p class="hint" style="margin-top:0.5rem">
-              Open your editor's chat panel and say <code>/scout-onboard</code>, or
-              <button id="setup-run-onboard" class="linklike" type="button">run /scout-onboard in the Run view</button>.
-            </p>
-          </details>
-        </div>
 
-        <div class="card">
-          <h3>3. Add API keys (optional but recommended)</h3>
-          <p class="hint">
-            Some sources (YouTube, Reddit, Bluesky, X) need API keys. Values are saved to <code>.env</code> at the repo root.
-            Leave any you don't have blank — those sources are skipped during a scan.
-          </p>
-          <div id="setup-env"></div>
-          <div class="toolbar" style="margin-top:0.75rem">
-            <button id="env-save">Save API keys</button>
-            <button id="env-add" class="secondary" type="button">+ Add custom key</button>
-            <span id="env-status" class="hint"></span>
+          <!-- STEP 6: Networks + output (standard+) -->
+          <div class="wiz-step" data-step="networks" data-tiers="standard full">
+            <div class="card">
+              <h3>Networks & output</h3>
+              <fieldset class="cfg-group">
+                <legend>Networks to scan <button type="button" class="link-btn bulk-select" data-target=".cfg-network" data-action="all">Select all</button> <span class="sep">·</span> <button type="button" class="link-btn bulk-select" data-target=".cfg-network" data-action="none">Clear</button></legend>
+                <div class="network-grid">
+                  <label class="field-inline"><input type="checkbox" class="cfg-network" value="github" checked /><span>GitHub</span></label>
+                  <label class="field-inline"><input type="checkbox" class="cfg-network" value="blogs" checked /><span>Community blogs</span></label>
+                  <label class="field-inline"><input type="checkbox" class="cfg-network" value="stackoverflow" checked /><span>Stack Overflow</span></label>
+                  <label class="field-inline"><input type="checkbox" class="cfg-network" value="reddit" checked /><span>Reddit</span></label>
+                  <label class="field-inline"><input type="checkbox" class="cfg-network" value="hackernews" checked /><span>Hacker News</span></label>
+                  <label class="field-inline"><input type="checkbox" class="cfg-network" value="bluesky" checked /><span>Bluesky</span></label>
+                  <label class="field-inline"><input type="checkbox" class="cfg-network" value="x" /><span>X/Twitter</span></label>
+                  <label class="field-inline"><input type="checkbox" class="cfg-network" value="linkedin" /><span>LinkedIn</span></label>
+                  <label class="field-inline"><input type="checkbox" class="cfg-network" value="youtube" /><span>YouTube (requires key)</span></label>
+                </div>
+              </fieldset>
+              <fieldset class="cfg-group">
+                <legend>Output <button type="button" class="link-btn bulk-select" data-target=".cfg-output" data-action="all">Select all</button> <span class="sep">·</span> <button type="button" class="link-btn bulk-select" data-target=".cfg-output" data-action="none">Clear</button></legend>
+                <label class="field-inline"><input data-field="social" class="cfg-output" type="checkbox" checked /><span>Auto-generate social posts after scans</span></label>
+                <label class="field-inline"><input data-field="calendar" class="cfg-output" type="checkbox" /><span>Generate a weekly posting calendar</span></label>
+              </fieldset>
+              <fieldset class="cfg-group">
+                <legend>Social post accounts</legend>
+                <p class="hint">Your team's handles used when drafting posts — these get <em>mentioned</em> or authenticated against.</p>
+                <div class="social-accts-grid">
+                  <label class="field"><span>LinkedIn</span><input data-field="socAcctLinkedin" type="text" placeholder="@AzureCosmosDB or URL" /></label>
+                  <label class="field"><span>X / Twitter</span><input data-field="socAcctX" type="text" placeholder="@AzureCosmosDB" /></label>
+                  <label class="field"><span>Bluesky</span><input data-field="socAcctBluesky" type="text" placeholder="@azurecosmos.bsky.social" /></label>
+                  <label class="field"><span>YouTube Community</span><input data-field="socAcctYoutube" type="text" placeholder="@AzureCosmosDB" /></label>
+                </div>
+              </fieldset>
+            </div>
+          </div>
+
+          <!-- STEP 7: Advanced (full only) -->
+          <div class="wiz-step" data-step="advanced" data-tiers="full">
+            <div class="card">
+              <h3>Advanced settings</h3>
+              <p class="hint">Most fields have a <strong>✨ Suggest</strong> button that seeds likely values based on your subject name. Click a chip to add/remove it. You can always edit afterwards.</p>
+              <fieldset class="cfg-group">
+                <legend>Official channels <button type="button" class="link-btn" id="cfg-channels-suggest">✨ Suggest channels</button></legend>
+                <p class="hint">We use these to classify content as <strong>Official</strong> vs. <strong>Community</strong> in your reports — they're recommendations, not exclusions. Click <strong>✨ Suggest channels</strong> to seed common ones, then add any others. <span id="cfg-channels-suggest-status" class="hint"></span></p>
+                <label class="field">
+                  <span>Official blog URLs</span>
+                  <input data-field="exclBlog" type="hidden" />
+                  <div id="cfg-blog-list" class="chip-list" hidden></div>
+                  <div class="inline-add">
+                    <input id="cfg-blog-add-input" type="text" placeholder="e.g., https://devblogs.microsoft.com/cosmosdb/" />
+                    <button type="button" id="cfg-blog-add-btn" class="link-btn">+ Add</button>
+                  </div>
+                  <div id="cfg-blog-suggest-chips" class="tag-chips" hidden></div>
+                </label>
+                <label class="field">
+                  <span>Official YouTube channels</span>
+                  <input data-field="exclYoutube" type="hidden" />
+                  <div id="cfg-youtube-list" class="chip-list" hidden></div>
+                  <div class="inline-add">
+                    <input id="cfg-youtube-add-input" type="text" placeholder="Channel ID or URL (e.g., https://youtube.com/@AzureCosmosDB)" />
+                    <button type="button" id="cfg-youtube-add-btn" class="link-btn">+ Add</button>
+                  </div>
+                  <div id="cfg-youtube-suggest-chips" class="tag-chips" hidden></div>
+                </label>
+                <label class="field">
+                  <span>Official social accounts</span>
+                  <p class="hint">Click <strong>✨ Suggest channels</strong> above to seed common ones, then add any others below — one at a time.</p>
+                  <input data-field="exclHandles" type="hidden" />
+                  <div id="cfg-handles-list" class="chip-list" hidden></div>
+                  <div class="inline-add">
+                    <input id="cfg-handle-add-input" type="text" placeholder="@AzureCosmosDB, https://linkedin.com/…, @user@mastodon.social" />
+                    <button type="button" id="cfg-handle-add-btn" class="link-btn">+ Add</button>
+                  </div>
+                  <span class="hint">Accepts any network: X/Twitter or Bluesky handles (<code>@name</code>), LinkedIn company/showcase URLs, Mastodon handles (<code>@user@server</code>), Threads, YouTube handles, etc.</span>
+                  <div id="cfg-social-suggest-chips" class="tag-chips" hidden></div>
+                </label>
+              </fieldset>
+              <fieldset class="cfg-group">
+                <legend>Feature toggles <span class="hint">(overrides role defaults)</span> <button type="button" class="link-btn bulk-select" data-target=".cfg-flag" data-action="all">Select all</button> <span class="sep">·</span> <button type="button" class="link-btn bulk-select" data-target=".cfg-flag" data-action="none">Clear</button></legend>
+                <p class="hint">Leave blank to use the defaults for your selected role(s).</p>
+                <div class="toggle-grid">
+                  <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="competitorTracking" /><span>Competitor tracking</span></label>
+                  <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="conferenceCfp" /><span>Conference CFP tracking</span></label>
+                  <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="launchCoverage" /><span>Launch coverage tracking</span></label>
+                  <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="risingContributors" /><span>Rising contributors</span></label>
+                  <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="communityHealth" /><span>Community health signals</span></label>
+                  <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="docGapFocus" /><span>Doc gap focus</span></label>
+                  <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="sdkAdoption" /><span>SDK adoption tracking</span></label>
+                  <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="featureRequests" /><span>Feature request flagging</span></label>
+                  <label class="field-inline"><input type="checkbox" class="cfg-flag" data-flag="unansweredQuestions" /><span>Unanswered question tracking</span></label>
+                </div>
+              </fieldset>
+              <fieldset class="cfg-group">
+                <legend>Brand assets</legend>
+                <div class="field">
+                  <span>Logo files</span>
+                  <div class="logo-picker">
+                    <input id="cfg-logo-file" type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif,image/x-icon,image/avif" multiple hidden />
+                    <button type="button" class="secondary" id="cfg-logo-browse">Choose image files…</button>
+                    <span id="cfg-logo-status" class="hint">PNG, JPG, SVG, WebP — uploaded to <code>social-posts/images/brand/&lt;slug&gt;/</code></span>
+                  </div>
+                  <div id="cfg-logo-preview" class="logo-preview" hidden></div>
+                  <details class="advanced-toggle">
+                    <summary>Or point to an existing folder in the repo</summary>
+                    <label class="field">
+                      <span class="hint">Repo-relative path (auto-filled when you upload above)</span>
+                      <input data-field="brandLogoDir" type="text" placeholder="social-posts/images/brand/your-slug/" />
+                    </label>
+                  </details>
+                </div>
+                <label class="field">
+                  <span>Thumbnail style</span>
+                  <select data-field="brandThumb">
+                    <option value="text-only">Text-only</option>
+                    <option value="logo-plus-text">Logo + text</option>
+                    <option value="logo-only">Logo only</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Background theme</span>
+                  <select data-field="brandTheme">
+                    <option value="dark">Dark</option>
+                    <option value="light">Light</option>
+                    <option value="branded">Branded</option>
+                  </select>
+                </label>
+              </fieldset>
+              <fieldset class="cfg-group">
+                <legend>Competitors / alternatives <span class="hint">(comma-separated)</span> <button type="button" class="link-btn" id="cfg-competitors-suggest">✨ Suggest</button></legend>
+                <input data-field="competitors" type="text" placeholder="e.g., MongoDB, DynamoDB, CockroachDB" />
+                <span id="cfg-competitors-suggest-status" class="hint"></span>
+                <div id="cfg-competitors-suggest-chips" class="tag-chips" hidden></div>
+              </fieldset>
+              <fieldset class="cfg-group">
+                <legend>Conferences to track <span class="hint">(comma-separated)</span> <button type="button" class="link-btn" id="cfg-conferences-suggest">✨ Suggest</button></legend>
+                <input data-field="conferences" type="text" placeholder="e.g., KubeCon, re:Invent, Build" />
+                <span id="cfg-conferences-suggest-status" class="hint"></span>
+                <div id="cfg-conferences-suggest-chips" class="tag-chips" hidden></div>
+              </fieldset>
+              <fieldset class="cfg-group">
+                <legend>Known author watchlist <button type="button" class="link-btn" id="cfg-watchlist-suggest">✨ Suggest</button></legend>
+                <p class="hint">Community developers whose content always passes the quality filter. One per line: <code>Name | Affiliation | @handle</code> <span id="cfg-watchlist-suggest-status" class="hint"></span></p>
+                <textarea data-field="watchlist" rows="4" placeholder="Jane Doe | Acme Corp | @janedoe
+John Smith | Independent | @jsmith"></textarea>
+                <div id="cfg-watchlist-suggest-chips" class="tag-chips" hidden></div>
+              </fieldset>
+              <fieldset class="cfg-group">
+                <legend>Influencers to monitor <button type="button" class="link-btn" id="cfg-influencers-suggest">✨ Suggest</button></legend>
+                <p class="hint">High-signal accounts — mentions from these are important. One per line: <code>Name | Platform | Handle or URL</code> <span id="cfg-influencers-suggest-status" class="hint"></span></p>
+                <textarea data-field="influencers" rows="3" placeholder="Kelvin Lau | X | @kelaboratory
+Mark Brown | LinkedIn | Azure Cosmos DB PM"></textarea>
+                <div id="cfg-influencers-suggest-chips" class="tag-chips" hidden></div>
+              </fieldset>
+              <fieldset class="cfg-group">
+                <legend>Product team members <span class="hint">(not counted as external coverage)</span></legend>
+                <p class="hint">People on your team whose posts get flagged as "Team Member Mentions" rather than community content. One per line: <code>Name — Role or context</code></p>
+                <textarea data-field="teamMembers" rows="3" placeholder="Alex Liu — PM, Cosmos DB
+Priya Patel — Principal engineer"></textarea>
+              </fieldset>
+              <fieldset class="cfg-group">
+                <legend>Excluded GitHub orgs / repos <button type="button" class="link-btn" id="cfg-exclrepos-suggest">✨ Suggest</button></legend>
+                <p class="hint">Official repos to skip in the community scan. One per line — supports <code>org/*</code> wildcards. <span id="cfg-exclrepos-suggest-status" class="hint"></span></p>
+                <textarea data-field="exclRepos" rows="3" placeholder="Azure/azure-cosmos-dotnet-v3
+AzureCosmosDB/*"></textarea>
+                <div id="cfg-exclrepos-suggest-chips" class="tag-chips" hidden></div>
+              </fieldset>
+              <fieldset class="cfg-group">
+                <legend>Excluded domains / authors <button type="button" class="link-btn" id="cfg-excldomains-suggest">✨ Suggest</button></legend>
+                <p class="hint">Specific domains or byline authors to filter out (typically your own marketing site). One per line. <span id="cfg-excldomains-suggest-status" class="hint"></span></p>
+                <textarea data-field="exclDomains" rows="2" placeholder="devblogs.microsoft.com/cosmosdb
+acme.com/blog"></textarea>
+                <div id="cfg-excldomains-suggest-chips" class="tag-chips" hidden></div>
+              </fieldset>
+              <details class="advanced-section">
+                <summary>Brand assets &mdash; advanced (colors, fonts, rules)</summary>
+                <div class="advanced-body">
+                  <div class="toolbar"><button type="button" class="link-btn" id="cfg-brand-suggest">✨ Suggest brand defaults</button> <span id="cfg-brand-suggest-status" class="hint"></span></div>
+                  <label class="field"><span>Canonical product name on thumbnails</span><input data-field="brandProductName" type="text" placeholder="e.g., Azure Cosmos DB — never abbreviate" /></label>
+                  <label class="field"><span>Logo usage rules</span><textarea data-field="brandLogoRules" rows="2" placeholder="e.g., Use full logo on dark, icon-only on accent. 20px clear space."></textarea></label>
+                  <div class="brand-color-grid">
+                    <label class="field"><span>Primary bg</span><input data-field="brandColorBg" type="text" placeholder="#0f172a" /></label>
+                    <label class="field"><span>Accent</span><input data-field="brandColorAccent" type="text" placeholder="#2563eb" /></label>
+                    <label class="field"><span>Highlight</span><input data-field="brandColorHighlight" type="text" placeholder="#22d3ee" /></label>
+                    <label class="field"><span>Text</span><input data-field="brandColorText" type="text" placeholder="#ffffff" /></label>
+                  </div>
+                  <label class="field"><span>Font</span><input data-field="brandFont" type="text" placeholder="e.g., Segoe UI Semibold for headings" /></label>
+                  <label class="field"><span>Thumbnail composition</span><input data-field="brandComposition" type="text" placeholder="e.g., Logo top-left, headline centered" /></label>
+                  <label class="field"><span>Brand guardrails (never do)</span><textarea data-field="brandGuardrails" rows="2" placeholder="e.g., Never stretch logo; never use competitor colors"></textarea></label>
+                </div>
+              </details>
+              <details class="advanced-section">
+                <summary>Social post standards</summary>
+                <div class="advanced-body">
+                  <div class="toolbar"><button type="button" class="link-btn" id="cfg-sps-suggest">✨ Suggest standards</button> <span id="cfg-sps-suggest-status" class="hint"></span></div>
+                  <label class="field"><span>Target audience</span><input data-field="spsAudience" type="text" placeholder="e.g., Backend developers, cloud architects" /></label>
+                  <label class="field"><span>Tone</span><input data-field="spsTone" type="text" placeholder="e.g., Plainspoken, technically credible, non-marketing" /></label>
+                  <label class="field"><span>Brand name — acceptable short form</span><input data-field="spsShortName" type="text" placeholder="e.g., Cosmos DB (after full name appears)" /></label>
+                  <label class="field"><span>Brand name — never write</span><input data-field="spsNeverWrite" type="text" placeholder="e.g., CosmosDB, Azure CosmosDB" /></label>
+                  <label class="field"><span>Avoid words / phrases <span class="hint">(comma-separated)</span></span><input data-field="spsAvoidWords" type="text" placeholder="e.g., revolutionary, game-changer, leverage" /></label>
+                  <label class="field"><span>Emoji policy</span><input data-field="spsEmoji" type="text" placeholder="e.g., 0-2 max" /></label>
+                  <label class="field"><span>Hashtag policy</span><input data-field="spsHashtag" type="text" placeholder="e.g., 1-2 at end" /></label>
+                  <label class="field"><span>Things to avoid</span><input data-field="spsThingsAvoid" type="text" placeholder="e.g., em dashes, UTM links, fluff phrases" /></label>
+                  <label class="field"><span>Additional rules</span><textarea data-field="spsAdditional" rows="2" placeholder="Any org-specific rules"></textarea></label>
+                </div>
+              </details>
+              <details class="advanced-section">
+                <summary>Posting preferences</summary>
+                <div class="advanced-body">
+                  <div class="toolbar"><button type="button" class="link-btn" id="cfg-post-suggest">✨ Suggest preferences</button> <span id="cfg-post-suggest-status" class="hint"></span></div>
+                  <label class="field"><span>Target posting frequency</span><input data-field="postFrequency" type="text" placeholder="e.g., 3-5 posts per week" /></label>
+                  <label class="field"><span>Days / times to avoid</span><input data-field="postAvoid" type="text" placeholder="e.g., no posts on Fridays" /></label>
+                  <label class="field"><span>Approval workflow</span><input data-field="postApproval" type="text" placeholder="e.g., Posts go to review doc before publishing" /></label>
+                  <label class="field"><span>Team members to tag in posts</span><input data-field="postTagTeam" type="text" placeholder="e.g., @PM-Alex, @DevRel-Priya" /></label>
+                </div>
+              </details>
+              <details class="advanced-section">
+                <summary>Language &amp; region</summary>
+                <div class="advanced-body">
+                  <div class="toolbar"><button type="button" class="link-btn" id="cfg-lang-suggest">✨ Suggest language &amp; region</button> <span id="cfg-lang-suggest-status" class="hint"></span></div>
+                  <label class="field"><span>Languages to track</span><input data-field="langs" type="text" placeholder="e.g., English, Japanese, Portuguese" /></label>
+                  <label class="field"><span>Region focus</span><input data-field="regions" type="text" placeholder="e.g., Global, or North America + EMEA" /></label>
+                </div>
+              </details>
+              <fieldset class="cfg-group">
+                <legend>Custom sources</legend>
+                <p class="hint">Blogs, newsletters, podcasts, or other URLs. One per line: <code>Name | Type | URL</code></p>
+                <textarea data-field="customSources" rows="4" placeholder="Dev Blog | blog | https://example.com/feed.xml
+My Podcast | podcast | https://example.com/podcast.rss"></textarea>
+              </fieldset>
+            </div>
+          </div>
+
+          <!-- STEP 8: API keys -->
+          <div class="wiz-step" data-step="keys">
+            <div class="card">
+              <h3>API keys (optional)</h3>
+              <p class="hint">
+                Some sources (YouTube, Reddit, Bluesky, X) need API keys. Values are saved to <code>.env</code> at the repo root.
+                Leave any you don't have blank — those sources are skipped during a scan.
+              </p>
+              <div id="setup-env"></div>
+              <div class="toolbar" style="margin-top:0.75rem">
+                <button id="env-save">Save API keys</button>
+                <button id="env-add" class="secondary" type="button">+ Add custom key</button>
+                <span id="env-status" class="hint"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- STEP 9: Review -->
+          <div class="wiz-step" data-step="review">
+            <div class="card">
+              <h3>Review & save</h3>
+              <p class="hint">Double-check your choices, then save. You can edit later in the Configs view.</p>
+              <dl id="wiz-summary" class="wiz-summary"></dl>
+              <div class="toolbar" style="margin-top:0.75rem">
+                <button id="cfg-create">Save config</button>
+                <span id="cfg-status" class="hint"></span>
+              </div>
+              <div id="cfg-after-save" class="toolbar" hidden style="margin-top:0.75rem">
+                <button id="cfg-add-another" type="button">+ Add another subject</button>
+                <button id="cfg-goto-configs" type="button" class="secondary">Go to Configs</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Wizard nav -->
+          <div class="wiz-nav">
+            <button id="wiz-prev" type="button" class="secondary">← Previous</button>
+            <span id="wiz-pos" class="hint"></span>
+            <span id="wiz-saved" class="hint" aria-live="polite"></span>
+            <button id="wiz-restart" type="button" class="link-btn" title="Clear all wizard inputs and start from the beginning">Start over</button>
+            <button id="wiz-next" type="button">Next →</button>
           </div>
         </div>
       </section>
-
       <!-- Dashboard -->
       <section id="view-dashboard" class="view">
         <div id="dash-empty" class="empty-banner" hidden>
-          <h3>Welcome to Content Scout</h3>
-          <p>No configs detected yet. Open <a href="#" data-goto="setup">Setup</a> to pick an agent and create your first product config.</p>
+          <h3>You need to onboard to see your dashboard</h3>
+          <p id="dash-empty-msg">Open <a href="#" data-goto="setup">Setup</a> to pick an agent and create your first product config.</p>
+          <div class="toolbar" style="margin-top:0.75rem">
+            <button type="button" data-goto="setup">Go to Setup</button>
+          </div>
         </div>
-        <h2>Dashboard</h2>
-        <div class="cards">
-          <div class="card">
-            <h3>Configs</h3>
-            <ul id="dash-configs"><li>Loading…</li></ul>
-          </div>
-          <div class="card">
-            <h3>Recent reports</h3>
-            <ul id="dash-reports"><li>Loading…</li></ul>
-          </div>
-          <div class="card">
-            <h3>Recent runs</h3>
-            <ul id="dash-runs"><li>No runs yet</li></ul>
-          </div>
-          <div class="card">
-            <h3>Environment</h3>
-            <div id="dash-env">Loading…</div>
+        <div id="dash-body">
+          <h2>Dashboard</h2>
+          <div class="cards">
+            <div class="card">
+              <h3>Configs</h3>
+              <ul id="dash-configs"><li>Loading…</li></ul>
+            </div>
+            <div class="card">
+              <h3>Recent reports</h3>
+              <ul id="dash-reports"><li>Loading…</li></ul>
+            </div>
+            <div class="card">
+              <h3>Recent runs</h3>
+              <ul id="dash-runs"><li>No runs yet</li></ul>
+            </div>
+            <div class="card">
+              <h3>Environment</h3>
+              <div id="dash-env">Loading…</div>
+            </div>
           </div>
         </div>
       </section>
@@ -349,24 +553,50 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
           </label>
           <div id="run-subject-wrap">
             <div class="subject-picker-head">
-              <span>Which subject?</span>
-              <span class="hint" id="run-subject-hint">Pick one to scan, or choose <strong>All subjects</strong>.</span>
+              <span>Which subjects?</span>
+              <span class="hint" id="run-subject-hint">Check one or more — or leave <strong>All subjects</strong> checked to run against every config.</span>
             </div>
             <div id="run-subject-list" class="subject-picker">
               <label class="subject-card">
-                <input type="radio" name="run-slug-choice" value="" checked />
+                <input type="checkbox" id="run-subject-all" value="" checked />
                 <span class="subject-name">All subjects</span>
                 <span class="subject-desc">Run against every config</span>
               </label>
               <!-- one card per config, populated at runtime -->
             </div>
-            <!-- Hidden select kept for backwards-compat with existing code paths -->
-            <select id="run-slug" hidden><option value="">— all —</option></select>
+            <!-- Hidden input carries the computed slug value for backwards-compat. -->
+            <input type="hidden" id="run-slug" value="" />
           </div>
           <label id="run-extra-wrap">
             Extra args (optional)
-            <input id="run-extra" type="text" placeholder="e.g. a URL, item number, or date range" />
+            <input id="run-extra" type="text" placeholder="e.g. a URL, item number, or additional context" />
           </label>
+          <fieldset id="run-range-wrap" class="run-range">
+            <legend>Date range</legend>
+            <div class="run-range-choices">
+              <label class="field-inline"><input type="radio" name="run-range" value="default" checked /><span>Last 30 days <span class="hint">(default)</span></span></label>
+              <label class="field-inline"><input type="radio" name="run-range" value="current-month" /><span>Current month</span></label>
+              <label class="field-inline"><input type="radio" name="run-range" value="last-month" /><span>Last month</span></label>
+              <label class="field-inline"><input type="radio" name="run-range" value="month" /><span>Specific month</span></label>
+              <label class="field-inline"><input type="radio" name="run-range" value="custom" /><span>Custom range</span></label>
+            </div>
+            <div id="run-range-month-wrap" class="run-range-detail" hidden>
+              <label class="field">
+                <span>Month</span>
+                <input id="run-range-month" type="month" />
+              </label>
+            </div>
+            <div id="run-range-custom-wrap" class="run-range-detail" hidden>
+              <label class="field">
+                <span>From</span>
+                <input id="run-range-from" type="date" />
+              </label>
+              <label class="field">
+                <span>To</span>
+                <input id="run-range-to" type="date" />
+              </label>
+            </div>
+          </fieldset>
           <label id="run-prompt-wrap" hidden>
             Custom prompt
             <textarea id="run-prompt" rows="4" placeholder="Type any message to send the agent"></textarea>
@@ -380,6 +610,15 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
         <h3>Output</h3>
         <div id="run-meta" class="hint"></div>
         <pre id="run-output">No run started.</pre>
+        <div id="run-reply-wrap" class="run-reply" hidden>
+          <label for="run-reply-input">Reply to the agent</label>
+          <textarea id="run-reply-input" rows="2" placeholder="Type a follow-up message and press Send (or Ctrl+Enter)"></textarea>
+          <div class="toolbar">
+            <button id="run-reply-send">Send</button>
+            <button id="run-stop" class="secondary">Stop run</button>
+            <span class="hint" id="run-reply-hint">Sends your message to the running agent's stdin.</span>
+          </div>
+        </div>
       </section>
 
       <!-- Reports -->
@@ -396,6 +635,28 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
       <!-- Social -->
       <section id="view-social" class="view">
         <h2>Social posts</h2>
+
+        <div class="card social-generate">
+          <h3>✨ Create posts for me</h3>
+          <p class="hint">Paste a URL (blog, video, repo, talk) and optional context — Content Scout will run <code>/scout-post</code> against your chosen agent and draft LinkedIn + X posts.</p>
+          <form id="social-generate-form" class="social-generate-form">
+            <label class="field">
+              <span>URL <span class="req">*</span></span>
+              <input id="social-gen-url" type="url" placeholder="https://example.com/post" required />
+            </label>
+            <label class="field">
+              <span>Extra context <span class="hint">(optional — angle, audience, focus)</span></span>
+              <textarea id="social-gen-context" rows="3" placeholder="e.g., focus on the partitioning tips, tone for a senior engineering audience"></textarea>
+            </label>
+            <div class="social-generate-toolbar">
+              <button type="submit" id="social-gen-start">Generate posts</button>
+              <button type="button" id="social-gen-stop" class="secondary" disabled>Stop</button>
+              <span id="social-gen-status" class="hint"></span>
+            </div>
+          </form>
+          <pre id="social-gen-output" class="cli-output" aria-live="polite" hidden></pre>
+        </div>
+
         <div class="split">
           <aside>
             <ul id="social-list"></ul>
