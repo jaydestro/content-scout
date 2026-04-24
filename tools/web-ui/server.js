@@ -94,6 +94,8 @@ async function getRunner() {
 const app = express();
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+// Expose the repo's docs/assets (banner, logos, screenshots) to the UI.
+app.use('/assets', express.static(path.join(REPO_ROOT, 'docs', 'assets')));
 
 // --- in-memory run log ---------------------------------------------
 const runs = new Map();
