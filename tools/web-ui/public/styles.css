@@ -36,33 +36,40 @@ html, body {
   text-rendering: optimizeLegibility;
 }
 
-/* --- Site header + banner --- */
+/* --- Site masthead (banner + nav), sticky on all views --- */
 .site-header {
-  background: linear-gradient(180deg, rgba(22,26,34,0.92), rgba(15,18,24,0.92));
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: linear-gradient(180deg, rgba(22,26,34,0.96), rgba(15,18,24,0.92));
   border-bottom: 1px solid var(--border);
-  backdrop-filter: blur(6px);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.35);
 }
 .site-header .banner {
   display: block;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 1rem 1.25rem 0.25rem;
+  width: 100%;
+  padding: 0.75rem 1.5rem 0.25rem;
   line-height: 0;
+  background:
+    radial-gradient(ellipse 40% 80% at 15% 50%, rgba(86,211,138,0.08), transparent 70%),
+    radial-gradient(ellipse 40% 80% at 85% 50%, rgba(77,171,255,0.08), transparent 70%);
 }
 .site-header .banner img {
+  display: block;
   width: 100%;
   height: auto;
-  max-height: 140px;
+  max-height: 160px;
   object-fit: contain;
   filter: drop-shadow(0 4px 18px rgba(0,0,0,0.4));
 }
 .header-bar {
-  max-width: 1200px;
-  margin: 0 auto;
   padding: 0.5rem 1.25rem 0.75rem;
   display: flex;
   align-items: center;
   gap: 1rem;
+  border-top: 1px solid rgba(255,255,255,0.04);
 }
 nav {
   display: flex;
