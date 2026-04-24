@@ -61,6 +61,8 @@ cd content-scout
 ```
 code .
 ```
+The repo ships a `.vscode/settings.json` that automatically enables Copilot prompt files and agent mode for this workspace — the first time you open the folder, VS Code will ask you to **Trust the authors** (click yes) so those settings apply.
+
 1. Open the **Copilot Chat panel** with `Ctrl+Alt+I` (not the inline `Ctrl+I` box — slash commands only appear in the panel)
 2. Set the chat mode dropdown at the top of the panel to **Agent**
 3. Switch the agent picker to **Content Scout**
