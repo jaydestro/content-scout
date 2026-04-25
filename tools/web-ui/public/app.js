@@ -119,21 +119,16 @@ async function loadSetup() {
 async function renderEnvEditor() {
   try {
     const { entries, exists } = await api('/api/env');
-    const rows = entries.length
-      ? entries
-      : [
-          { key: 'YOUTUBE_API_KEY', value: '', preset: true },
-          { key: 'REDDIT_CLIENT_ID', value: '', preset: true },
-          { key: 'REDDIT_CLIENT_SECRET', value: '', preset: true },
-          { key: 'BLUESKY_HANDLE', value: '', preset: true },
-          { key: 'BLUESKY_APP_PASSWORD', value: '', preset: true },
-          { key: 'X_BEARER_TOKEN', value: '', preset: true },
-        ];
+    // Do NOT pre-populate any default keys. Users add keys explicitly via
+    // "+ Add custom key". Existing .env entries are still shown so users can
+    // edit/remove them.
+    const rows = entries;
     $('setup-env').innerHTML = `
       <div class="env-grid">
         ${rows.map((e, i) => envRow(e.key, e.value, i, e.preset !== false)).join('')}
       </div>
-      ${exists ? '' : '<div class="hint" style="margin-top:0.5rem">No <code>.env</code> file yet — saving will create one.</div>'}
+      ${rows.length ? '' : '<div class="hint" style="margin-top:0.5rem">No keys yet — click <strong>+ Add custom key</strong> below to add one. Skip this step if you don\u2019t need any keys right now.</div>'}
+      ${exists ? '' : '<div class="hint" style="margin-top:0.5rem">No <code>.env</code> file yet \u2014 saving will create one.</div>'}
     `;
     wireEnvRows();
   } catch (err) {
@@ -1167,8 +1162,8 @@ function showWizStep(idx) {
   });
   $('wiz-prev').disabled = wizIndex === 0;
   const isLast = wizIndex === steps.length - 1;
-  $('wiz-next').textContent = isLast ? 'Done' : 'Next →';
-  $('wiz-next').disabled = isLast;
+  $('wiz-next').textContent = isLast ? 'Save config' : 'Next →';
+  $('wiz-next').disabled = false;
   $('wiz-pos').textContent = `Step ${wizIndex + 1} of ${steps.length}`;
   renderWizProgress();
   if (currentId === 'review') renderWizSummary();
@@ -1176,6 +1171,14 @@ function showWizStep(idx) {
 }
 function nextWizStep() {
   if (!validateWizStep()) return;
+  const steps = visibleWizSteps();
+  const isLast = wizIndex === steps.length - 1;
+  if (isLast) {
+    // On the final review step, Done == Save config.
+    const saveBtn = $('cfg-create');
+    if (saveBtn && !saveBtn.disabled && !saveBtn.hidden) saveBtn.click();
+    return;
+  }
   showWizStep(wizIndex + 1);
 }
 function prevWizStep() { showWizStep(wizIndex - 1); }
@@ -1592,13 +1595,14 @@ $('cfg-create').addEventListener('click', async () => {
       $('cfg-status').textContent = `error: ${data.error || res.statusText}`;
       return;
     }
-    $('cfg-status').innerHTML = `<span class="ok">Created ${data.file}.</span>`;
+    $('cfg-status').innerHTML = `<span class="ok">Created ${data.file}. Opening dashboard…</span>`;
     await loadStatus();
-    // Show "Add another" / "Go to Configs" choice instead of auto-jumping.
+    // Stash slug so the manual "Go to Configs" button (still rendered for
+    // a moment) keeps working, then auto-jump to the dashboard.
     $('cfg-create').hidden = true;
     $('cfg-after-save').hidden = false;
-    // Stash the slug so "Go to Configs" can open it.
     $('cfg-goto-configs').dataset.slug = data.slug;
+    setTimeout(() => gotoView('dashboard'), 400);
   } catch (err) {
     $('cfg-status').textContent = `error: ${err.message}`;
   } finally {
@@ -1733,7 +1737,7 @@ async function loadDashboard() {
     $('dash-empty').hidden = false;
     $('dash-body').hidden = true;
     $('dash-empty-msg').innerHTML =
-      `Couldn't reach the server (<code>${escapeHtml(err.message)}</code>). Make sure the web UI process is running, then refresh.`;
+      `Couldn't reach the server (<code>${escape(err.message)}</code>). Make sure the web UI process is running, then refresh.`;
     return;
   }
   cachedStatus = status;
@@ -1843,12 +1847,12 @@ async function loadSlugOptions() {
   const cards = configs.map((c) => `
     <label class="subject-card">
       <input type="checkbox" class="subject-check" value="${c.slug}" ${prev.has(c.slug) ? 'checked' : ''} />
-      <span class="subject-name">${escapeHtml(c.name || c.slug)}</span>
-      <span class="subject-desc">${escapeHtml(c.type || 'subject')} · <code>${escapeHtml(c.slug)}</code></span>
+      <span class="subject-name">${escape(c.name || c.slug)}</span>
+      <span class="subject-desc">${escape(c.type || 'subject')} · <code>${escape(c.slug)}</code></span>
     </label>`).join('');
 
   list.innerHTML =
-    `<label class="subject-card">
+    `<label class="subject-card subject-card-all">
        <input type="checkbox" id="run-subject-all" value="" ${prevAll || prev.size === 0 ? 'checked' : ''} />
        <span class="subject-name">All subjects</span>
        <span class="subject-desc">Run against every config${configs.length ? ` (${configs.length})` : ''}</span>

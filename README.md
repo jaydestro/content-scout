@@ -94,7 +94,10 @@ Your config saves to `.github/prompts/scout-config-{slug}.prompt.md` (gitignored
 
 ### Web UI (browser dashboard)
 
-Prefer a browser? Run the local dashboard at [`tools/web-ui`](tools/web-ui/) to browse configs, edit feature toggles, view reports, and launch scans from a web page:
+Prefer a browser? Run the local dashboard at [`tools/web-ui`](tools/web-ui/) to
+**onboard new subjects with a 9-step in-browser wizard**, browse configs, edit
+feature toggles, manage `.env` API keys, view reports, and launch scans from a
+web page:
 
 ```
 cd tools/web-ui
@@ -102,7 +105,12 @@ npm install
 npm start
 ```
 
-Open <http://localhost:4477>. By default the **Start run** button is disabled and the UI just shows the prompt to copy into your editor's chat. To actually execute runs, point the UI at an AI CLI:
+Open <http://localhost:4477>. The Setup view doubles as the onboarding wizard
+— click through subject, roles, search terms, networks, advanced, API keys,
+and review, then **Save config** writes the file and drops you on the
+dashboard. By default the **Start run** button is disabled and the UI just
+shows the prompt to copy into your editor's chat. To actually execute runs,
+point the UI at an AI CLI:
 
 ```powershell
 $env:SCOUT_RUNNER = 'claude -p "{prompt}"'; npm start
