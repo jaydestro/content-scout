@@ -26,8 +26,8 @@ Run a content scan using the Content Scout agent.
    - Tag every item with canonical topic tags.
    - If **Conference CFP tracking** is enabled in config, also scan for open CFPs and recent conference talks (see agent definition for sources and format).
    - Number items sequentially across all sections.
-4. Save each topic's report to `reports/{YYYY-MM}-{slug}-content.md` (or `reports/{YYYY-MM}-content.md` if only one topic).
+4. Save each topic's report to `reports/{YYYY-MM-DD-HHmm}-{slug}-content.md` (or `reports/{YYYY-MM-DD-HHmm}-content.md` if only one topic).
 5. Update `reports/.seen-links.json` with all new URLs.
-6. Auto-generate social posts and thumbnail specs for every item. Save to `social-posts/{YYYY-MM}-{slug}-social-posts.md` (or `social-posts/{YYYY-MM}-social-posts.md` if only one topic).
+6. Auto-generate social posts and thumbnail specs for every item. Save to `social-posts/{YYYY-MM-DD-HHmm}-{slug}-social-posts.md` (or `social-posts/{YYYY-MM-DD-HHmm}-social-posts.md` if only one topic).
 7. Summarize: item count per topic, top topics, content gaps, and confirm social posts were generated. If CFP tracking is on, call out any CFPs with deadlines closing within 14 days.
 8. If scanning multiple topics, provide a brief cross-topic summary at the end (total items, shared topics, comparative volume).

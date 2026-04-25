@@ -24,4 +24,4 @@ ${{input:Product? (optional) Leave blank if only one product is configured, or s
 2. If only one `scout-config-*.prompt.md` exists, use it automatically.
 3. If multiple configs exist and no product was specified, infer from the URL or report. If still ambiguous, ask.
 
-Use the URL as the CTA. If additional context is provided, prioritize it. If only a URL is given, fetch it and extract key details. Save posts to `social-posts/` using per-product naming (`{YYYY-MM}-{slug}-social-posts.md`) when multiple products are configured.
+Use the URL as the CTA. If additional context is provided, prioritize it. If only a URL is given, fetch it and extract key details. Save posts to `social-posts/` using per-product naming (`{YYYY-MM-DD-HHmm}-{slug}-social-posts.md`) when multiple products are configured.

@@ -29,4 +29,4 @@ scout-trends last 3 months
 scout-trends January to March 2026
 ```
 
-Save the trends report to `reports/` using per-product naming (`{YYYY-MM}-{slug}-trends.md`) when multiple products are configured.
+Save the trends report to `reports/` using per-product naming (`{YYYY-MM-DD-HHmm}-{slug}-trends.md`) when multiple products are configured.

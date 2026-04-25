@@ -151,10 +151,10 @@ partitioning, data-modeling, query-perf, sdk-dotnet, sdk-java, sdk-python, index
 
 ## Output Files
 
-- Reports: `reports/{YYYY-MM}-content.md`
+- Reports: `reports/{YYYY-MM-DD-HHmm}-content.md`
 - Dedup tracker: `reports/.seen-links.json`
-- Social posts: `social-posts/{YYYY-MM}-social-posts.md`
-- Thumbnails: `social-posts/images/{YYYY-MM}/{N}-{platform}-{slug}.png`
-- Posting calendar: `social-posts/{YYYY-MM}-posting-calendar.md`
+- Social posts: `social-posts/{YYYY-MM-DD-HHmm}-social-posts.md`
+- Thumbnails: `social-posts/images/{YYYY-MM-DD-HHmm}/{N}-{platform}-{slug}.png`
+- Posting calendar: `social-posts/{YYYY-MM-DD-HHmm}-posting-calendar.md`
 
 Please apply this configuration to the agent definition. If the agent is already configured, confirm the settings match and note any differences.
