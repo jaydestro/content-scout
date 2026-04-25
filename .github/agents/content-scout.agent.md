@@ -47,10 +47,10 @@ Content Scout supports tracking multiple topics simultaneously — whether they'
 - Commands that accept a product argument: `scout-scan`, `scout-post`, `scout-calendar`, `scout-gaps`, `scout-trends`.
 
 **File naming with multiple products:**
-- Reports: `reports/{YYYY-MM}-{slug}-content.md` (e.g., `2026-03-cosmos-db-content.md`)
-- Social posts: `social-posts/{YYYY-MM}-{slug}-social-posts.md`
-- Trends: `reports/{YYYY-MM}-{slug}-trends.md`
-- Calendars: `social-posts/{YYYY-MM}-{slug}-posting-calendar.md`
+- Reports: `reports/{YYYY-MM-DD-HHmm}-{slug}-content.md` (e.g., `2026-03-14-0932-cosmos-db-content.md`). Use the current local date and time when saving — full datetime ensures multiple runs per day never overwrite each other.
+- Social posts: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-social-posts.md`
+- Trends: `reports/{YYYY-MM-DD-HHmm}-{slug}-trends.md`
+- Calendars: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-posting-calendar.md`
 - When only one product is configured, the slug is optional in filenames for backward compatibility.
 - The dedup tracker `reports/.seen-links.json` is shared across all products.
 
@@ -120,8 +120,8 @@ The user can specify the time window in two ways:
 ## Report File Naming
 
 Reports are organized by month/year and product:
-- Single product: `reports/{YYYY-MM}-content.md`
-- Multiple products: `reports/{YYYY-MM}-{slug}-content.md`
+- Single product: `reports/{YYYY-MM-DD-HHmm}-content.md`
+- Multiple products: `reports/{YYYY-MM-DD-HHmm}-{slug}-content.md`
 - For last-30-day scans, use the current month/year.
 - If a report for that month/product already exists, **update it** -- merge new findings, avoid duplicates, re-number items sequentially.
 
@@ -373,20 +373,41 @@ Every content item MUST be tagged with one or more topic tags from the config fi
 
 Generate the report with this structure. **Every content item gets a sequential number (#1, #2, #3...)** across all sections. Each numbered item links to its social posts.
 
-### Role-Dependent Section Ordering
+### Two Top-Level Groupings: Official vs. Community
 
-The report sections below are always present, but their **order after the Summary** depends on the role. Lead with what matters most:
+Every numbered content item belongs to **one of two top-level groups**:
 
-| Role | Section Order (after Summary) |
-|------|-------------------------------|
-| Program Manager | SDK & Feature Adoption → GitHub Activity → Community Content → Blog Posts → Official Announcements → Videos → Docs → Conversations |
-| Product Manager | Competitor & Market Signals → Feature Requests & Pain Points → Community Content → Conversations → Blog Posts → Official Announcements → GitHub → Videos → Docs |
-| Social Media Manager | Blog Posts → Videos → Community Content → Official Announcements → GitHub → Docs → Conversations |
-| Product Marketer | Launch Coverage → Blog Posts → Videos → Community Content → Conference Content → Open CFPs → Official Announcements → GitHub → Docs → Competitor Signals → Conversations |
-| Developer Advocate | Community Content → Rising Contributors → GitHub Activity → Videos → Blog Posts → Conference Content → Open CFPs → Official Announcements → Docs → Conversations |
-| Community Manager | Unanswered Questions → Conversations → Community Content → Rising Contributors → Blog Posts → Videos → GitHub → Official Announcements → Docs |
-| Technical Writer | Documentation Signals → Conversations → Blog Posts → Community Content → Official Announcements → Videos → GitHub → Docs |
-| Custom | Default order (as listed below) |
+- **Official Content** — first-party, vendor-made, or team-published. Sourced from the product's own blog, product/marketing site, official YouTube channel, official docs, official social handles, official GitHub org, or written by configured product team members.
+- **Community Content** — everything else. Third-party blogs, community videos, community GitHub projects, social media posts by non-team authors, conference talks by community speakers, etc.
+
+**Classification rule** — an item is **Official** if its source matches any of the config's:
+- Official blog URL or domain
+- Official YouTube channel ID
+- Official social handles (any network)
+- Official GitHub org(s)
+- Microsoft Learn / official docs domain (for Microsoft products)
+- Author is in the configured `team members` list
+
+Otherwise, classify as **Community**. When in doubt, prefer Community.
+
+Within each top-level group, items are still sub-grouped by content type (announcements, blog posts, videos, GitHub, docs, social). Numbering remains sequential across both groups and all sub-sections.
+
+### Role-Dependent Group Ordering
+
+After the Summary, the **two top-level groups** are ordered based on role priority. Lead with what matters most:
+
+| Role | Top-Level Group Order |
+|------|----------------------|
+| Program Manager | Official → Community (track first-party adoption signals first) |
+| Product Manager | Community → Official (community pain points lead) |
+| Social Media Manager | Community → Official (amplify community first, then re-share official) |
+| Product Marketer | Official → Community (launch coverage anchors on official, then ecosystem) |
+| Developer Advocate | Community → Official (community is the heartbeat) |
+| Community Manager | Community → Official (community is the focus) |
+| Technical Writer | Community → Official (community signals expose doc gaps) |
+| Custom | Community → Official (default) |
+
+Within each group, sub-section ordering follows the role's priorities (e.g., Developer Advocate puts Community Blog Posts and Community Projects ahead of Community Videos; Program Manager puts Official SDK Releases ahead of Official Announcements).
 
 ### Topic-Type Section Adaptations
 
@@ -437,8 +458,8 @@ The role-specific summary aggregates these: "Sentiment: X positive, Y neutral, Z
 **Last updated:** {date}
 **Topic type:** {product | technology | project | tool}
 **Role:** {role name}
-**Social posts:** [{YYYY-MM}-social-posts.md](../social-posts/{YYYY-MM}-social-posts.md)
-**Posting calendar:** [{YYYY-MM}-posting-calendar.md](../social-posts/{YYYY-MM}-posting-calendar.md)
+**Social posts:** [{YYYY-MM-DD-HHmm}-social-posts.md](../social-posts/{YYYY-MM-DD-HHmm}-social-posts.md)
+**Posting calendar:** [{YYYY-MM-DD-HHmm}-posting-calendar.md](../social-posts/{YYYY-MM-DD-HHmm}-posting-calendar.md)
 
 ## Summary
 {Role-specific summary — see "Report summary section" above}
@@ -450,33 +471,51 @@ The role-specific summary aggregates these: "Sentiment: X positive, Y neutral, Z
 - **Topics trending down:** {tags decreasing}
 - **Conversation volume:** {count} ({+/-delta})
 
-## Official Announcements & Updates
+## Official Content
+<!-- First-party / vendor-made content from official channels (blog, product site, YouTube, docs, GitHub org, team members). -->
+
+### Official Announcements & Updates
 | # | Date | Title | Source | Tags | EP | Link | Posts |
 |---|------|-------|--------|------|----|------|-------|
 | 1 | ... | ... | ... | ... | 3 | ... | [posts](#1) |
 
-## Blog Posts & Articles
+### Official Blog Posts & Product Site
+<!-- Posts from the official blog, product/marketing site, or by configured team members. -->
+| # | Date | Title | Author | Source | Tags | EP | Link | Posts |
+|---|------|-------|--------|--------|------|----|------|-------|
+
+### Official Videos & Presentations
+<!-- From the official YouTube channel or other official video channels. -->
+| # | Date | Title | Channel | Tags | EP | Link | Posts |
+|---|------|-------|---------|------|----|------|-------|
+
+### Documentation Updates
+| # | Date | Title | Type | Tags | EP | Link | Posts |
+|---|------|-------|------|------|----|------|-------|
+
+### Official SDK & Repo Activity
+<!-- Releases, notable PRs, and changes from the official GitHub org(s). -->
+| # | Date | Item | Repo | Language | SDK | Tags | EP | Link | Posts |
+|---|------|------|------|----------|-----|------|----|------|-------|
+
+## Community Content
+<!-- Third-party content from anyone outside the official channels and team. -->
+
+### Community Blog Posts & Articles
 | # | Date | Title | Author | Source | Tags | EP | Link | Posts |
 |---|------|-------|--------|--------|------|----|------|-------|
 | 3 | ... | ... | ... | ... | ... | 4 | ... | [posts](#3) |
 
-## Videos & Presentations
+### Community Videos & Presentations
 | # | Date | Title | Channel | Tags | EP | Link | Posts |
 |---|------|-------|---------|------|----|------|-------|
 
-## SDK Releases & GitHub Activity
+### Community Projects & GitHub Activity
+<!-- SDKs, libraries, samples, and tools built by the community (not the official org). -->
 | # | Date | Item | Repo/Source | Language | SDK | Stars | Tags | EP | Link | Posts |
 |---|------|------|-------------|----------|-----|-------|------|----|------|-------|
 
-## Documentation Updates
-| # | Date | Title | Type | Tags | EP | Link | Posts |
-|---|------|-------|------|------|----|------|-------|
-
-## Community Content
-| # | Date | Title | Author | Source | Tags | EP | Link | Posts |
-|---|------|-------|--------|--------|------|----|------|-------|
-
-## Social Media Highlights
+### Social Media Highlights
 | # | Date | Summary | Platform | Tags | EP | Link | Posts |
 |---|------|---------|----------|------|----|------|-------|
 
@@ -643,16 +682,16 @@ For each content item, generate:
 
 Every social post item MUST link back to its report entry:
 - Start each item heading with `## #{N}` (matching the report item number)
-- Include a back-link: `**Report entry:** [#{N} — {title}](../reports/{YYYY-MM}-content.md#{anchor})`
+- Include a back-link: `**Report entry:** [#{N} — {title}](../reports/{YYYY-MM-DD-HHmm}-content.md#{anchor})`
 - Include the original content URL as `**Source:** {url}`
 
 ### Thumbnail Images
 
 When a "link in first comment" option is generated, include:
 - A **thumbnail spec** block with platform, size, background, logo, headline, accent color
-- The **image path** where it should be saved: `social-posts/images/{YYYY-MM}/{N}-{platform}-{slug}.png`
+- The **image path** where it should be saved: `social-posts/images/{YYYY-MM-DD-HHmm}/{N}-{platform}-{slug}.png`
 - A **markdown image reference** inline so the image renders in the social posts file:
-  `![{alt text}](images/{YYYY-MM}/{N}-{platform}-{slug}.png)`
+  `![{alt text}](images/{YYYY-MM-DD-HHmm}/{N}-{platform}-{slug}.png)`
 
 Thumbnail spec details:
 - Platform and size:
@@ -677,12 +716,12 @@ Brand fidelity rules for thumbnails:
 
 ### Social Post Output File
 
-Save to: `social-posts/{YYYY-MM}-social-posts.md`
-Thumbnails to: `social-posts/images/{YYYY-MM}/`
+Save to: `social-posts/{YYYY-MM-DD-HHmm}-social-posts.md`
+Thumbnails to: `social-posts/images/{YYYY-MM-DD-HHmm}/`
 
 The social posts file header MUST include a back-link to the report:
 ```
-**Report:** [{YYYY-MM}-content.md](../reports/{YYYY-MM}-content.md)
+**Report:** [{YYYY-MM-DD-HHmm}-content.md](../reports/{YYYY-MM-DD-HHmm}-content.md)
 ```
 
 ---
@@ -701,7 +740,7 @@ Otherwise:
 4. LinkedIn Mon-Fri mornings, X/Bluesky afternoons.
 5. Group by theme -- same-topic items on different days.
 
-Save to: `social-posts/{YYYY-MM}-posting-calendar.md`
+Save to: `social-posts/{YYYY-MM-DD-HHmm}-posting-calendar.md`
 
 ### Platform-Specific Timing Suggestions
 
@@ -760,7 +799,7 @@ When the user says "scout-trends", "show trends", "compare months", or "how are 
 {Based on the user's role, provide a 2-3 sentence actionable insight from the trends data.}
 ```
 
-4. Save to: `reports/{YYYY-MM}-trends.md`
+4. Save to: `reports/{YYYY-MM-DD-HHmm}-trends.md`
 5. If only one month of data exists, note that trends require at least 2 months and show what's available.
 
 ---
@@ -791,8 +830,8 @@ Auto-generate at report end:
 6. **Number every item sequentially.**
 7. **Tag every item** with 1-4 tags from the config's canonical list.
 8. **Update .seen-links.json** after saving the report.
-9. **Save the report** to `reports/{YYYY-MM}-content.md`.
-10. **Auto-generate social posts and thumbnail specs** for every item **only if the role has social posts enabled**. Save to `social-posts/{YYYY-MM}-social-posts.md`. If social posts are off, skip this step.
+9. **Save the report** to `reports/{YYYY-MM-DD-HHmm}-content.md`.
+10. **Auto-generate social posts and thumbnail specs** for every item **only if the role has social posts enabled**. Save to `social-posts/{YYYY-MM-DD-HHmm}-social-posts.md`. If social posts are off, skip this step.
 11. After saving, give a brief summary including item count, top topics, content gaps, and (if applicable) confirm social posts were generated. Include a role-specific insight based on the Role-Aware Behavior table. Remind of available commands.
 12. **Complete ALL source scanning before generating the report.** Do not generate or show the report while scans are still in progress. Scan every enabled source first, collect all results, merge, deduplicate, filter, then generate the report once from the complete dataset. If a source fails, note it in "Sources That Could Not Be Reached" but do not delay the report for retries.
 13. **Social source items require poster details.** Every item from Reddit, X, Bluesky, LinkedIn, YouTube, Stack Overflow, or Hacker News must include the poster's name, handle/profile link, post content summary, sentiment, engagement metrics, and a direct permalink. See "Social Source Data Requirements" for the full field list.
@@ -852,7 +891,7 @@ Each subagent receives the same context: product config, search terms, time wind
 #### `scout-post-generator` — Social Post Generator
 - Input: A merged, numbered report
 - Generates: Social posts + thumbnail specs for all items
-- Saves: `social-posts/{YYYY-MM}-social-posts.md`
+- Saves: `social-posts/{YYYY-MM-DD-HHmm}-social-posts.md`
 
 ### Subagent Dispatch Pattern
 
