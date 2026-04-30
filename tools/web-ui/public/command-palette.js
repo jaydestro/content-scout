@@ -69,12 +69,6 @@
 
   // --- Palette UI ---------------------------------------------------
   const COMMANDS = [
-    { section: 'Navigate', label: 'Go to Dashboard',      icon: 'home',   keywords: 'dashboard home overview',           run: () => navigate('dashboard') },
-    { section: 'Navigate', label: 'Go to Setup wizard',   icon: 'cog',    keywords: 'setup onboard config new',          run: () => navigate('setup') },
-    { section: 'Navigate', label: 'Go to Configs',        icon: 'files',  keywords: 'configs subjects edit',             run: () => navigate('configs') },
-    { section: 'Navigate', label: 'Go to Run',            icon: 'play',   keywords: 'run scan command execute prompt',   run: () => navigate('run') },
-    { section: 'Navigate', label: 'Go to Reports',        icon: 'report', keywords: 'reports content browse',            run: () => navigate('reports') },
-    { section: 'Navigate', label: 'Go to Social posts',   icon: 'share',  keywords: 'social posts linkedin twitter x',   run: () => navigate('social') },
     { section: 'Actions',  label: 'Start a content scan', icon: 'play',   keywords: 'scout-scan scan run new report',    run: () => { navigate('run'); flash('#run-start'); } },
     { section: 'Actions',  label: 'Generate social post', icon: 'share',  keywords: 'scout-post post draft generate',    run: () => navigate('social') },
     { section: 'Actions',  label: 'Show runs queue',     icon: 'play',    keywords: 'queue runs running jobs background', run: () => window.runsQueue && window.runsQueue.open() },
