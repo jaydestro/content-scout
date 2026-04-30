@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 320" width="220" height="320">
+  <defs>
+    <linearGradient id="dogFur" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7c4a2d"/>
+      <stop offset="100%" style="stop-color:#5a3520"/>
+    </linearGradient>
+    <linearGradient id="whiteFur" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f5f0eb"/>
+      <stop offset="100%" style="stop-color:#e8ddd4"/>
+    </linearGradient>
+    <linearGradient id="hatRed" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#dc2626"/>
+      <stop offset="100%" style="stop-color:#991b1b"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(5, 5)">
+    <!-- Body -->
+    <ellipse cx="95" cy="210" rx="65" ry="55" fill="url(#dogFur)"/>
+    <ellipse cx="95" cy="215" rx="35" ry="45" fill="url(#whiteFur)"/>
+    <!-- Front legs -->
+    <rect x="60" y="240" width="22" height="65" rx="10" fill="url(#dogFur)"/>
+    <rect x="105" y="240" width="22" height="65" rx="10" fill="url(#dogFur)"/>
+    <ellipse cx="71" cy="305" rx="13" ry="8" fill="url(#whiteFur)"/>
+    <ellipse cx="116" cy="305" rx="13" ry="8" fill="url(#whiteFur)"/>
+    <!-- Head -->
+    <ellipse cx="95" cy="140" rx="52" ry="48" fill="url(#dogFur)"/>
+    <path d="M82 100 Q95 95 108 100 L104 175 Q95 180 86 175 Z" fill="url(#whiteFur)"/>
+    <ellipse cx="95" cy="165" rx="30" ry="20" fill="url(#whiteFur)"/>
+    <!-- Ears -->
+    <path d="M52 120 Q35 100 30 130 Q35 145 55 140 Z" fill="url(#dogFur)"/>
+    <path d="M138 120 Q155 100 160 130 Q155 145 135 140 Z" fill="url(#dogFur)"/>
+    <!-- Red hat -->
+    <g transform="translate(95, 100)">
+      <ellipse cx="0" cy="0" rx="52" ry="10" fill="#7f1d1d" transform="rotate(-8)"/>
+      <path d="M-42 -2 Q-45 -30 -25 -42 Q-5 -52 20 -48 Q40 -42 45 -25 Q48 -10 42 -2 Z" fill="url(#hatRed)" transform="rotate(-5)"/>
+      <path d="M-30 -35 Q-10 -45 15 -42 Q30 -38 35 -28 Q20 -38 0 -40 Q-15 -40 -30 -35 Z" fill="#ef4444" opacity="0.4"/>
+      <circle cx="5" cy="-45" r="6" fill="#dc2626"/>
+      <circle cx="3" cy="-47" r="2" fill="#fca5a5" opacity="0.5"/>
+    </g>
+    <!-- Eyes -->
+    <ellipse cx="78" cy="138" rx="8" ry="9" fill="#1a1207"/>
+    <ellipse cx="112" cy="138" rx="8" ry="9" fill="#1a1207"/>
+    <circle cx="81" cy="135" r="3" fill="#ffffff" opacity="0.6"/>
+    <circle cx="115" cy="135" r="3" fill="#ffffff" opacity="0.6"/>
+    <!-- Nose -->
+    <ellipse cx="95" cy="158" rx="10" ry="7" fill="#3d2216"/>
+    <ellipse cx="95" cy="156" rx="4" ry="2.5" fill="#1a1207" opacity="0.3"/>
+    <!-- Mouth + tongue -->
+    <path d="M78 168 Q87 178 95 175 Q103 178 112 168" fill="none" stroke="#3d2216" stroke-width="2" stroke-linecap="round"/>
+    <path d="M90 175 Q88 192 93 195 Q98 195 97 178 Z" fill="#e8788a"/>
+    <!-- Magnifying glass -->
+    <g transform="translate(140, 180) rotate(-30)">
+      <circle cx="0" cy="0" r="22" fill="none" stroke="#3b82f6" stroke-width="4" opacity="0.9"/>
+      <circle cx="0" cy="0" r="18" fill="#3b82f6" opacity="0.08"/>
+      <line x1="15" y1="15" x2="35" y2="35" stroke="#3b82f6" stroke-width="5" stroke-linecap="round" opacity="0.9"/>
+    </g>
+    <!-- Tail -->
+    <path d="M30 195 Q5 170 15 140 Q20 130 25 140" fill="none" stroke="url(#dogFur)" stroke-width="14" stroke-linecap="round"/>
+  </g>
+</svg>

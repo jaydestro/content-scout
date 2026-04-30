@@ -7,13 +7,18 @@
     <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="theme-modern.css" />
   </head>
   <body>
     <header class="site-header">
       <a class="banner" href="#" data-goto="dashboard" aria-label="Content Scout home">
-        <img src="/assets/content-scout-banner-fancy.svg" alt="Content Scout — Your content hunting dog for the developer ecosystem" />
+        <img class="banner-logo" src="/assets/content-scout-mascot.svg" alt="" />
+        <div class="banner-text">
+          <span class="banner-title">Content Scout</span>
+          <span class="banner-tagline">Your content hunting dog for the developer ecosystem</span>
+        </div>
       </a>
       <div class="header-bar">
         <nav>
@@ -491,11 +496,29 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
           </div>
         </div>
         <div id="dash-body">
-          <h2>Dashboard</h2>
+          <div class="dash-hero">
+            <div>
+              <h2>Welcome back</h2>
+              <p class="hint" id="dash-hero-sub">Kick off a new run or jump into your latest results.</p>
+            </div>
+            <div class="dash-hero-actions">
+              <button type="button" class="btn-primary" data-goto="run" data-run-cmd="scout-scan">Run a scan</button>
+              <button type="button" data-goto="run" data-run-cmd="scout-post">Generate posts</button>
+              <button type="button" data-goto="reports">Open latest report</button>
+            </div>
+          </div>
+
+          <div class="dash-stats" id="dash-stats">
+            <div class="stat"><div class="stat-num" id="stat-reports">—</div><div class="stat-label">Reports</div></div>
+            <div class="stat"><div class="stat-num" id="stat-social">—</div><div class="stat-label">Social posts</div></div>
+            <div class="stat"><div class="stat-num" id="stat-runs">—</div><div class="stat-label">Total runs</div></div>
+            <div class="stat"><div class="stat-num" id="stat-last-scan">—</div><div class="stat-label">Last scan</div></div>
+          </div>
+
           <div class="cards">
             <div class="card">
-              <h3>Configs</h3>
-              <ul id="dash-configs"><li>Loading…</li></ul>
+              <h3>Subjects &amp; last scan</h3>
+              <ul id="dash-subjects"><li class="hint">Loading…</li></ul>
             </div>
             <div class="card">
               <h3>Recent reports</h3>
@@ -506,9 +529,15 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
               <ul id="dash-runs"><li>No runs yet</li></ul>
             </div>
             <div class="card">
-              <h3>Environment</h3>
-              <div id="dash-env">Loading…</div>
+              <h3>Suggestions</h3>
+              <ul id="dash-suggestions"><li class="hint">Loading…</li></ul>
             </div>
+          </div>
+
+          <!-- Legacy hidden targets — app.js still writes here; kept so we don't have to touch app.js. -->
+          <div hidden aria-hidden="true">
+            <ul id="dash-configs"></ul>
+            <div id="dash-env"></div>
           </div>
         </div>
       </section>
@@ -667,5 +696,11 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
     </main>
 
     <script src="app.js" type="module"></script>
+    <script src="toasts.js"></script>
+    <script src="runs-queue.js"></script>
+    <script src="run-enhancer.js"></script>
+    <script src="dashboard-enhancer.js"></script>
+    <script src="help.js"></script>
+    <script src="command-palette.js"></script>
   </body>
 </html>

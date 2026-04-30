@@ -895,7 +895,28 @@ Each subagent receives the same context: product config, search terms, time wind
 
 ### Subagent Dispatch Pattern
 
-When running a scan, use this pattern:
+> **CRITICAL — Read before dispatching anything.**
+>
+> Subagent dispatch is **only** available when your runtime exposes a real tool
+> that (a) executes a child agent and (b) returns its structured results back
+> into your context (e.g., Claude Code's `Task` tool, or a `runSubagent` tool
+> in VS Code agent mode). If you do not have such a tool available **right
+> now**, you MUST use the sequential fallback below. Do not pretend.
+>
+> **Forbidden behaviors when no real dispatch tool exists:**
+> - Emitting phrases like "Agent started in background", "agent_id: ...",
+>   "I'll notify you when the report is ready", or any other claim that work
+>   is happening outside your session.
+> - Ending the run before the report file has actually been written to
+>   `reports/` and `.seen-links.json` has been updated.
+> - Treating "I read the source list" as equivalent to "I scanned the sources".
+>
+> **How to tell:** if your tool list does not contain a tool whose description
+> says it runs a child agent and returns the result, you do not have dispatch.
+> The GitHub Copilot CLI (`copilot -p ...`) does NOT have it. Default to
+> sequential.
+
+When running a scan with a real dispatch tool available, use this pattern:
 
 ```
 1. Load config, determine time window
@@ -917,6 +938,28 @@ When running a scan, use this pattern:
 11. Summarize to user (include role-specific insight; call out any CFPs closing within 14 days)
 ```
 
-### Fallback
+### Sequential fallback (DEFAULT when no real dispatch tool is available)
 
-If subagents are not available or the user prefers a single-agent run, the main Content Scout agent can execute all steps sequentially. The subagent architecture is an optimization, not a requirement.
+If you do not have a real subagent-dispatch tool, run every step yourself in
+this session, sequentially, using your own `web/fetch` and terminal tools.
+The subagent definitions above become **checklists**, not delegations. You
+must:
+
+1. Load config and time window.
+2. For each source group listed above, perform the actual scans yourself
+   (HTTP requests, API calls, RSS reads). If a source has no API key in
+   `.env`, skip just that source and note it in the report.
+3. Maintain a running list of items as you go.
+4. After all source groups are done, merge / dedupe against
+   `reports/.seen-links.json` (create the file if missing).
+5. Apply the quality filter, number items, tag with canonical topics.
+6. **Write the report file to `reports/{YYYY-MM-DD-HHmm}-{slug}-content.md`
+   before ending the run.** If you finish with zero qualifying items, still
+   write a stub report stating "0 items passed the quality filter" and list
+   what was scanned and why nothing qualified — do not silently exit.
+7. Update `.seen-links.json`.
+8. Generate social posts only if the role has them enabled.
+9. Print the report path in your final message so the user can find it.
+
+A run that ends with "scanning is underway" or "I'll notify you" without a
+written report on disk is a failed run, regardless of how it exits.
