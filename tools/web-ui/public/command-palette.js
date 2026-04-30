@@ -37,20 +37,34 @@
     });
   }
 
-  // Inject the Cmd+K hint button into the header.
+  // Inject a compact "⌘K" chip as the last item INSIDE the nav pill, so the
+  // nav row is the single, unified entry point. No competing search bar.
   function injectHint() {
-    const headerBar = document.querySelector('.header-bar');
-    const pill = document.getElementById('status-pill');
-    if (!headerBar || !pill) return;
+    const nav = document.querySelector('.header-bar nav');
+    if (!nav) return;
     if (document.getElementById('kbd-hint')) return;
+
+    const isMac = /Mac|iPhone|iPad/i.test(navigator.platform);
+    const modKey = isMac ? '⌘' : 'Ctrl';
+
     const hint = document.createElement('button');
     hint.id = 'kbd-hint';
-    hint.className = 'kbd-hint';
+    hint.className = 'kbd-hint nav-kbd';
     hint.type = 'button';
-    hint.title = 'Open command palette (Ctrl+K / Cmd+K)';
-    hint.innerHTML = `${I('keyboard', ICONS.keyboard)}<span>Search</span><kbd>Ctrl K</kbd>`;
+    hint.title = `Search & jump (${isMac ? '⌘K' : 'Ctrl+K'})`;
+    hint.setAttribute('aria-label', 'Open command palette');
+    hint.innerHTML = `
+      ${I('search', ICONS.search)}
+      <span class="kbd-hint-keys"><kbd>${modKey}</kbd><kbd>K</kbd></span>
+    `;
     hint.addEventListener('click', open);
-    pill.parentNode.insertBefore(hint, pill);
+
+    // Append a separator + the chip as the last children of the nav.
+    const sep = document.createElement('span');
+    sep.className = 'nav-sep';
+    sep.setAttribute('aria-hidden', 'true');
+    nav.appendChild(sep);
+    nav.appendChild(hint);
   }
 
   // --- Palette UI ---------------------------------------------------
@@ -63,6 +77,7 @@
     { section: 'Navigate', label: 'Go to Social posts',   icon: 'share',  keywords: 'social posts linkedin twitter x',   run: () => navigate('social') },
     { section: 'Actions',  label: 'Start a content scan', icon: 'play',   keywords: 'scout-scan scan run new report',    run: () => { navigate('run'); flash('#run-start'); } },
     { section: 'Actions',  label: 'Generate social post', icon: 'share',  keywords: 'scout-post post draft generate',    run: () => navigate('social') },
+    { section: 'Actions',  label: 'Show runs queue',     icon: 'play',    keywords: 'queue runs running jobs background', run: () => window.runsQueue && window.runsQueue.open() },
     { section: 'Actions',  label: 'Open most recent report', icon: 'report', keywords: 'latest recent report',           run: openLatestReport },
     { section: 'Actions',  label: 'Reload page',          icon: 'refresh',keywords: 'refresh reload',                    run: () => location.reload() },
     { section: 'Help',     label: 'Open README',          icon: 'book',   keywords: 'docs help readme',                  run: () => window.open('https://github.com/Azure-Samples/content-scout', '_blank') },
