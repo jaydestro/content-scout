@@ -305,6 +305,13 @@ textarea:focus, input:focus, select:focus {
   background: rgba(129,140,248,0.04);
   box-shadow: var(--ring);
 }
+/* Force readable option text in the native popup. Some Windows browsers
+   inherit the translucent select background and render options white-on-white. */
+select option,
+select optgroup {
+  background-color: #1a1d2e;
+  color: var(--text);
+}
 
 /* --- Aside (lists) -------------------------------------- */
 aside {
