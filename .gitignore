@@ -33,6 +33,24 @@ social-posts/images/*
 !social-posts/images/brand/
 
 # ---------------------------------------------------------------------------
+# Node.js / npm (covers all tools/* packages)
+# ---------------------------------------------------------------------------
+node_modules/
+**/node_modules/
+package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.npm/
+.yarn/
+.pnp.*
+*.tgz
+
+# Web UI local settings
+**/.scout-web-settings.json
+
+# ---------------------------------------------------------------------------
 # Python
 # ---------------------------------------------------------------------------
 __pycache__/

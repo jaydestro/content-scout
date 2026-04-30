@@ -1188,8 +1188,9 @@ app.post('/api/configs', async (req, res) => {
       return res.status(400).json({ error: 'invalid slug (derived from name)' });
     }
     const existing = await listConfigs();
-    if (existing.some((c) => c.slug === slug)) {
-      return res.status(409).json({ error: `config already exists for slug "${slug}"` });
+    const existsAlready = existing.some((c) => c.slug === slug);
+    if (existsAlready && !body.overwrite) {
+      return res.status(409).json({ error: `config already exists for slug "${slug}"`, slug, exists: true });
     }
     const type = ['product', 'technology', 'project', 'tool'].includes(body.type) ? body.type : 'product';
     const searchTerms = Array.isArray(body.searchTerms)
