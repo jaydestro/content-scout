@@ -333,6 +333,59 @@ if (cfgNameEl && cfgSlugEl) {
   });
 }
 
+// Live "already saved" hint: warn the user if the slug they're entering
+// already has a saved config so they don't get a 409 at submit time.
+const cfgSlugExistsHintEl = document.getElementById('cfg-slug-exists-hint');
+let cfgExistingSlugsCache = null;
+let cfgExistingSlugsCacheAt = 0;
+async function getExistingSlugs() {
+  // Cache for 5s so we don't hammer the API on every keystroke.
+  if (cfgExistingSlugsCache && Date.now() - cfgExistingSlugsCacheAt < 5000) return cfgExistingSlugsCache;
+  try {
+    const { configs } = await api('/api/configs');
+    cfgExistingSlugsCache = (configs || []).map((c) => c.slug);
+    cfgExistingSlugsCacheAt = Date.now();
+  } catch {
+    cfgExistingSlugsCache = [];
+  }
+  return cfgExistingSlugsCache;
+}
+async function refreshSlugExistsHint() {
+  if (!cfgSlugExistsHintEl) return;
+  const current = slugify(cfgSlugEl?.value || cfgNameEl?.value || '');
+  if (!current) {
+    cfgSlugExistsHintEl.style.display = 'none';
+    return;
+  }
+  const slugs = await getExistingSlugs();
+  if (slugs.includes(current)) {
+    cfgSlugExistsHintEl.innerHTML =
+      `⚠ Already saved as <strong>${current}</strong>. ` +
+      `<a href="#" id="cfg-slug-edit-existing">Edit existing</a> · ` +
+      `or continue here to overwrite on save.`;
+    cfgSlugExistsHintEl.style.display = '';
+    cfgSlugExistsHintEl.style.color = 'var(--warn, #f0b400)';
+    const link = document.getElementById('cfg-slug-edit-existing');
+    if (link) link.addEventListener('click', (e) => {
+      e.preventDefault();
+      gotoView('configs');
+      setTimeout(() => {
+        const li = document.querySelector(`#config-list li[data-slug="${current}"]`);
+        if (li) li.click();
+      }, 200);
+    });
+  } else {
+    cfgSlugExistsHintEl.style.display = 'none';
+  }
+}
+cfgNameEl?.addEventListener('input', () => { cfgExistingSlugsCacheAt = 0; refreshSlugExistsHint(); });
+cfgSlugEl?.addEventListener('input', () => { cfgExistingSlugsCacheAt = 0; refreshSlugExistsHint(); });
+// Also refresh when the user re-enters the wizard in case configs changed.
+document.querySelector('nav button[data-view="setup"]')?.addEventListener('click', () => {
+  cfgExistingSlugsCacheAt = 0;
+  refreshSlugExistsHint();
+});
+
 // Tier picker — toggles a data-tier attribute on <body> so CSS can show/hide sections.
 const TIER_DESCRIPTIONS = {
   quick: 'Just the basics: subject name, type, and your role(s). Great for a first run — everything else uses sensible defaults.',
@@ -1585,17 +1638,41 @@ $('cfg-create').addEventListener('click', async () => {
   $('cfg-create').disabled = true;
   $('cfg-status').textContent = 'creating…';
   try {
-    const res = await fetch('/api/configs', {
+    let res = await fetch('/api/configs', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     });
-    const data = await res.json();
+    let data = await res.json();
+    if (res.status === 409 && data.exists) {
+      const choice = confirm(
+        `A config already exists for slug "${data.slug}".\n\n` +
+        `OK = overwrite it with the values from this wizard.\n` +
+        `Cancel = open the existing config in the Configs editor instead.`,
+      );
+      if (choice) {
+        res = await fetch('/api/configs', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ ...body, overwrite: true }),
+        });
+        data = await res.json();
+      } else {
+        $('cfg-status').textContent = `Already saved — opening "${data.slug}" in Configs.`;
+        gotoView('configs');
+        // Best-effort: select the existing config in the configs view.
+        setTimeout(() => {
+          const li = document.querySelector(`#config-list li[data-slug="${data.slug}"]`);
+          if (li) li.click();
+        }, 200);
+        return;
+      }
+    }
     if (!res.ok) {
       $('cfg-status').textContent = `error: ${data.error || res.statusText}`;
       return;
     }
-    $('cfg-status').innerHTML = `<span class="ok">Created ${data.file}. Opening dashboard…</span>`;
+    $('cfg-status').innerHTML = `<span class="ok">Saved ${data.file}. Opening dashboard…</span>`;
     await loadStatus();
     // Stash slug so the manual "Go to Configs" button (still rendered for
     // a moment) keeps working, then auto-jump to the dashboard.
