@@ -56,7 +56,12 @@
       what: 'Drafted social posts (LinkedIn, X, Bluesky, etc.) and posting calendars generated from reports.',
     },
     'API keys (optional)': {
-      what: 'Some sources need an API key (Reddit, Stack Overflow, etc.). Add keys here and the agent will use them automatically. Sources without keys are simply skipped.',
+      what: 'Some sources need a key (YouTube, Reddit, Bluesky, X). Add keys here and the agent uses them automatically. Sources without keys are simply skipped — Content Scout always works with no keys at all.',
+      tips: [
+        'Stack Overflow, Hacker News, Dev.to, Medium, GitHub (read-only), and LinkedIn need NO keys.',
+        'Hover the "?" next to each key field for a one-line explanation. Click it to open the full setup walkthrough in docs/API-KEYS.md.',
+        'YouTube, Reddit, Bluesky, and a GitHub token are all FREE — only X requires a paid plan for reliable scanning.',
+      ],
     },
     'Review & save': {
       what: 'Final check before saving. The wizard writes a config file under .github/prompts/ that the agent reads on every run.',

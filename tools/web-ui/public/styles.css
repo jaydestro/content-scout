@@ -310,13 +310,27 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .env-grid { display: flex; flex-direction: column; gap: 0.5rem; }
 .env-row {
   display: grid;
-  grid-template-columns: 14rem 1fr auto auto;
+  grid-template-columns: 14rem 1fr auto auto auto;
   gap: 0.5rem;
   align-items: center;
 }
 .env-row .env-key { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.85rem; }
 .env-row .env-key[readonly] { background: var(--panel-2); color: var(--muted); }
 .env-row button { padding: 0.35rem 0.55rem; }
+.env-row .env-help {
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border-radius: 50%;
+  font-weight: 700;
+  font-size: 0.85rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: help;
+}
+.env-row .env-help-placeholder { width: 1.75rem; display: inline-block; }
 
 .config-form { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem; }
 .config-form .field { display: flex; flex-direction: column; gap: 0.25rem; }

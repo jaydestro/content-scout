@@ -8,6 +8,10 @@ import { randomUUID } from 'node:crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Render single newlines as <br> so report front-matter (consecutive
+// `**Generated:** ...` lines) doesn't collapse into one paragraph.
+marked.setOptions({ breaks: true, gfm: true });
+
 // Repo root = tools/web-ui/../..
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const PROMPTS_DIR = path.join(REPO_ROOT, '.github', 'prompts');
@@ -103,6 +107,9 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, 'public')));
 // Expose the repo's docs/assets (banner, logos, screenshots) to the UI.
 app.use('/assets', express.static(path.join(REPO_ROOT, 'docs', 'assets')));
+// Expose the repo's docs folder so the UI can deep-link to setup walkthroughs
+// (docs/API-KEYS.md, docs/SOURCES.md, etc.).
+app.use('/docs', express.static(path.join(REPO_ROOT, 'docs')));
 // Expose uploaded brand logos under social-posts/images/ so the UI can preview them.
 app.use('/brand-assets', express.static(path.join(REPO_ROOT, 'social-posts', 'images')));
 
@@ -1405,6 +1412,215 @@ app.get('/api/reports', async (_req, res) => {
     social: await listMarkdownFiles(SOCIAL_DIR),
   });
 });
+
+// --- Action items: parse the latest content report per subject ----
+// Surfaces high-EP items (good social-post candidates), open CFPs, and
+// items lacking companion social posts. Read-only; no writes to disk.
+app.get('/api/action-items', async (_req, res) => {
+  try {
+    const [reports, social, configs] = await Promise.all([
+      listMarkdownFiles(REPORTS_DIR),
+      listMarkdownFiles(SOCIAL_DIR),
+      listConfigs(),
+    ]);
+    const socialNames = (social || []).map((s) => s.name);
+    const slugs = (configs || []).map((c) => c.slug);
+    const groups = [];
+
+    for (const slug of slugs) {
+      // Latest content report for this subject.
+      const latest = reports
+        .filter(
+          (r) =>
+            /-content\.md$/.test(r.name) &&
+            (r.name.includes(`-${slug}-`) || r.name.includes(`-${slug}.`))
+        )
+        .sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''))[0];
+      if (!latest) continue;
+
+      let raw = '';
+      try {
+        raw = await fs.readFile(path.join(REPORTS_DIR, latest.name), 'utf8');
+      } catch {
+        continue;
+      }
+
+      const stem = latest.name.replace(/-content\.md$/, '');
+      const hasSocial = socialNames.some((n) => n.startsWith(stem));
+      const items = parseActionItems(raw);
+
+      groups.push({
+        slug,
+        report: latest.name,
+        reportMtime: latest.mtime,
+        hasSocial,
+        topItems: items.topItems,
+        cfps: items.cfps,
+      });
+    }
+
+    res.json({ groups });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+// Parse markdown content report into action-item buckets.
+// - topItems: rows in any pipe-table whose `EP` column is >= 4, with title + link.
+// - cfps:     bullets / blockquote lines under "## Open Calls for Papers".
+function parseActionItems(raw) {
+  const lines = raw.split(/\r?\n/);
+  const topItems = [];
+  const cfps = [];
+  const seenLinks = new Set();
+
+  // --- Pipe tables ---
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!/^\s*\|/.test(line)) continue;
+    // Header row + separator row pattern: |...|  /  |---|---|...
+    const next = lines[i + 1] || '';
+    if (!/^\s*\|[\s:|-]+\|\s*$/.test(next)) continue;
+    const headers = line
+      .split('|')
+      .slice(1, -1)
+      .map((s) => s.trim().toLowerCase());
+    const epIdx = headers.findIndex((h) => h === 'ep' || h === 'score');
+    const titleIdx = headers.findIndex((h) => h === 'title' || h === 'topic' || h === 'session');
+    const linkIdx = headers.findIndex((h) => h === 'link' || h === 'url');
+    const dateIdx = headers.findIndex((h) => h === 'date');
+    if (epIdx < 0 || titleIdx < 0) continue;
+
+    // Walk body rows until a non-table line.
+    let j = i + 2;
+    while (j < lines.length && /^\s*\|/.test(lines[j])) {
+      const cells = lines[j]
+        .split('|')
+        .slice(1, -1)
+        .map((s) => s.trim());
+      const epRaw = cells[epIdx] || '';
+      const ep = parseInt(epRaw, 10);
+      if (Number.isFinite(ep) && ep >= 4) {
+        const titleCell = cells[titleIdx] || '';
+        const linkCell = linkIdx >= 0 ? cells[linkIdx] || '' : '';
+        const dateCell = dateIdx >= 0 ? cells[dateIdx] || '' : '';
+        const linkMatch = linkCell.match(/\((https?:\/\/[^\s)]+)\)/);
+        const url = linkMatch ? linkMatch[1] : '';
+        const title = titleCell
+          .replace(/\\\|/g, '|')
+          .replace(/\s+/g, ' ')
+          .trim();
+        const key = url || title;
+        if (title && !seenLinks.has(key)) {
+          seenLinks.add(key);
+          topItems.push({ title, url, date: dateCell, ep });
+        }
+      }
+      j++;
+    }
+    i = j - 1;
+  }
+
+  // --- Open Calls for Papers section ---
+  const cfpStart = lines.findIndex((l) => /^##\s+Open Calls for Papers/i.test(l));
+  if (cfpStart >= 0) {
+    for (let k = cfpStart + 1; k < lines.length; k++) {
+      const l = lines[k];
+      if (/^##\s+/.test(l)) break; // next section
+      // Match list bullets or blockquoted bullets, ignore plain prose.
+      const m = l.match(/^\s*(?:>\s*)?[-*]\s+(.+)$/);
+      if (!m) continue;
+      const text = m[1].trim();
+      if (!text || text.length < 4) continue;
+      cfps.push(enrichCfp(text));
+      if (cfps.length >= 6) break;
+    }
+  }
+
+  // Sort topItems by EP desc, cap at 6.
+  topItems.sort((a, b) => b.ep - a.ep);
+  return { topItems: topItems.slice(0, 6), cfps };
+}
+
+// Known conference homepages and CFP/registration URLs. Keyed by lowercased
+// name fragments matched against the conference name extracted from the
+// CFP bullet. Add entries as the agent picks up new events.
+const CONFERENCE_LINKS = [
+  { match: /microsoft build/i, site: 'https://build.microsoft.com/', cfp: 'https://sessionize.com/microsoft-build/' },
+  { match: /open source summit (us|north america)|oss\s*us/i, site: 'https://events.linuxfoundation.org/open-source-summit-north-america/', cfp: 'https://events.linuxfoundation.org/open-source-summit-north-america/program/cfp/' },
+  { match: /open source summit (eu|europe)/i, site: 'https://events.linuxfoundation.org/open-source-summit-europe/', cfp: 'https://events.linuxfoundation.org/open-source-summit-europe/program/cfp/' },
+  { match: /open source summit japan/i, site: 'https://events.linuxfoundation.org/open-source-summit-japan/', cfp: 'https://events.linuxfoundation.org/open-source-summit-japan/program/cfp/' },
+  { match: /europython/i, site: 'https://ep2026.europython.eu/', cfp: 'https://ep2026.europython.eu/cfp/' },
+  { match: /gophercon us/i, site: 'https://www.gophercon.com/', cfp: 'https://www.papercall.io/gophercon-2026' },
+  { match: /gophercon uk/i, site: 'https://www.gophercon.co.uk/', cfp: 'https://www.gophercon.co.uk/' },
+  { match: /kubecon.*(north america|us)/i, site: 'https://events.linuxfoundation.org/kubecon-cloudnativecon-north-america/', cfp: 'https://events.linuxfoundation.org/kubecon-cloudnativecon-north-america/program/cfp/' },
+  { match: /kubecon.*(europe|eu)/i, site: 'https://events.linuxfoundation.org/kubecon-cloudnativecon-europe/', cfp: 'https://events.linuxfoundation.org/kubecon-cloudnativecon-europe/program/cfp/' },
+  { match: /pycon austria/i, site: 'https://www.pycon.at/', cfp: 'https://www.pycon.at/' },
+  { match: /pycon india/i, site: 'https://in.pycon.org/', cfp: 'https://in.pycon.org/cfp/' },
+  { match: /rustconf/i, site: 'https://rustconf.com/', cfp: 'https://rustconf.com/' },
+  { match: /all things open/i, site: 'https://allthingsopen.org/', cfp: 'https://allthingsopen.org/call-for-papers' },
+  { match: /ndc oslo/i, site: 'https://ndcoslo.com/', cfp: 'https://ndcoslo.com/call-for-papers' },
+  { match: /\bkcdc\b/i, site: 'https://www.kcdc.info/', cfp: 'https://www.kcdc.info/call-for-speakers' },
+  { match: /techbash/i, site: 'https://techbash.com/', cfp: 'https://sessionize.com/techbash/' },
+  { match: /developerweek/i, site: 'https://www.developerweek.com/', cfp: 'https://www.developerweek.com/call-for-papers/' },
+  { match: /berlin buzzwords/i, site: 'https://berlinbuzzwords.de/', cfp: 'https://berlinbuzzwords.de/' },
+  { match: /live!\s*360/i, site: 'https://live360events.com/', cfp: 'https://live360events.com/' },
+  { match: /pytorch conference/i, site: 'https://events.linuxfoundation.org/pytorch-conference/', cfp: 'https://events.linuxfoundation.org/pytorch-conference/program/cfp/' },
+  { match: /pydata london/i, site: 'https://pydata.org/', cfp: 'https://pydata.org/' },
+  { match: /pyohio/i, site: 'https://www.pyohio.org/', cfp: 'https://www.pyohio.org/' },
+  { match: /pybay/i, site: 'https://pybay.com/', cfp: 'https://pybay.com/' },
+  { match: /mcp dev summit/i, site: 'https://mcpdevsummit.ai/', cfp: 'https://mcpdevsummit.ai/' },
+  { match: /(agnt|mcp)con/i, site: 'https://agntcon.com/', cfp: 'https://agntcon.com/' },
+  { match: /node congress/i, site: 'https://nodecongress.com/', cfp: 'https://nodecongress.com/' },
+  { match: /js ?nation/i, site: 'https://jsnation.com/', cfp: 'https://jsnation.com/' },
+  { match: /techorama/i, site: 'https://techorama.be/', cfp: 'https://techorama.be/' },
+  { match: /scottish summit/i, site: 'https://scottishsummit.com/', cfp: 'https://scottishsummit.com/' },
+  { match: /jdconf/i, site: 'https://jdconf.com/', cfp: 'https://jdconf.com/' },
+  { match: /ai coding summit|ai\s*conf|ai by the bay|ai community conference|ai agent conference|all things ai|superai/i, site: '', cfp: '' },
+];
+
+// Turn a raw CFP bullet (markdown text after the leading "-") into a
+// structured object the dashboard can render with real links.
+function enrichCfp(text) {
+  // Strip leading bold name: **Name** (date_loc) — note
+  const nameMatch = text.match(/^\*\*([^*]+)\*\*/);
+  const name = nameMatch ? nameMatch[1].trim() : text.split(/[—–-]/)[0].trim();
+  const dateLocMatch = text.match(/\(([^)]+)\)/);
+  const dateLoc = dateLocMatch ? dateLocMatch[1].trim() : '';
+  let note = text;
+  if (nameMatch) note = note.replace(nameMatch[0], '');
+  if (dateLocMatch) note = note.replace(dateLocMatch[0], '');
+  note = note.replace(/^\s*[—–-]\s*/, '').trim();
+
+  // Pull any inline markdown link the agent already supplied.
+  const inlineLinks = [];
+  const linkRe = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  let lm;
+  while ((lm = linkRe.exec(text))) {
+    inlineLinks.push({ label: lm[1], url: lm[2] });
+  }
+
+  // Look up canonical site / CFP URLs from the known table.
+  let site = '';
+  let cfp = '';
+  for (const entry of CONFERENCE_LINKS) {
+    if (entry.match.test(name) || entry.match.test(text)) {
+      site = entry.site || '';
+      cfp = entry.cfp || '';
+      break;
+    }
+  }
+
+  return {
+    raw: text,
+    name,
+    dateLoc,
+    note,
+    site,
+    cfp,
+    links: inlineLinks,
+  };
+}
 
 app.get('/api/reports/:name', async (req, res) => {
   try {

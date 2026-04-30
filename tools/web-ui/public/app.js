@@ -137,15 +137,61 @@ async function renderEnvEditor() {
 }
 
 function envRow(key, value, i, keyReadonly) {
+  const meta = ENV_KEY_META[key.toUpperCase()] || null;
+  const helpBtn = meta
+    ? `<button type="button" class="secondary env-help" title="${escape(meta.tip)}\n\nClick for full setup walkthrough." data-anchor="${escape(meta.anchor)}" aria-label="What is ${escape(key)}?">?</button>`
+    : '<span class="env-help-placeholder" aria-hidden="true"></span>';
   return `
     <div class="env-row" data-row="${i}">
       <input class="env-key" type="text" value="${escape(key)}" ${keyReadonly ? 'readonly' : ''} placeholder="KEY_NAME" />
       <input class="env-value" type="password" value="${escape(value)}" placeholder="(empty — skip this source)" autocomplete="off" />
+      ${helpBtn}
       <button type="button" class="secondary env-toggle" title="Show/hide">👁</button>
       <button type="button" class="secondary env-remove" title="Remove" ${keyReadonly ? 'hidden' : ''}>✕</button>
     </div>
   `;
 }
+
+// Per-key help metadata. `tip` shows on hover; `anchor` deep-links into
+// docs/API-KEYS.md when the user clicks the "?" button.
+const ENV_KEY_META = {
+  YOUTUBE_API_KEY: {
+    tip: 'YouTube Data API v3 key (free). Without it, YouTube scanning is skipped.',
+    anchor: 'youtube-data-api-v3',
+  },
+  REDDIT_CLIENT_ID: {
+    tip: 'Reddit OAuth2 client ID (free, OPTIONAL). Without it, Content Scout falls back to the public .json endpoint. Register a "script" app at reddit.com/prefs/apps for higher limits.',
+    anchor: 'reddit',
+  },
+  REDDIT_CLIENT_SECRET: {
+    tip: 'Reddit OAuth2 client secret. Paired with REDDIT_CLIENT_ID from the same script app.',
+    anchor: 'reddit',
+  },
+  REDDIT_USER_AGENT: {
+    tip: 'User-Agent string Reddit requires on API calls. Any descriptive string works (e.g., "content-scout/1.0").',
+    anchor: 'reddit',
+  },
+  BLUESKY_HANDLE: {
+    tip: 'Your Bluesky handle (e.g., yourname.bsky.social). Paired with BLUESKY_APP_PASSWORD.',
+    anchor: 'bluesky',
+  },
+  BLUESKY_APP_PASSWORD: {
+    tip: 'Bluesky app-specific password (free). NOT your main password — generate one at bsky.app/settings/app-passwords.',
+    anchor: 'bluesky',
+  },
+  X_BEARER_TOKEN: {
+    tip: 'X/Twitter API bearer token. Basic plan ($200/mo) recommended; free tier is typically too rate-limited.',
+    anchor: 'xtwitter',
+  },
+  GITHUB_TOKEN: {
+    tip: 'Optional GitHub personal access token. Raises rate limit from 60/hr to 5,000/hr. No scopes needed for public read.',
+    anchor: 'github-token',
+  },
+  SCOUT_WEBHOOK_URL: {
+    tip: 'Optional webhook URL. Content Scout POSTs a JSON summary here when a scan completes (Slack/Teams/Discord/Zapier).',
+    anchor: '',
+  },
+};
 
 function wireEnvRows() {
   document.querySelectorAll('.env-toggle').forEach((btn) => {
@@ -156,6 +202,42 @@ function wireEnvRows() {
   });
   document.querySelectorAll('.env-remove').forEach((btn) => {
     btn.addEventListener('click', () => btn.parentElement.remove());
+  });
+  document.querySelectorAll('.env-help').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const anchor = btn.dataset.anchor || '';
+      // Open the local docs page anchored to the right section.
+      const local = anchor ? `/docs/API-KEYS.md#${anchor}` : '/docs/API-KEYS.md';
+      window.open(local, '_blank', 'noopener');
+    });
+  });
+  // When user types a recognized key name into a custom row, refresh its
+  // help button so the right tooltip appears.
+  document.querySelectorAll('.env-row .env-key:not([readonly])').forEach((input) => {
+    input.addEventListener('blur', () => {
+      const row = input.closest('.env-row');
+      if (!row) return;
+      const meta = ENV_KEY_META[input.value.trim().toUpperCase()];
+      const existing = row.querySelector('.env-help, .env-help-placeholder');
+      if (!existing) return;
+      const replacement = document.createElement(meta ? 'button' : 'span');
+      if (meta) {
+        replacement.type = 'button';
+        replacement.className = 'secondary env-help';
+        replacement.title = `${meta.tip}\n\nClick for full setup walkthrough.`;
+        replacement.dataset.anchor = meta.anchor;
+        replacement.setAttribute('aria-label', `What is ${input.value.trim()}?`);
+        replacement.textContent = '?';
+        replacement.addEventListener('click', () => {
+          const local = meta.anchor ? `/docs/API-KEYS.md#${meta.anchor}` : '/docs/API-KEYS.md';
+          window.open(local, '_blank', 'noopener');
+        });
+      } else {
+        replacement.className = 'env-help-placeholder';
+        replacement.setAttribute('aria-hidden', 'true');
+      }
+      existing.replaceWith(replacement);
+    });
   });
 }
 
@@ -1910,7 +1992,11 @@ $('config-save').addEventListener('click', async () => {
 let activeRunId = null;
 
 async function loadSlugOptions() {
-  const { configs } = await api('/api/configs');
+  const { configs: rawConfigs } = await api('/api/configs');
+  // Defensive: filter out example/template configs in case a stale server still serves them.
+  const configs = (rawConfigs || []).filter(
+    (c) => c && c.slug && c.slug !== 'example' && !c.slug.startsWith('example-')
+  );
   const list = $('run-subject-list');
   if (!list) return;
 
