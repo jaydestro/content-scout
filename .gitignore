@@ -20,8 +20,17 @@ reports/.seen-links.json
 .github/prompts/scout-config-*.prompt.md
 !.github/prompts/scout-config-example.prompt.md
 
-# Generated thumbnails / images
-social-posts/images/
+# Generated content reports (internal — not shared)
+reports/*.md
+!reports/README.md
+
+# Generated social posts and posting calendars (internal — not shared)
+social-posts/*.md
+!social-posts/README.md
+
+# Generated thumbnails / images (keep brand assets folder)
+social-posts/images/*
+!social-posts/images/brand/
 
 # ---------------------------------------------------------------------------
 # Python

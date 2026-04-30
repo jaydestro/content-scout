@@ -190,6 +190,15 @@
     `;
 
     const out = document.getElementById('rq-output');
+
+    // Only stream live output for runs that are still in progress. Finished
+    // runs show a brief status placeholder — their full transcript lives in
+    // the Run view / report files, not in this sidebar.
+    if (run.status !== 'running') {
+      out.textContent = `[run ${m.label.toLowerCase()}]\nOpen the Run view or the saved report for the full transcript.\n`;
+      return;
+    }
+
     out.textContent = 'Connecting…\n';
 
     activeStream = new EventSource(`/api/runs/${encodeURIComponent(id)}/stream`);
