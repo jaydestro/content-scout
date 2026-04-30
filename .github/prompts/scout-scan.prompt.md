@@ -36,10 +36,11 @@ Run a content scan using the Content Scout agent.
    - Number items sequentially across all sections.
 4. Save each topic's report to `reports/{YYYY-MM-DD-HHmm}-{slug}-content.md` (or `reports/{YYYY-MM-DD-HHmm}-content.md` if only one topic).
 5. Update `reports/.seen-links.json` with all new URLs.
-6. Auto-generate social posts and thumbnail specs for every item. Save to `social-posts/{YYYY-MM-DD-HHmm}-{slug}-social-posts.md` (or `social-posts/{YYYY-MM-DD-HHmm}-social-posts.md` if only one topic).
-7. Summarize: item count per topic, top topics, content gaps, and confirm social posts were generated. If CFP tracking is on, call out any CFPs with deadlines closing within 14 days.
-8. If scanning multiple topics, provide a brief cross-topic summary at the end (total items, shared topics, comparative volume).
-9. **End your final message with the saved file paths**, one per line, prefixed with `Report saved: ` and `Social posts saved: ` (and `Calendar saved: ` if generated). Use workspace-relative paths so they render as clickable links in the UI, e.g.:
+6. **Update persistent creator state** at `reports/.scout-state/{slug}/creators.json` (see "Persistent Ecosystem State" in the Content Scout agent definition for schema and upsert rules). Recompute `trajectory` for every creator. Populate the report's **Influence Movers** section (Rising / Stable / Fading / Detractor Watch) from this file. If `creators.json` is empty/new, the Influence Movers section may say "First scan — trajectory data will appear after the next run."
+7. Auto-generate social posts and thumbnail specs for every item. Save to `social-posts/{YYYY-MM-DD-HHmm}-{slug}-social-posts.md` (or `social-posts/{YYYY-MM-DD-HHmm}-social-posts.md` if only one topic).
+8. Summarize: item count per topic, top topics, content gaps, and confirm social posts were generated. If CFP tracking is on, call out any CFPs with deadlines closing within 14 days. Also call out: count of new creators this run, count in Detractor Watch (if any).
+9. If scanning multiple topics, provide a brief cross-topic summary at the end (total items, shared topics, comparative volume).
+10. **End your final message with the saved file paths**, one per line, prefixed with `Report saved: ` and `Social posts saved: ` (and `Calendar saved: ` if generated). Use workspace-relative paths so they render as clickable links in the UI, e.g.:
 
    ```
    Report saved: reports/2026-04-30-1530-azure-cosmos-db-content.md

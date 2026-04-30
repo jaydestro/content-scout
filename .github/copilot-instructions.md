@@ -20,6 +20,9 @@ Before any operation, read config files from `.github/prompts/scout-config-*.pro
 | scout calendar | `.github/prompts/scout-calendar.prompt.md` | Weekly posting schedule |
 | scout gaps | `.github/prompts/scout-gaps.prompt.md` | Topics with no recent coverage |
 | scout trends | `.github/prompts/scout-trends.prompt.md` | Month-over-month comparison |
+| scout creators | `.github/prompts/scout-creators.prompt.md` | View creator trajectories, log interventions, track sentiment outcomes |
+| scout doctor | `.github/prompts/scout-doctor.prompt.md` | Validate config, `.env` keys, source reachability, state integrity |
+| scout replay | `.github/prompts/scout-replay.prompt.md` | Re-run filters/scoring against a saved scan with no API calls |
 
 Read the corresponding prompt file for each command's detailed flow. Ignore VS Code frontmatter and `${{input:...}}` placeholders — ask users for inputs conversationally.
 

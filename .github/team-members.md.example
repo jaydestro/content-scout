@@ -1,0 +1,21 @@
+# Team Members (shared)
+
+Copy this file to `.github/team-members.md` and edit. Configs that set `team_members_file` will resolve to this list, so the team can co-own membership without per-product config diffs.
+
+The agent uses this list to **exclude team members from creator-influence tracking** (no point measuring your own teammates as community advocates) and to **attribute interventions by owner** in `scout-creators` view.
+
+## Members
+
+| Display name | Handles | Platforms | Role | GitHub |
+|--------------|---------|-----------|------|--------|
+| Jane Doe | @janedoe | bluesky, x, linkedin | Developer Advocate | janedoe |
+| Pat Lee | @patlee | github, devto | Engineer | patlee |
+
+## Resolution rules
+
+When a config has `team_members_file: .github/team-members.md`:
+
+1. Load this file's `## Members` table.
+2. Optionally extend with the config's own `## Team Members` section (these are merged in addition, not replacing).
+3. Match against creators by `(platform, handle)` tuple — exact match required.
+4. Owner names referenced in `scout-creators log-intervention` MUST match a `Display name` in this list.
