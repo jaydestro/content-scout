@@ -135,7 +135,11 @@ async function listConfigs() {
   try {
     const files = await fs.readdir(PROMPTS_DIR);
     const entries = files.filter(
-      (f) => f.startsWith('scout-config-') && f.endsWith('.prompt.md') && f !== 'scout-config-example.prompt.md'
+      (f) =>
+        f.startsWith('scout-config-') &&
+        f.endsWith('.prompt.md') &&
+        f !== 'scout-config-example.prompt.md' &&
+        !f.startsWith('scout-config-example-')
     );
     const configs = await Promise.all(
       entries.map(async (f) => {

@@ -35,6 +35,9 @@ Users will request these operations using natural language. Map their requests t
 | "scout calendar", "schedule posts", "posting calendar" | `.github/prompts/scout-calendar.prompt.md` | Create a weekly posting schedule |
 | "scout gaps", "content gaps", "gap analysis" | `.github/prompts/scout-gaps.prompt.md` | Show topics with no recent coverage |
 | "scout trends", "show trends", "compare months" | `.github/prompts/scout-trends.prompt.md` | Month-over-month trajectory analysis |
+| "scout creators", "influence movers", "log intervention", "record outcome" | `.github/prompts/scout-creators.prompt.md` | View creator trajectories, log outreach, track sentiment outcomes |
+| "scout doctor", "health check", "validate setup", "check keys" | `.github/prompts/scout-doctor.prompt.md` | Validate config, `.env` keys, source reachability, state integrity |
+| "scout replay", "replay scan", "re-run filters" | `.github/prompts/scout-replay.prompt.md` | Re-apply filters/scoring/sentiment to a saved scan with no API calls |
 
 When reading prompt files, the `${{input:...}}` placeholders are VS Code syntax. Instead, ask the user for those inputs conversationally.
 

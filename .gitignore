@@ -15,6 +15,12 @@ secrets.json
 # Seen-links tracker (local state, not shared)
 reports/.seen-links.json
 
+# Persistent ecosystem state (creators.json etc — local state, not shared)
+# Note: reports/.scout-state.shared/ is intentionally NOT ignored — teams
+# can opt into committed shared state by setting `shared_state: true` in
+# their config and committing reports/.scout-state.shared/ to the repo.
+reports/.scout-state/
+
 # Product configs contain product-specific settings and occasionally API
 # references — do not commit. Use scout-config-example.prompt.md as a template.
 .github/prompts/scout-config-*.prompt.md
