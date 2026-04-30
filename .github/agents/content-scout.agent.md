@@ -136,8 +136,8 @@ The config file specifies which networks are enabled. For each enabled source, u
 - **Vendor blogs** -- If the config includes custom sources of type `blog`, scan those for community/MVP/partner posts.
 - **Dev.to** -- RSS feed at `https://dev.to/feed/tag/{product-tag}`
 - **Medium** -- RSS feed at `https://medium.com/feed/tag/{product-tag}`
-- **Hashnode** -- Search by product name
-- **DZone, C# Corner, InfoQ** -- Search by product name
+- **Hashnode** -- Search by product name. **NOTE (2026-04):** Hashnode's tag-RSS endpoints (`/n/{tag}/rss`, `/rss/tag/{tag}`) currently return 404. Only the global `https://hashnode.com/rss` feed works — if you need tag-targeted Hashnode coverage, use the Hashnode GraphQL API (`https://gql.hashnode.com/`) or skip Hashnode and note partial coverage in the run summary.
+- **DZone, C# Corner, InfoQ** -- Search by product name. **NOTE (2026-04):** C# Corner's RSS feeds (`/rss/articles.xml`, `/rss.aspx`, `/rss/latestcontent.aspx`) currently return 500. Skip C# Corner for now and note partial coverage; DZone and InfoQ feeds work fine.
 - **Influencer blogs** -- If the config includes custom sources of type `influencer`, scan those. Otherwise search general influencer platforms using all search terms.
 
 ### Product Updates & Docs
@@ -182,7 +182,11 @@ The config file specifies which networks are enabled. For each enabled source, u
 
 ### Conversation Tracking (tracked, not numbered)
 - **Stack Overflow** -- Public API v2.3 (no auth): `https://api.stackexchange.com/2.3/questions?order=desc&sort=creation&tagged={tag}&site=stackoverflow`
-- **Reddit** -- OAuth2 app-only auth (free): register an app at `https://www.reddit.com/prefs/apps/`, use client credentials grant for app-only access. The public `.json` endpoint is rate-limited without auth. If Reddit credentials are not in `.env`, skip Reddit and note it in the "Sources That Could Not Be Reached" section.
+- **Reddit** -- Two-mode scanner. Reddit is **always enabled** — it never gets skipped purely for missing credentials.
+  - **Authenticated mode (preferred when creds present):** OAuth2 app-only auth (free). If `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and `REDDIT_USER_AGENT` are all present in `.env`, obtain a token via `POST https://www.reddit.com/api/v1/access_token` (grant_type=client_credentials) and call `https://oauth.reddit.com/search` and `https://oauth.reddit.com/r/{subreddit}/search` with `Authorization: Bearer {token}`. Honor Reddit's 60 req/min limit. Register an app at `https://www.reddit.com/prefs/apps/` (or `https://old.reddit.com/prefs/apps/` if the new flow is gated).
+  - **Unauthenticated mode (default fallback):** If any of the three env vars is missing, scan via the public `.json` endpoint at `https://www.reddit.com/search.json?q={term}&sort=new&t=month` and `https://www.reddit.com/r/{subreddit}/search.json?...&restrict_sr=1`. Required: a realistic browser User-Agent (e.g., `Mozilla/5.0 ...`), `Accept: application/json`, ≥2s delay between requests, max 1 in-flight request at a time. Stop scanning Reddit immediately on the first 429 or 403 and note the partial coverage in "Sources That Could Not Be Reached". Items returned by the unauth endpoint are tagged in JSON sidecar provenance as `source: "reddit-json-unauth"` so downstream consumers can distinguish them from authenticated results.
+  - In both modes the same Social Source Data Requirements apply (permalink, author handle, subreddit, post date, body excerpt, engagement metrics).
+  - Print which mode is active at the start of the Reddit scan: `Reddit: authenticated mode` or `Reddit: unauthenticated fallback (add REDDIT_CLIENT_ID/SECRET to .env for higher limits)`.
 - **Hacker News** -- Public Algolia API: `https://hn.algolia.com/api/v1/search_by_date?query={search-term}&tags=story`
 - **Bluesky** -- Authenticated via AT Protocol if credentials in config. Run searches for all text terms and hashtags.
 - **X/Twitter** -- Authenticated via bearer token if credentials in config. The $200/mo Basic plan is recommended for reliable scanning. Without a key, attempt best-effort scanning via `web/fetch` on public search pages, but note results may be incomplete or unavailable. If scanning fails without auth, skip X and note it in the "Sources That Could Not Be Reached" section.
@@ -306,12 +310,13 @@ When scanning sources via `web/fetch` or API calls, follow these rules to avoid 
 |--------|--------------|-------|---------------------------|
 | Dev.to | No | — | Works fine |
 | Medium | No | — | Works fine (RSS) |
-| Hashnode | No | — | Works fine |
-| DZone, C# Corner, InfoQ | No | — | Works fine |
+| Hashnode | No | — | Global RSS works; tag-RSS currently 404 (use GraphQL API for tag-targeted scanning) |
+| DZone, InfoQ | No | — | Works fine |
+| C# Corner | No | — | RSS currently 500; skip and note in run summary |
 | YouTube | API key | Yes (free) | YouTube scanning skipped |
 | GitHub | No (unauthenticated) | — | Lower rate limits (60 req/hr). Add a `GITHUB_TOKEN` for 5000 req/hr |
 | Stack Overflow | No | — | Works fine (public API v2.3) |
-| Reddit | OAuth2 app credentials | Yes (free) | Reddit scanning skipped. Register at reddit.com/prefs/apps |
+| Reddit | OAuth2 app credentials (optional) | Yes (free) | Falls back to public `.json` endpoint with browser User-Agent + ≥2s delays. Lower volume, 429-prone, but Reddit is never skipped solely for missing creds. |
 | Hacker News | No | — | Works fine (Algolia API) |
 | Bluesky | App password | Yes (free) | Bluesky scanning skipped |
 | X/Twitter | Bearer token | $200/mo | Best-effort public scraping attempted; may fail. Reliable scanning requires paid API. |
@@ -321,7 +326,7 @@ When scanning sources via `web/fetch` or API calls, follow these rules to avoid 
 
 Content Scout MUST work end-to-end with **no API keys at all**. When `.env` is missing or empty:
 
-- Run a **free-tier scan** using only no-auth sources: Dev.to RSS, Medium RSS, Hashnode, DZone, C# Corner, InfoQ, GitHub (unauth — 60 req/hr), Stack Overflow public API, Hacker News Algolia API, MS Learn MCP (if available), and `web/fetch` against any explicit blog/docs URLs in the config.
+- Run a **free-tier scan** using only no-auth sources: Dev.to RSS, Medium RSS, Hashnode (global RSS only — tag-RSS currently 404), DZone, InfoQ (C# Corner currently 500 — skip), GitHub (unauth — 60 req/hr), Stack Overflow public API, Hacker News Algolia API, Reddit (unauthenticated `.json` endpoint — browser UA, ≥2s delays, skip on first 429), MS Learn MCP (if available), and `web/fetch` against any explicit blog/docs URLs in the config.
 - At the start of the run, print a **Free-Tier Notice**: "Running in free-tier mode. The following sources are skipped because their keys are missing in `.env`: {list}. Add keys and re-run for full coverage."
 - All free-tier results follow the same quality filter — there is no "lite" filter. The output report is identical in shape; the "Sources That Could Not Be Reached" section names every skipped source explicitly.
 - Free-tier output MUST still produce JSON sidecar (see Output Formats) so downstream tooling works regardless of which sources were available.

@@ -10,9 +10,11 @@ All API keys are optional. Without them, the agent skips those sources and scans
 
 | Service | Cost | Without It |
 |---------|------|-----------|
-| YouTube Data API v3 | Free | YouTube scanning skipped — community videos won't appear in reports |
-| Bluesky | Free | Bluesky scanning skipped — mentions and hashtag posts won't be tracked |
-| X/Twitter | $200/mo (Basic) or free tier (limited) | X/Twitter scanning skipped — conversations and mentions won't be tracked |
+| [YouTube Data API v3](#youtube-data-api-v3) | Free | YouTube scanning skipped — community videos won't appear in reports |
+| [Reddit OAuth2](#reddit) | Free (optional) | Falls back to public `.json` endpoint with browser User-Agent + ≥2s delays. Lower volume, more 429 skips, but Reddit still scans. |
+| [Bluesky](#bluesky) | Free | Bluesky scanning skipped — mentions and hashtag posts won't be tracked |
+| [X/Twitter](#xtwitter) | $200/mo (Basic) or free tier (limited) | X/Twitter scanning skipped — conversations and mentions won't be tracked |
+| [GitHub Token](#github-token) | Free | GitHub still works, but unauthenticated requests are capped at 60/hr (vs 5000/hr authenticated) |
 
 ---
 
@@ -36,6 +38,37 @@ All API keys are optional. Without them, the agent skips those sources and scans
 
 ### In Content Scout
 When you select YouTube during onboarding, the agent asks for this key. Paste it or say "skip". Stored in `.env` as `YOUTUBE_API_KEY`.
+
+---
+
+## Reddit
+
+**Cost:** Free (and **optional** — Content Scout falls back to the public `.json` endpoint when creds are missing).
+
+Reddit OAuth2 app-only (client credentials) auth gives higher rate limits and more reliable scanning, but it's no longer required — Content Scout falls back to the public `.json` endpoint when `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` aren't set. The fallback is lower-volume and 429-prone, but Reddit is never silently dropped.
+
+### Setup
+1. Log in to Reddit, then go to [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps/) (or [old.reddit.com/prefs/apps](https://old.reddit.com/prefs/apps/) if the new flow is gated by Reddit's Responsible Builder Policy)
+2. Scroll to the bottom and click **are you a developer? create an app...**
+3. Fill in the form:
+   - **name** — anything (e.g., `content-scout`)
+   - **type** — select **script** (this is critical — `web app` and `installed app` use different auth flows)
+   - **description** — optional
+   - **about url** — leave blank
+   - **redirect uri** — `http://localhost:8080` (required field but unused for script apps)
+4. Click **create app**
+5. Copy two values from the app card that appears:
+   - **client ID** — the short string directly under the app name (looks like `aB3xY-zQ12wPqR`)
+   - **client secret** — labeled `secret` in the app details
+
+### Usage Limits
+- 100 queries per minute per OAuth client (more than enough)
+- Free forever for personal/script use
+
+### In Content Scout
+When you select Reddit during onboarding, the agent offers to collect a client ID and client secret. Paste them or say "skip" — if skipped, the agent uses the unauthenticated `.json` fallback automatically. Stored in `.env` as `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and `REDDIT_USER_AGENT` (format: `content-scout/1.0 by <reddit-username>`).
+
+> **Note:** Script apps don't require a username/password for the app-only client-credentials flow Content Scout uses — the client ID + secret is enough to read public content.
 
 ---
 
@@ -83,6 +116,27 @@ When you select X/Twitter during onboarding, the agent asks for your bearer toke
 
 ---
 
+## GitHub Token
+
+**Cost:** Free
+
+GitHub works without a token, but unauthenticated requests are limited to 60/hour. Adding a personal access token raises that to 5,000/hour — which matters for any meaningful community-repo scan.
+
+### Setup
+1. Go to [github.com/settings/tokens](https://github.com/settings/tokens)
+2. Click **Generate new token** → **Generate new token (classic)**
+3. Give it a name (e.g., `content-scout`) and an expiration
+4. **No scopes needed** — Content Scout only reads public data, so leave every scope unchecked. Public read access works without scopes.
+5. Click **Generate token**
+6. Copy the token (it's shown only once)
+
+> **Fine-grained tokens** also work. If you prefer those, generate a fine-grained token with **Public repositories (read-only)** access — no other permissions needed.
+
+### In Content Scout
+Stored in `.env` as `GITHUB_TOKEN`. The agent uses it automatically if present; otherwise it falls back to unauthenticated requests with a lower rate limit.
+
+---
+
 ## Security
 
 - API keys are stored in `.env` at the workspace root, which is **gitignored by default**
@@ -112,6 +166,6 @@ These all work out of the box:
 
 | Source | How to Get Credentials | Cost |
 |--------|----------------------|------|
-| Reddit | Register an app at [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps/) ("script" type). Set `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET` in `.env`. | Free |
+| Reddit | **Optional.** Register a "script" app at [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps/) (or `old.reddit.com/prefs/apps`) and set `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` / `REDDIT_USER_AGENT` in `.env` for higher limits. Without creds, Content Scout uses the public `.json` fallback. | Free |
 | YouTube | Get an API key at [console.cloud.google.com](https://console.cloud.google.com/apis/credentials). Set `YOUTUBE_API_KEY` in `.env`. | Free |
 | Bluesky | Create an app password at [bsky.app/settings/app-passwords](https://bsky.app/settings/app-passwords). Set `BLUESKY_HANDLE` and `BLUESKY_APP_PASSWORD` in `.env`. | Free |
