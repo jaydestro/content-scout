@@ -31,9 +31,9 @@ const AGENT_PRESETS = {
   copilot: {
     id: 'copilot',
     label: 'GitHub Copilot CLI',
-    runner: 'copilot -p "{prompt}"',
+    runner: 'copilot --allow-all-tools --allow-all-paths --allow-all-urls -p "{prompt}"',
     install: 'https://docs.github.com/en/copilot/github-copilot-in-the-cli',
-    note: 'Requires the newer `copilot` CLI (not `gh copilot`). Agent mode + prompt files supported.',
+    note: 'Requires the newer `copilot` CLI (not `gh copilot`). Runs with --allow-all-tools/paths/urls so the agent can fetch web content and execute shell commands without an interactive permission prompt (there is no TTY when spawned by the server). Tighten the runner string in Settings if you want to scope it.',
   },
   codex: {
     id: 'codex',
