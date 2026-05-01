@@ -15,6 +15,12 @@ secrets.json
 # Seen-links tracker (local state, not shared)
 reports/.seen-links.json
 
+# Persistent ecosystem state (creators.json etc — local state, not shared)
+# Note: reports/.scout-state.shared/ is intentionally NOT ignored — teams
+# can opt into committed shared state by setting `shared_state: true` in
+# their config and committing reports/.scout-state.shared/ to the repo.
+reports/.scout-state/
+
 # Product configs contain product-specific settings and occasionally API
 # references — do not commit. Use scout-config-example.prompt.md as a template.
 .github/prompts/scout-config-*.prompt.md
@@ -23,14 +29,20 @@ reports/.seen-links.json
 # Generated content reports (internal — not shared)
 reports/*.md
 !reports/README.md
+reports/*.json
+!reports/.scout-state.shared/**/*.json
 
 # Generated social posts and posting calendars (internal — not shared)
 social-posts/*.md
 !social-posts/README.md
+social-posts/*.json
 
 # Generated thumbnails / images (keep brand assets folder)
 social-posts/images/*
 !social-posts/images/brand/
+
+# Per-product brand assets are local customizations — never commit
+social-posts/images/brand/azure-cosmos-db/
 
 # ---------------------------------------------------------------------------
 # Node.js / npm (covers all tools/* packages)

@@ -20,13 +20,19 @@ Before any operation, read config files from `.github/prompts/scout-config-*.pro
 | scout calendar | `.github/prompts/scout-calendar.prompt.md` | Weekly posting schedule |
 | scout gaps | `.github/prompts/scout-gaps.prompt.md` | Topics with no recent coverage |
 | scout trends | `.github/prompts/scout-trends.prompt.md` | Month-over-month comparison |
+| scout creators | `.github/prompts/scout-creators.prompt.md` | View creator trajectories, log interventions, track sentiment outcomes |
+| scout doctor | `.github/prompts/scout-doctor.prompt.md` | Validate config, `.env` keys, source reachability, state integrity |
+| scout keys | `.github/prompts/scout-keys.prompt.md` | Interactive setup for API credentials in `.env` (Reddit, Bluesky, X, YouTube, GitHub) |
+| scout replay | `.github/prompts/scout-replay.prompt.md` | Re-run filters/scoring against a saved scan with no API calls |
+| scout seo | `.github/prompts/scout-seo.prompt.md` | SEO audit + recommendations for one or more URLs |
 
 Read the corresponding prompt file for each command's detailed flow. Ignore VS Code frontmatter and `${{input:...}}` placeholders — ask users for inputs conversationally.
 
 ## Output Locations
 
 - Reports: `reports/{YYYY-MM-DD-HHmm}-{slug}-content.md`
-- Social posts: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-social-posts.md`
+- Social posts (bulk from report): `social-posts/{YYYY-MM-DD-HHmm}-{slug}-social-posts.md`
+- Social posts (solo / one-off from a single URL): `social-posts/{YYYY-MM-DD-HHmm}-{slug}-solo-{url-slug}.md` where `{url-slug}` = host + last path segment, lowercased, hyphenated, max 40 chars (fallback `solo-link`)
 - Calendars: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-posting-calendar.md`
 - Trends: `reports/{YYYY-MM-DD-HHmm}-{slug}-trends.md`
 - Dedup: `reports/.seen-links.json`

@@ -7,7 +7,7 @@ const api = async (path, opts) => {
 };
 
 // --- Navigation ----------------------------------------------------
-const KNOWN_VIEWS = ['dashboard', 'setup', 'configs', 'run', 'reports', 'social'];
+const KNOWN_VIEWS = ['dashboard', 'setup', 'configs', 'run', 'reports', 'social', 'conversations'];
 function gotoView(view) {
   document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${view}`));
@@ -15,11 +15,18 @@ function gotoView(view) {
     history.replaceState(null, '', `#${view}`);
   }
   if (view === 'setup') loadSetup();
-  if (view === 'configs') loadConfigList();
+  if (view === 'configs') { loadConfigList(); renderConfigsEnv(); }
   if (view === 'reports') loadReports();
   if (view === 'social') loadSocial();
   if (view === 'run') loadSlugOptions();
   if (view === 'dashboard') loadDashboard();
+  if (view === 'conversations') {
+    // intel.js owns this view but only auto-loads on hashchange. gotoView
+    // uses history.replaceState (no hashchange fires), so we have to kick
+    // it manually — otherwise the panel stays stuck on "Loading…".
+    window.contentScoutIntel?.wireConversationsUI?.();
+    window.contentScoutIntel?.loadConversations?.();
+  }
 }
 document.querySelectorAll('nav button').forEach((btn) => {
   btn.addEventListener('click', () => gotoView(btn.dataset.view));
@@ -130,42 +137,204 @@ async function renderEnvEditor() {
       ${rows.length ? '' : '<div class="hint" style="margin-top:0.5rem">No keys yet — click <strong>+ Add custom key</strong> below to add one. Skip this step if you don\u2019t need any keys right now.</div>'}
       ${exists ? '' : '<div class="hint" style="margin-top:0.5rem">No <code>.env</code> file yet \u2014 saving will create one.</div>'}
     `;
-    wireEnvRows();
+    wireEnvRows('setup-env');
   } catch (err) {
     $('setup-env').innerHTML = `<div class="warn-text">Failed to load env: ${escape(err.message)}</div>`;
   }
 }
 
 function envRow(key, value, i, keyReadonly) {
+  const meta = ENV_KEY_META[key.toUpperCase()] || null;
+  const helpBtn = meta
+    ? `<button type="button" class="secondary env-help" title="${escape(meta.tip)}\n\nClick for full setup walkthrough." data-anchor="${escape(meta.anchor)}" aria-label="What is ${escape(key)}?">?</button>`
+    : '<span class="env-help-placeholder" aria-hidden="true"></span>';
   return `
     <div class="env-row" data-row="${i}">
       <input class="env-key" type="text" value="${escape(key)}" ${keyReadonly ? 'readonly' : ''} placeholder="KEY_NAME" />
       <input class="env-value" type="password" value="${escape(value)}" placeholder="(empty — skip this source)" autocomplete="off" />
+      ${helpBtn}
       <button type="button" class="secondary env-toggle" title="Show/hide">👁</button>
+      <button type="button" class="secondary env-test" title="Validate format and run a live reachability test">Test</button>
       <button type="button" class="secondary env-remove" title="Remove" ${keyReadonly ? 'hidden' : ''}>✕</button>
+      <div class="env-status" role="status" aria-live="polite"></div>
     </div>
   `;
 }
 
-function wireEnvRows() {
-  document.querySelectorAll('.env-toggle').forEach((btn) => {
+// Per-key help metadata. `tip` shows on hover; `anchor` deep-links into
+// docs/API-KEYS.md when the user clicks the "?" button.
+const ENV_KEY_META = {
+  YOUTUBE_API_KEY: {
+    tip: 'YouTube Data API v3 key (free). Without it, YouTube scanning is skipped.',
+    anchor: 'youtube-data-api-v3',
+  },
+  REDDIT_CLIENT_ID: {
+    tip: 'Reddit OAuth2 client ID (free, OPTIONAL). Without it, Content Scout falls back to the public .json endpoint. Register a "script" app at reddit.com/prefs/apps for higher limits.',
+    anchor: 'reddit',
+  },
+  REDDIT_CLIENT_SECRET: {
+    tip: 'Reddit OAuth2 client secret. Paired with REDDIT_CLIENT_ID from the same script app.',
+    anchor: 'reddit',
+  },
+  REDDIT_USER_AGENT: {
+    tip: 'User-Agent string Reddit requires on API calls. Any descriptive string works (e.g., "content-scout/1.0").',
+    anchor: 'reddit',
+  },
+  BLUESKY_HANDLE: {
+    tip: 'Your Bluesky handle (e.g., yourname.bsky.social). Bluesky has no API keys — scans authenticate AS your user via an app password.',
+    anchor: 'bluesky',
+  },
+  BLUESKY_APP_PASSWORD: {
+    tip: 'Bluesky app-specific password (free, user-scoped). Generate at bsky.app/settings/app-passwords. Leave the "Allow access to direct messages" toggle OFF — Content Scout never needs DM access.',
+    anchor: 'bluesky',
+  },
+  X_BEARER_TOKEN: {
+    tip: 'X/Twitter API bearer token. Basic plan ($200/mo) recommended; free tier is typically too rate-limited.',
+    anchor: 'xtwitter',
+  },
+  GITHUB_TOKEN: {
+    tip: 'Optional GitHub personal access token. Raises rate limit from 60/hr to 5,000/hr. No scopes needed for public read.',
+    anchor: 'github-token',
+  },
+  SCOUT_WEBHOOK_URL: {
+    tip: 'Optional webhook URL. Content Scout POSTs a JSON summary here when a scan completes (Slack/Teams/Discord/Zapier).',
+    anchor: '',
+  },
+};
+
+function wireEnvRows(scopeId) {
+  const root = scopeId ? document.getElementById(scopeId) : document;
+  if (!root) return;
+  root.querySelectorAll('.env-toggle').forEach((btn) => {
     btn.addEventListener('click', () => {
       const input = btn.parentElement.querySelector('.env-value');
       input.type = input.type === 'password' ? 'text' : 'password';
     });
   });
-  document.querySelectorAll('.env-remove').forEach((btn) => {
+  root.querySelectorAll('.env-remove').forEach((btn) => {
     btn.addEventListener('click', () => btn.parentElement.remove());
+  });
+  root.querySelectorAll('.env-test').forEach((btn) => {
+    btn.addEventListener('click', () => testEnvRow(btn, scopeId));
+  });
+  root.querySelectorAll('.env-help').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const anchor = btn.dataset.anchor || '';
+      // Open the local docs page anchored to the right section.
+      const local = anchor ? `/docs/API-KEYS.md#${anchor}` : '/docs/API-KEYS.md';
+      window.open(local, '_blank', 'noopener');
+    });
+  });
+  // When user types a recognized key name into a custom row, refresh its
+  // help button so the right tooltip appears.
+  root.querySelectorAll('.env-row .env-key:not([readonly])').forEach((input) => {
+    input.addEventListener('blur', () => {
+      const row = input.closest('.env-row');
+      if (!row) return;
+      const meta = ENV_KEY_META[input.value.trim().toUpperCase()];
+      const existing = row.querySelector('.env-help, .env-help-placeholder');
+      if (!existing) return;
+      const replacement = document.createElement(meta ? 'button' : 'span');
+      if (meta) {
+        replacement.type = 'button';
+        replacement.className = 'secondary env-help';
+        replacement.title = `${meta.tip}\n\nClick for full setup walkthrough.`;
+        replacement.dataset.anchor = meta.anchor;
+        replacement.setAttribute('aria-label', `What is ${input.value.trim()}?`);
+        replacement.textContent = '?';
+        replacement.addEventListener('click', () => {
+          const local = meta.anchor ? `/docs/API-KEYS.md#${meta.anchor}` : '/docs/API-KEYS.md';
+          window.open(local, '_blank', 'noopener');
+        });
+      } else {
+        replacement.className = 'env-help-placeholder';
+        replacement.setAttribute('aria-hidden', 'true');
+      }
+      existing.replaceWith(replacement);
+    });
   });
 }
 
-function collectEnvEntries() {
-  return [...document.querySelectorAll('#setup-env .env-row')]
+function collectEnvEntries(scopeId = 'setup-env') {
+  return [...document.querySelectorAll(`#${scopeId} .env-row`)]
     .map((row) => ({
       key: row.querySelector('.env-key').value.trim(),
       value: row.querySelector('.env-value').value,
     }))
     .filter((e) => e.key.length > 0);
+}
+
+// Validate format + (optionally) live-probe a single env row by calling
+// /api/env/test. Sibling row values are sent as `extras` so multi-key sources
+// (Reddit needs id+secret+UA, Bluesky needs handle+app password) test the
+// values currently in the form, not whatever is persisted to .env.
+async function testEnvRow(btn, scopeId) {
+  const row = btn.closest('.env-row');
+  if (!row) return;
+  const keyInput = row.querySelector('.env-key');
+  const valueInput = row.querySelector('.env-value');
+  const status = row.querySelector('.env-status');
+  const key = keyInput.value.trim();
+  const value = valueInput.value;
+  if (!key) {
+    status.className = 'env-status env-status-warn';
+    status.textContent = 'Enter a key name first.';
+    return;
+  }
+  // Gather sibling values to send as extras (don't include the row under test).
+  const extras = {};
+  for (const e of collectEnvEntries(scopeId)) {
+    if (e.key !== key && e.value) extras[e.key] = e.value;
+  }
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Testing\u2026';
+  status.className = 'env-status';
+  status.textContent = 'Checking format and reachability\u2026';
+  try {
+    const res = await fetch('/api/env/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, value, extras, liveTest: true }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      status.className = 'env-status env-status-fail';
+      status.textContent = `Error: ${data.error || res.status}`;
+      return;
+    }
+    const parts = [];
+    let cls = 'env-status-ok';
+    if (!data.format.ok) {
+      cls = 'env-status-fail';
+      parts.push(`Format: ${data.format.message}`);
+    } else {
+      parts.push('Format \u2713');
+    }
+    if (data.reachability) {
+      const r = data.reachability;
+      if (r.reachable === true) {
+        parts.push(`Reachable \u2713 ${r.message ? '(' + r.message + ')' : ''}`);
+      } else if (r.reachable === false) {
+        cls = 'env-status-fail';
+        parts.push(`Reachable \u2717 ${r.message || `status ${r.status}`}`);
+      } else {
+        parts.push(r.message || 'no reachability test');
+      }
+    } else if (data.format.ok && data.supported) {
+      parts.push('(skipped live test)');
+    } else if (!data.supported) {
+      parts.push('(no live test available for this key)');
+    }
+    status.className = `env-status ${cls}`;
+    status.textContent = parts.join(' \u2014 ');
+  } catch (err) {
+    status.className = 'env-status env-status-fail';
+    status.textContent = `Error: ${err.message || err}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
 }
 
 // Persist the agent choice automatically whenever it changes — no Save button.
@@ -1775,7 +1944,7 @@ $('env-add').addEventListener('click', () => {
   const container = document.querySelector('#setup-env .env-grid');
   const idx = container.children.length;
   container.insertAdjacentHTML('beforeend', envRow('', '', idx, false));
-  wireEnvRows();
+  wireEnvRows('setup-env');
   container.lastElementChild.querySelector('.env-key').focus();
 });
 
@@ -1882,6 +2051,7 @@ async function loadConfig(slug) {
   $('config-editor').disabled = false;
   $('config-save').disabled = true;
   $('config-status').textContent = '';
+  populateConfigForm(c.raw);
 }
 $('config-editor').addEventListener('input', () => {
   configDirty = true;
@@ -1890,19 +2060,219 @@ $('config-editor').addEventListener('input', () => {
 });
 $('config-save').addEventListener('click', async () => {
   if (!selectedConfig) return;
+  // If the user is in form mode with unsaved field edits, fold those into raw first.
+  let raw = $('config-editor').value;
+  if (cfgMode === 'form' && cfgFormDirty) {
+    raw = serializeConfigForm(raw);
+    $('config-editor').value = raw;
+  }
   $('config-save').disabled = true;
   $('config-status').textContent = 'saving…';
   try {
     await api(`/api/configs/${selectedConfig}`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ raw: $('config-editor').value }),
+      body: JSON.stringify({ raw }),
     });
     configDirty = false;
+    cfgFormDirty = false;
     $('config-status').textContent = 'saved';
+    $('cfg-form-status').textContent = '';
   } catch (err) {
     $('config-status').textContent = `error: ${err.message}`;
     $('config-save').disabled = false;
+  }
+});
+
+// --- Configs view: Form vs Raw mode ------------------------------
+let cfgMode = 'form';
+let cfgFormDirty = false;
+
+function setCfgMode(mode) {
+  cfgMode = mode;
+  const formPanel = $('config-form-panel');
+  const rawTa = $('config-editor');
+  const tabForm = $('cfg-tab-form');
+  const tabRaw = $('cfg-tab-raw');
+  if (!formPanel || !rawTa) return;
+  if (mode === 'form') {
+    // If user edited raw, re-parse so form reflects current raw.
+    if (selectedConfig && configDirty) populateConfigForm(rawTa.value);
+    formPanel.style.display = '';
+    rawTa.style.display = 'none';
+    tabForm?.classList.add('active');
+    tabRaw?.classList.remove('active');
+    tabForm?.setAttribute('aria-selected', 'true');
+    tabRaw?.setAttribute('aria-selected', 'false');
+  } else {
+    // Switching to raw — fold pending form edits into raw textarea so user sees them.
+    if (cfgFormDirty) {
+      rawTa.value = serializeConfigForm(rawTa.value);
+      cfgFormDirty = false;
+      configDirty = true;
+      $('config-save').disabled = false;
+      $('config-status').textContent = 'unsaved changes';
+    }
+    formPanel.style.display = 'none';
+    rawTa.style.display = '';
+    tabForm?.classList.remove('active');
+    tabRaw?.classList.add('active');
+    tabForm?.setAttribute('aria-selected', 'false');
+    tabRaw?.setAttribute('aria-selected', 'true');
+  }
+}
+
+$('cfg-tab-form')?.addEventListener('click', () => setCfgMode('form'));
+$('cfg-tab-raw')?.addEventListener('click', () => setCfgMode('raw'));
+
+['cfg-form-search-terms', 'cfg-form-search-hashtags', 'cfg-form-rss-feeds', 'cfg-form-excluded'].forEach((id) => {
+  $(id)?.addEventListener('input', () => {
+    cfgFormDirty = true;
+    $('config-save').disabled = false;
+    $('config-status').textContent = 'unsaved changes';
+    $('cfg-form-status').textContent = 'unsaved field edits — click Save to write to file';
+  });
+});
+
+// Extract a `## Section` body (everything until the next `## ` heading or EOF).
+function getMdSection(raw, heading) {
+  const re = new RegExp(`(^|\\n)##\\s+${heading.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}[^\\n]*\\n([\\s\\S]*?)(?=\\n##\\s|\\n*$)`, 'i');
+  const m = raw.match(re);
+  return m ? m[2] : '';
+}
+
+// Same but for a `### Subheading` under the doc.
+function getMdSubsection(raw, heading) {
+  const re = new RegExp(`(^|\\n)###\\s+${heading.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}[^\\n]*\\n([\\s\\S]*?)(?=\\n##\\s|\\n###\\s|\\n*$)`, 'i');
+  const m = raw.match(re);
+  return m ? m[2] : '';
+}
+
+// Parse a bullet list out of a markdown body. Returns array of trimmed values
+// (without the leading "- " or "* " marker).
+function parseBulletList(body) {
+  if (!body) return [];
+  return body
+    .split('\n')
+    .map((l) => l.replace(/^\s*[-*]\s+/, '').trim())
+    .filter((l) => l && !l.startsWith('<!--') && !l.startsWith('_'));
+}
+
+function bulletListBlock(items, emptyComment) {
+  const cleaned = (items || []).map((s) => s.trim()).filter(Boolean);
+  if (cleaned.length === 0) {
+    return emptyComment ? `\n${emptyComment}\n\n` : '\n- none\n\n';
+  }
+  return '\n' + cleaned.map((s) => `- ${s}`).join('\n') + '\n\n';
+}
+
+function populateConfigForm(raw) {
+  // Search Terms — `### Search Terms (text)` under `## Topic Identity`.
+  const terms = parseBulletList(getMdSubsection(raw, 'Search Terms'));
+  $('cfg-form-search-terms').value = terms.join('\n');
+
+  // Search Hashtags — `### Search Hashtags`.
+  const tags = parseBulletList(getMdSubsection(raw, 'Search Hashtags'));
+  $('cfg-form-search-hashtags').value = tags.join('\n');
+
+  // Custom RSS Feeds — `## Custom RSS Feeds` (may not exist yet).
+  const feeds = parseBulletList(getMdSection(raw, 'Custom RSS Feeds'));
+  $('cfg-form-rss-feeds').value = feeds.join('\n');
+
+  // Excluded Domains/Authors — `### Excluded Domains/Authors`.
+  const excluded = parseBulletList(getMdSubsection(raw, 'Excluded Domains/Authors'));
+  // Hide the literal "none" placeholder when surfacing in the form.
+  $('cfg-form-excluded').value = excluded.filter((x) => x.toLowerCase() !== 'none').join('\n');
+
+  cfgFormDirty = false;
+  $('cfg-form-status').textContent = '';
+}
+
+// Replace a `### Subheading` body in raw with new content.
+function replaceMdSubsection(raw, heading, newBodyBlock) {
+  const re = new RegExp(`(^|\\n)(###\\s+${heading.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}[^\\n]*\\n)([\\s\\S]*?)(?=\\n##\\s|\\n###\\s|$)`, 'i');
+  if (re.test(raw)) {
+    return raw.replace(re, (_m, lead, head) => `${lead}${head}${newBodyBlock.replace(/^\n/, '')}`);
+  }
+  return raw; // subsection not present — skip silently to avoid corrupting unfamiliar configs
+}
+
+// Replace a `## Section` body in raw with new content; if missing, append at end.
+function replaceMdSection(raw, heading, newBodyBlock) {
+  const re = new RegExp(`(^|\\n)(##\\s+${heading.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}[^\\n]*\\n)([\\s\\S]*?)(?=\\n##\\s|$)`, 'i');
+  if (re.test(raw)) {
+    return raw.replace(re, (_m, lead, head) => `${lead}${head}${newBodyBlock.replace(/^\n/, '')}`);
+  }
+  // Append new section at end of file.
+  const sep = raw.endsWith('\n') ? '' : '\n';
+  return `${raw}${sep}\n## ${heading}\n${newBodyBlock}`;
+}
+
+function linesFromTa(id) {
+  return ($(id)?.value || '').split('\n').map((s) => s.trim()).filter(Boolean);
+}
+
+function serializeConfigForm(rawIn) {
+  let raw = rawIn;
+  raw = replaceMdSubsection(raw, 'Search Terms', bulletListBlock(linesFromTa('cfg-form-search-terms')));
+  raw = replaceMdSubsection(raw, 'Search Hashtags', bulletListBlock(linesFromTa('cfg-form-search-hashtags')));
+  raw = replaceMdSection(raw, 'Custom RSS Feeds', bulletListBlock(
+    linesFromTa('cfg-form-rss-feeds'),
+    '<!-- Add custom RSS/Atom feeds as `Name | URL` per line. Examples: personal blogs, RSS bridges, third-party aggregators. -->\n- none'
+  ));
+  const ex = linesFromTa('cfg-form-excluded');
+  raw = replaceMdSubsection(raw, 'Excluded Domains/Authors', bulletListBlock(ex.length ? ex : ['none']));
+  return raw;
+}
+
+// --- Configs view: API keys panel (reuses /api/env) ---------------
+async function renderConfigsEnv() {
+  const host = $('configs-env');
+  if (!host) return;
+  try {
+    const { entries, exists } = await api('/api/env');
+    host.innerHTML = `
+      <div class="env-grid">
+        ${entries.map((e, i) => envRow(e.key, e.value, i, e.preset !== false)).join('')}
+      </div>
+      ${entries.length ? '' : '<div class="hint" style="margin-top:0.5rem">No keys yet — click <strong>+ Add key</strong> to add one.</div>'}
+      ${exists ? '' : '<div class="hint" style="margin-top:0.5rem">No <code>.env</code> file yet — saving will create one.</div>'}
+    `;
+    wireEnvRows('configs-env');
+    $('configs-env-status').textContent = '';
+  } catch (err) {
+    host.innerHTML = `<div class="warn-text">Failed to load env: ${escape(err.message)}</div>`;
+  }
+}
+$('configs-env-add')?.addEventListener('click', () => {
+  const host = $('configs-env');
+  let grid = host.querySelector('.env-grid');
+  if (!grid) {
+    host.innerHTML = '<div class="env-grid"></div>';
+    grid = host.querySelector('.env-grid');
+  }
+  const idx = grid.children.length;
+  grid.insertAdjacentHTML('beforeend', envRow('', '', idx, false));
+  wireEnvRows('configs-env');
+  grid.lastElementChild.querySelector('.env-key').focus();
+});
+$('configs-env-reload')?.addEventListener('click', () => renderConfigsEnv());
+$('configs-env-save')?.addEventListener('click', async () => {
+  const entries = collectEnvEntries('configs-env');
+  $('configs-env-save').disabled = true;
+  $('configs-env-status').textContent = 'saving…';
+  try {
+    await api('/api/env', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ entries }),
+    });
+    $('configs-env-status').textContent = `saved ${entries.length} key${entries.length === 1 ? '' : 's'}`;
+    if (typeof loadStatus === 'function') await loadStatus();
+  } catch (err) {
+    $('configs-env-status').textContent = `error: ${err.message}`;
+  } finally {
+    $('configs-env-save').disabled = false;
   }
 });
 
@@ -1910,7 +2280,11 @@ $('config-save').addEventListener('click', async () => {
 let activeRunId = null;
 
 async function loadSlugOptions() {
-  const { configs } = await api('/api/configs');
+  const { configs: rawConfigs } = await api('/api/configs');
+  // Defensive: filter out example/template configs in case a stale server still serves them.
+  const configs = (rawConfigs || []).filter(
+    (c) => c && c.slug && c.slug !== 'example' && !c.slug.startsWith('example-')
+  );
   const list = $('run-subject-list');
   if (!list) return;
 
@@ -2139,8 +2513,74 @@ async function loadSocial() {
       li.classList.add('selected');
       const r = await api(`/api/social/${encodeURIComponent(li.dataset.name)}`);
       $('social-body').innerHTML = r.html;
+      enhanceSocialBody($('social-body'));
     });
   });
+}
+
+// Enhance a rendered social-posts markdown view with:
+//  - a "Copy" button on every <pre> code block (one per post variant)
+//  - a URL chip row above the body listing every unique link found
+function enhanceSocialBody(root) {
+  if (!root) return;
+
+  // 1) Copy buttons on every code block (each post variant should be
+  //    in a fenced ``` block per the scout-post spec).
+  root.querySelectorAll('pre').forEach((pre) => {
+    if (pre.querySelector(':scope > .copy-btn')) return; // idempotent
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'copy-btn';
+    btn.textContent = 'Copy';
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const text = (pre.querySelector('code')?.innerText ?? pre.innerText).trim();
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.textContent = 'Copied ✓';
+        btn.classList.add('copied');
+        window.toast?.success?.({ title: 'Post copied to clipboard', duration: 2500 });
+      } catch {
+        btn.textContent = 'Copy failed';
+        window.toast?.error?.({ title: 'Could not copy', description: 'Browser blocked clipboard access.' });
+      }
+      setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+    });
+    pre.appendChild(btn);
+  });
+
+  // 2) URL chip strip — collect unique http(s) links from the body.
+  const links = new Set();
+  root.querySelectorAll('a[href^="http"]').forEach((a) => links.add(a.href));
+  const existing = root.querySelector(':scope > .post-url-strip');
+  if (existing) existing.remove();
+  if (links.size) {
+    const strip = document.createElement('div');
+    strip.className = 'post-url-strip';
+    strip.innerHTML =
+      '<span class="post-url-label">URLs:</span>' +
+      [...links].map((href) => {
+        const safe = href.replace(/"/g, '&quot;');
+        const short = href.length > 60 ? href.slice(0, 57) + '…' : href;
+        return `<span class="post-url"><a href="${safe}" target="_blank" rel="noopener">${short}</a>` +
+          `<button type="button" class="post-url-copy" data-url="${safe}" title="Copy URL">⎘</button></span>`;
+      }).join('');
+    root.prepend(strip);
+    strip.querySelectorAll('.post-url-copy').forEach((b) => {
+      b.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const u = b.dataset.url || '';
+        try {
+          await navigator.clipboard.writeText(u);
+          b.textContent = '✓';
+          window.toast?.success?.({ title: 'URL copied', duration: 2000 });
+          setTimeout(() => { b.textContent = '⎘'; }, 1500);
+        } catch {
+          window.toast?.error?.({ title: 'Could not copy URL' });
+        }
+      });
+    });
+  }
 }
 
 // --- "Create posts for me" — /scout-post runner ---------------------
@@ -2180,10 +2620,33 @@ async function loadSocial() {
     const ctx = ctxInput.value.trim();
     if (!url) { setStatus('URL required', 'error'); return; }
 
+    // Read tuner controls (all optional — fall back to sensible defaults).
+    const tone = ($('social-gen-tone')?.value || 'conversational').trim();
+    const emoji = ($('social-gen-emoji')?.value || 'light').trim();
+    const variants = ($('social-gen-variants')?.value || '3').trim();
+    const length = ($('social-gen-length')?.value || 'tease').trim();
+    const lic = $('social-gen-lic')?.checked ? 'yes' : 'no';
+    const hashtags = $('social-gen-hashtags')?.checked ? 'yes' : 'no';
+    const mention = $('social-gen-mention')?.checked ? 'yes' : 'no';
+    const platforms = ['li', 'x', 'bsky', 'rd']
+      .filter((k) => $(`social-gen-pf-${k}`)?.checked)
+      .map((k) => ({ li: 'linkedin', x: 'x', bsky: 'bluesky', rd: 'reddit' }[k]))
+      .join(',') || 'linkedin,x';
+
     // scout-post picks its own config (single = uses it; multi = asks). We
-    // pass URL (required) and context as one combined `extra` string so
-    // buildPrompt produces: /scout-post <url> [— context]
-    const extra = ctx ? `${url} — ${ctx}` : url;
+    // pass URL (required), free-form context, and tuner options as a single
+    // `extra` string so buildPrompt produces:
+    //   /scout-post <url> [— context] [tone:..] [emoji:..] [...]
+    const tuners =
+      ` [tone: ${tone}]` +
+      ` [platforms: ${platforms}]` +
+      ` [length: ${length}]` +
+      ` [emoji: ${emoji}]` +
+      ` [hashtags: ${hashtags}]` +
+      ` [mention-authors: ${mention}]` +
+      ` [link-in-comments: ${lic}]` +
+      ` [variants: ${variants}]`;
+    const extra = ctx ? `${url} — ${ctx}${tuners}` : `${url}${tuners}`;
     output.textContent = '';
     output.hidden = false;
     setStatus('Starting…');

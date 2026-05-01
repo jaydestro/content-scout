@@ -10,6 +10,19 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="theme-modern.css" />
+    <script>
+      // Apply saved theme before first paint to avoid FOUC.
+      (function () {
+        try {
+          var saved = localStorage.getItem('scout-theme');
+          var prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+          var theme = saved || (prefersLight ? 'light' : 'dark');
+          document.documentElement.setAttribute('data-theme', theme);
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      })();
+    </script>
   </head>
   <body>
     <header class="site-header">
@@ -28,7 +41,12 @@
           <button data-view="run">Run</button>
           <button data-view="reports">Reports</button>
           <button data-view="social">Social posts</button>
+          <button data-view="conversations">Conversations</button>
         </nav>
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle light/dark theme">
+          <span class="theme-toggle-icon" aria-hidden="true">🌙</span>
+          <span class="theme-toggle-label">Dark</span>
+        </button>
         <div id="status-pill" class="pill"></div>
       </div>
     </header>
@@ -505,7 +523,7 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             <div class="dash-hero-actions">
               <button type="button" class="btn-primary" data-goto="run" data-run-cmd="scout-scan">Run a scan</button>
               <button type="button" data-goto="run" data-run-cmd="scout-post">Generate posts</button>
-              <button type="button" data-goto="reports">Open latest report</button>
+              <button type="button" id="dash-open-latest-report">Open latest report</button>
             </div>
           </div>
 
@@ -535,6 +553,38 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             </div>
           </div>
 
+          <div class="card dash-action-items" id="dash-action-items-card">
+            <div class="dash-action-items-head">
+              <h3>Action items from latest scans</h3>
+              <span class="hint" id="dash-action-items-meta"></span>
+            </div>
+            <div id="dash-action-items"><p class="hint">Loading…</p></div>
+          </div>
+
+          <div class="card dash-social-activity" id="dash-social-activity-card">
+            <div class="dash-social-activity-head">
+              <h3>Social activity — needs response</h3>
+              <span class="hint" id="dash-social-activity-meta"></span>
+            </div>
+            <div class="dash-social-summary" id="dash-social-summary"></div>
+            <div id="dash-social-activity"><p class="hint">Loading…</p></div>
+          </div>
+
+          <div class="cards" id="dash-intel-cards">
+            <div class="card">
+              <h3>Sentiment pulse</h3>
+              <div id="dash-sentiment"><p class="hint">Loading…</p></div>
+            </div>
+            <div class="card">
+              <h3>Top creators</h3>
+              <ul id="dash-creators"><li class="hint">Loading…</li></ul>
+            </div>
+            <div class="card">
+              <h3>Source health</h3>
+              <div id="dash-source-health"><p class="hint">Loading…</p></div>
+            </div>
+          </div>
+
           <!-- Legacy hidden targets — app.js still writes here; kept so we don't have to touch app.js. -->
           <div hidden aria-hidden="true">
             <ul id="dash-configs"></ul>
@@ -557,10 +607,59 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
           <div>
             <div class="toolbar">
               <span id="config-title">Select a config</span>
+              <div class="cfg-mode-tabs" role="tablist" aria-label="Editor mode">
+                <button id="cfg-tab-form" class="cfg-tab active" type="button" role="tab" aria-selected="true">Form</button>
+                <button id="cfg-tab-raw" class="cfg-tab" type="button" role="tab" aria-selected="false">Raw markdown</button>
+              </div>
               <button id="config-save" disabled>Save</button>
               <span id="config-status" class="hint"></span>
             </div>
-            <textarea id="config-editor" spellcheck="false" disabled></textarea>
+
+            <div id="config-form-panel" class="cfg-form-panel">
+              <p class="hint">Edit common fields here. For sections not shown (role flags, brand assets, conferences, etc.), switch to <strong>Raw markdown</strong>.</p>
+
+              <div class="cfg-field">
+                <label for="cfg-form-search-terms"><strong>Search Terms</strong> <span class="hint">(one per line, quoted phrases OK)</span></label>
+                <textarea id="cfg-form-search-terms" rows="4" spellcheck="false" placeholder='"Azure Cosmos DB"&#10;"Cosmos DB"'></textarea>
+              </div>
+
+              <div class="cfg-field">
+                <label for="cfg-form-search-hashtags"><strong>Search Hashtags</strong> <span class="hint">(one per line, include the # sign)</span></label>
+                <textarea id="cfg-form-search-hashtags" rows="3" spellcheck="false" placeholder="#AzureCosmosDB&#10;#CosmosDB"></textarea>
+              </div>
+
+              <div class="cfg-field">
+                <label for="cfg-form-rss-feeds">
+                  <strong>Custom RSS Feeds</strong>
+                  <span class="hint">(one per line, format: <code>Name | URL</code>)</span>
+                  <button type="button" class="help-icon" aria-label="How do I get an RSS feed URL?" title="How do I get an RSS feed URL?" onclick="window.scoutHelp && window.scoutHelp.open('Custom RSS Feeds')">?</button>
+                </label>
+                <textarea id="cfg-form-rss-feeds" rows="4" spellcheck="false" placeholder="Jay's Blog | https://example.com/feed.xml&#10;X listening — &quot;CosmosDB&quot; | https://rss.app/feeds/xxxx.xml"></textarea>
+              </div>
+
+              <div class="cfg-field">
+                <label for="cfg-form-excluded"><strong>Excluded Domains/Authors</strong> <span class="hint">(one per line — items from these are filtered out)</span></label>
+                <textarea id="cfg-form-excluded" rows="3" spellcheck="false" placeholder="example-spam.com&#10;some-author"></textarea>
+              </div>
+
+              <p class="hint" id="cfg-form-status"></p>
+            </div>
+
+            <textarea id="config-editor" spellcheck="false" disabled style="display:none"></textarea>
+
+            <details class="card configs-env-card" id="configs-env-card" style="margin-top:1rem">
+              <summary><strong>API keys</strong> <span class="hint">— shared across all configs (stored in <code>.env</code>)</span></summary>
+              <p class="hint" style="margin-top:0.5rem">
+                Edit, add, or remove keys for sources like YouTube, Reddit, Bluesky, and X. Leave a value blank to skip that source on the next scan.
+              </p>
+              <div id="configs-env"><p class="hint">Loading…</p></div>
+              <div class="toolbar" style="margin-top:0.75rem">
+                <button id="configs-env-save">Save API keys</button>
+                <button id="configs-env-add" class="secondary" type="button">+ Add key</button>
+                <button id="configs-env-reload" class="secondary" type="button">Reload</button>
+                <span id="configs-env-status" class="hint"></span>
+              </div>
+            </details>
           </div>
         </div>
       </section>
@@ -578,6 +677,9 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
               <option value="scout-calendar">/scout-calendar — weekly posting schedule</option>
               <option value="scout-gaps">/scout-gaps — content gap analysis</option>
               <option value="scout-trends">/scout-trends — month-over-month trends</option>
+              <option value="scout-creators">/scout-creators — creator trajectories &amp; interventions</option>
+              <option value="scout-doctor">/scout-doctor — validate config, keys, sources</option>
+              <option value="scout-replay">/scout-replay — re-run filters on a saved scan (no API calls)</option>
               <option value="custom">Custom prompt</option>
             </select>
           </label>
@@ -678,6 +780,65 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
               <span>Extra context <span class="hint">(optional — angle, audience, focus)</span></span>
               <textarea id="social-gen-context" rows="3" placeholder="e.g., focus on the partitioning tips, tone for a senior engineering audience"></textarea>
             </label>
+            <div class="social-generate-tuners">
+              <label class="field tuner">
+                <span>Tone</span>
+                <select id="social-gen-tone">
+                  <option value="professional">Professional</option>
+                  <option value="conversational" selected>Conversational</option>
+                  <option value="enthusiastic">Enthusiastic</option>
+                  <option value="technical">Technical / deep-dive</option>
+                  <option value="playful">Playful</option>
+                  <option value="contrarian">Contrarian / hot take</option>
+                </select>
+              </label>
+              <label class="field tuner">
+                <span>Platforms</span>
+                <span class="tuner-checks">
+                  <label><input type="checkbox" id="social-gen-pf-li" value="linkedin" checked /> LinkedIn</label>
+                  <label><input type="checkbox" id="social-gen-pf-x" value="x" checked /> X</label>
+                  <label><input type="checkbox" id="social-gen-pf-bsky" value="bluesky" /> Bluesky</label>
+                  <label><input type="checkbox" id="social-gen-pf-rd" value="reddit" /> Reddit</label>
+                </span>
+              </label>
+              <label class="field tuner">
+                <span>Emoji</span>
+                <select id="social-gen-emoji">
+                  <option value="off">Off — no emoji</option>
+                  <option value="light" selected>Light — up to 3</option>
+                  <option value="medium">Medium — up to 5</option>
+                </select>
+              </label>
+              <label class="field tuner tuner-toggle">
+                <input type="checkbox" id="social-gen-lic" checked />
+                <span>Put link in first comment <span class="hint">(boosts LinkedIn reach)</span></span>
+              </label>
+              <label class="field tuner tuner-toggle">
+                <input type="checkbox" id="social-gen-hashtags" checked />
+                <span>Include hashtags</span>
+              </label>
+              <label class="field tuner tuner-toggle">
+                <input type="checkbox" id="social-gen-mention" checked />
+                <span>Mention authors / creators <span class="hint">(credit who made it)</span></span>
+              </label>
+              <label class="field tuner">
+                <span>Length</span>
+                <select id="social-gen-length">
+                  <option value="tease" selected>Tease — short, hook only</option>
+                  <option value="standard">Standard — hook + 1–2 lines</option>
+                  <option value="long">Long-form — full context</option>
+                </select>
+              </label>
+              <label class="field tuner">
+                <span>Variants per platform</span>
+                <select id="social-gen-variants">
+                  <option value="2">2</option>
+                  <option value="3" selected>3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                </select>
+              </label>
+            </div>
             <div class="social-generate-toolbar">
               <button type="submit" id="social-gen-start">Generate posts</button>
               <button type="button" id="social-gen-stop" class="secondary" disabled>Stop</button>
@@ -694,6 +855,28 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
           <article id="social-body" class="markdown">Select a file.</article>
         </div>
       </section>
+
+      <!-- Conversations -->
+      <section id="view-conversations" class="view">
+        <h2>Conversations &amp; mentions</h2>
+        <div class="conv-toolbar">
+          <input id="conv-q" type="search" placeholder="Search summary or author…" />
+          <select id="conv-sentiment" aria-label="Filter by sentiment" title="Sentiment">
+            <option value="">All sentiments</option>
+            <option value="positive">🟢 Positive</option>
+            <option value="neutral">⚪ Neutral</option>
+            <option value="mixed">🟡 Mixed</option>
+            <option value="negative">🔴 Negative</option>
+          </select>
+          <select id="conv-platform" aria-label="Filter by platform" title="Platform"><option value="">All platforms</option></select>
+          <label class="conv-needs-reply">
+            <input type="checkbox" id="conv-needs-reply" />
+            Needs reply (negative + mixed)
+          </label>
+          <span class="hint" id="conv-meta"></span>
+        </div>
+        <div id="conv-list"><p class="hint">Loading…</p></div>
+      </section>
     </main>
 
     <script src="app.js" type="module"></script>
@@ -703,5 +886,7 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
     <script src="dashboard-enhancer.js"></script>
     <script src="help.js"></script>
     <script src="command-palette.js"></script>
+    <script src="theme.js"></script>
+    <script src="intel.js"></script>
   </body>
 </html>
