@@ -71,6 +71,14 @@
   const COMMANDS = [
     { section: 'Actions',  label: 'Start a content scan', icon: 'play',   keywords: 'scout-scan scan run new report',    run: () => { navigate('run'); flash('#run-start'); } },
     { section: 'Actions',  label: 'Generate social post', icon: 'share',  keywords: 'scout-post post draft generate',    run: () => navigate('social') },
+    { section: 'Actions',  label: 'Browse conversations', icon: 'share', keywords: 'conversations mentions sentiment reddit hn bluesky reply', run: () => navigate('conversations') },
+    { section: 'Actions',  label: 'Needs-reply inbox',   icon: 'share',  keywords: 'needs reply inbox negative critical mixed', run: () => {
+        navigate('conversations');
+        setTimeout(() => {
+          const cb = document.getElementById('conv-needs-reply');
+          if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }
+        }, 150);
+      } },
     { section: 'Actions',  label: 'Show runs queue',     icon: 'play',    keywords: 'queue runs running jobs background', run: () => window.runsQueue && window.runsQueue.open() },
     { section: 'Actions',  label: 'Open most recent report', icon: 'report', keywords: 'latest recent report',           run: openLatestReport },
     { section: 'Actions',  label: 'Reload page',          icon: 'refresh',keywords: 'refresh reload',                    run: () => location.reload() },
@@ -109,19 +117,111 @@
     footer = panel.querySelector('.cp-footer');
 
     panel.addEventListener('click', (e) => { if (e.target === panel) close(); });
-    input.addEventListener('input', render);
+    input.addEventListener('input', onInput);
     input.addEventListener('keydown', onKey);
   }
 
-  function render() {
+  let _searchSeq = 0;
+  let _searchTimer = null;
+  let _liveResults = []; // dynamic commands from /api/search
+
+  function onInput() {
+    render();
+    const q = (input.value || '').trim();
+    if (_searchTimer) clearTimeout(_searchTimer);
+    if (q.length < 2) {
+      _liveResults = [];
+      return;
+    }
+    _searchTimer = setTimeout(() => fetchLive(q), 140);
+  }
+
+  async function fetchLive(q) {
+    const seq = ++_searchSeq;
+    try {
+      const r = await fetch('/api/search?q=' + encodeURIComponent(q));
+      if (!r.ok) return;
+      const data = await r.json();
+      if (seq !== _searchSeq) return; // stale
+      const out = [];
+      (data.items || []).slice(0, 8).forEach((it) => {
+        out.push({
+          section: 'Items',
+          label: it.title,
+          sub: [it.author, it.source, it.ep != null ? 'EP ' + it.ep : '', it.kind]
+            .filter(Boolean)
+            .join(' · '),
+          icon: it.kind === 'video' ? 'play' : it.kind === 'blog' ? 'book' : 'report',
+          run: () => {
+            if (it.url) window.open(it.url, '_blank');
+          },
+        });
+      });
+      (data.conversations || []).slice(0, 5).forEach((c) => {
+        out.push({
+          section: 'Conversations',
+          label: c.summary || c.author || '(conversation)',
+          sub: [c.author, c.platform, c.sentiment, c.date].filter(Boolean).join(' · '),
+          icon: 'share',
+          run: () => {
+            if (c.url) window.open(c.url, '_blank');
+            else navigate('conversations');
+          },
+        });
+      });
+      (data.authors || []).slice(0, 4).forEach((a) => {
+        out.push({
+          section: 'Authors',
+          label: a.name,
+          sub: `${a.items} items · ${a.conversations} conversations · last ${a.lastSeen || 'n/a'}`,
+          icon: 'home',
+          run: () => {
+            navigate('conversations');
+            setTimeout(() => {
+              const ai = document.getElementById('conv-q');
+              if (ai) {
+                ai.value = a.name;
+                ai.dispatchEvent(new Event('input', { bubbles: true }));
+              }
+            }, 200);
+          },
+        });
+      });
+      (data.reports || []).slice(0, 4).forEach((rep) => {
+        out.push({
+          section: 'Reports',
+          label: rep.name,
+          sub: `${rep.itemCount || 0} items · ${rep.convoCount || 0} conversations`,
+          icon: 'report',
+          run: () => {
+            navigate('reports');
+            setTimeout(() => {
+              document
+                .querySelectorAll('#reports-list li')
+                .forEach((el) => {
+                  if (el.textContent.includes(rep.name)) el.click();
+                });
+            }, 200);
+          },
+        });
+      });
+      _liveResults = out;
+      render(true);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function render(_isLiveUpdate) {
     const q = (input.value || '').trim().toLowerCase();
-    filtered = !q
+    const staticCmds = !q
       ? COMMANDS.slice()
       : COMMANDS
           .map((c) => ({ c, score: scoreMatch(q, c) }))
           .filter((x) => x.score > 0)
           .sort((a, b) => b.score - a.score)
           .map((x) => x.c);
+    filtered = q.length >= 2 ? [..._liveResults, ...staticCmds] : staticCmds;
 
     activeIdx = 0;
     if (filtered.length === 0) {
@@ -138,7 +238,9 @@
       }
       html += `<li class="cp-item${i === 0 ? ' active' : ''}" data-idx="${i}" role="option">
         ${I(cmd.icon, ICONS[cmd.icon] || ICONS.search)}
-        <span class="cp-label">${escapeHtml(cmd.label)}</span>
+        <span class="cp-label">${escapeHtml(cmd.label)}${
+          cmd.sub ? `<span class="cp-sub">${escapeHtml(cmd.sub)}</span>` : ''
+        }</span>
       </li>`;
     });
     list.innerHTML = html;
@@ -217,21 +319,34 @@
     try {
       const r = await fetch('/api/reports');
       if (!r.ok) throw new Error('No reports');
-      const items = await r.json();
-      if (!items || !items.length) {
+      const data = await r.json();
+      const reports = (data && data.reports) || [];
+      if (!reports.length) {
         window.toast && window.toast.warn('No reports yet', 'Run a scan first.');
         return;
       }
+      // /api/reports already returns mtime-desc ordering — pick the freshest by mtime.
+      const latest = reports.slice().sort((a, b) => String(b.mtime).localeCompare(String(a.mtime)))[0];
       navigate('reports');
-      // Try to click the first report in the list after render.
-      setTimeout(() => {
-        const first = document.querySelector('#reports-list li');
-        if (first) first.click();
-      }, 200);
+      // After the reports list renders, click the matching <li>.
+      const tryClick = (attempt = 0) => {
+        const li = document.querySelector(`#reports-list li[data-name="${CSS.escape(latest.name)}"]`);
+        if (li) {
+          document.querySelectorAll('#reports-list li').forEach((x) => x.classList.remove('selected'));
+          li.classList.add('selected');
+          li.click();
+          li.scrollIntoView({ block: 'nearest' });
+        } else if (attempt < 8) {
+          setTimeout(() => tryClick(attempt + 1), 120);
+        }
+      };
+      setTimeout(() => tryClick(0), 120);
     } catch (e) {
       window.toast && window.toast.error('Could not load reports', String(e.message || e));
     }
   }
+  // Expose so other UI can reuse (dashboard "Open latest report" button).
+  window.contentScoutOpenLatestReport = openLatestReport;
   function escapeHtml(s) {
     return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
@@ -242,6 +357,42 @@
     if (isMod && (e.key === 'k' || e.key === 'K')) {
       e.preventDefault();
       isOpen() ? close() : open();
+    }
+  });
+
+  // --- Vim-style "g X" jump shortcuts -------------------------------
+  // g d → dashboard, g r → reports, g c → conversations, g s → social,
+  // g u → run, g f → setup. Ignored when typing in inputs/textareas.
+  let _gPending = 0;
+  const GO_MAP = {
+    d: 'dashboard',
+    r: 'reports',
+    c: 'conversations',
+    s: 'social',
+    u: 'run',
+    f: 'setup',
+    o: 'configs',
+  };
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const tag = (e.target?.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target?.isContentEditable) return;
+    const now = Date.now();
+    if (e.key === 'g' || e.key === 'G') {
+      _gPending = now;
+      return;
+    }
+    if (_gPending && now - _gPending < 1200) {
+      const target = GO_MAP[e.key.toLowerCase()];
+      _gPending = 0;
+      if (target) {
+        e.preventDefault();
+        navigate(target);
+      }
+    }
+    if (e.key === '/' && !isOpen()) {
+      e.preventDefault();
+      open();
     }
   });
 

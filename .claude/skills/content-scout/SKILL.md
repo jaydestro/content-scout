@@ -30,7 +30,8 @@ Ignore VS Code frontmatter and `${{input:...}}` placeholders in those prompt fil
 ## Output locations
 
 - Reports: `reports/{YYYY-MM-DD-HHmm}-{slug}-content.md`
-- Social posts: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-social-posts.md`
+- Social posts (bulk from report): `social-posts/{YYYY-MM-DD-HHmm}-{slug}-social-posts.md`
+- Social posts (solo / one-off from a single URL): `social-posts/{YYYY-MM-DD-HHmm}-{slug}-solo-{url-slug}.md` where `{url-slug}` = host + last path segment, lowercased, hyphenated, max 40 chars (fallback `solo-link`)
 - Calendars: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-posting-calendar.md`
 - Trends: `reports/{YYYY-MM-DD-HHmm}-{slug}-trends.md`
 - Dedup tracker: `reports/.seen-links.json`

@@ -29,14 +29,20 @@ reports/.scout-state/
 # Generated content reports (internal — not shared)
 reports/*.md
 !reports/README.md
+reports/*.json
+!reports/.scout-state.shared/**/*.json
 
 # Generated social posts and posting calendars (internal — not shared)
 social-posts/*.md
 !social-posts/README.md
+social-posts/*.json
 
 # Generated thumbnails / images (keep brand assets folder)
 social-posts/images/*
 !social-posts/images/brand/
+
+# Per-product brand assets are local customizations — never commit
+social-posts/images/brand/azure-cosmos-db/
 
 # ---------------------------------------------------------------------------
 # Node.js / npm (covers all tools/* packages)
