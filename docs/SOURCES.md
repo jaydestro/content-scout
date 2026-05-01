@@ -46,6 +46,50 @@ Custom sources are scanned alongside standard sources. There's no limit to how m
 
 ---
 
+## Custom RSS Feeds
+
+For any source that publishes an RSS or Atom feed — or any site you can put *behind* an RSS bridge — add it under the `## Custom RSS Feeds` section of your config (or use the **Form** tab in the Configs view). One entry per line:
+
+```
+Name | https://example.com/feed.xml
+```
+
+The agent fetches each feed and runs the same date + relevancy + scoring filters as built-in RSS sources.
+
+### How to get an RSS feed URL
+
+**1. The site already publishes one (most common).**
+Look for an RSS / Atom link in the page footer, or try these common paths:
+
+- `https://siteurl/feed`
+- `https://siteurl/rss`
+- `https://siteurl/feed.xml`
+- `https://siteurl/atom.xml`
+
+Or view page source and search for `application/rss+xml` or `application/atom+xml` — the `href` next to it is the feed URL. Substack, WordPress, Ghost, Medium, Dev.to, Blogger, and most CMSs publish feeds automatically.
+
+**2. The site doesn't have a feed — use an RSS bridge.**
+A bridge turns a non-RSS page (search results, profile pages, social posts) into an RSS feed you can subscribe to. Two reliable options:
+
+- **[rss.app](https://rss.app/)** — paid SaaS, works with X/Twitter, Instagram, TikTok, LinkedIn, YouTube, Reddit, Google News, generic web pages. Free tier is limited; paid plan is ~$10/mo. You paste a URL or search query, it gives you a stable feed URL.
+- **[RSSHub](https://docs.rsshub.app/)** — free, open source, self-hostable. Has hundreds of preset routes (e.g., `https://rsshub.app/twitter/keyword/CosmosDB`). Public instance is rate-limited; for steady use, run your own (Docker one-liner).
+
+**3. Common recipes**
+
+| You want… | Feed URL pattern |
+|---|---|
+| X/Twitter listening for a keyword | rss.app feed built from the search URL, OR `https://rsshub.app/twitter/keyword/<term>` |
+| A specific X account's posts | rss.app account feed, OR `https://rsshub.app/twitter/user/<handle>` |
+| Google News for a topic | `https://news.google.com/rss/search?q=<query>&hl=en-US` |
+| A YouTube channel | `https://www.youtube.com/feeds/videos.xml?channel_id=<UC...>` |
+| A GitHub repo's releases | `https://github.com/<owner>/<repo>/releases.atom` |
+| A subreddit | `https://www.reddit.com/r/<sub>/.rss` |
+
+**4. Verify before adding.**
+Paste the URL into a browser. You should see XML (raw or styled). If you get HTML or a 404, it's not a valid feed.
+
+---
+
 ## What Each Source Produces
 
 ### Blog & Article Sources

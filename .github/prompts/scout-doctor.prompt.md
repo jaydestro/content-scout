@@ -18,9 +18,15 @@ Ignore VS Code frontmatter (`tools:`, `${{input:...}}`) — that's editor-specif
    - `reports/.seen-links.json` (created if missing — that's fine, just note it)
    - `.gitignore` includes `reports/.scout-state/` and `reports/.seen-links.json`
 
-2. **Config completeness** — for each config file checked:
-   - Required sections present: `## Product`, `## Role`, `## Networks to Scan`, `## Topic Tags`, `## Brand Assets`, `## Social Post Standards`
-   - `topic_type` is one of `product | technology | project | tool | saas`
+2. **Config completeness** — for each config file checked. Use exact-line regex `^##\s+<heading>` (not substring) so subsections like `### Product Team Members` don't false-match top-level headings.
+   - Required sections present (top-level `##`):
+     - `## Role`
+     - `## Topic Identity`
+     - `## Brand Assets`
+     - `## Content Sources (scan order)`
+     - `## Topic Tags` *(may include trailing parenthetical like `(Canonical)` or `(customize for your product)`)*
+     - `## Social Post Standards`
+   - Under `## Topic Identity`: `topic_type` field is one of `product | technology | project | tool | saas` (warn only if field is present and value is unrecognized; absence is OK)
    - At least one social network is enabled if the role has social posts on
    - `team_members_file` (if set) resolves to a real file
    - `mode` (if set) is `owner` or `consumer`

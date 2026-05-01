@@ -64,6 +64,10 @@
     renderSubjects({ configs: configs.configs || [], reports: reports.reports || [] });
     renderSuggestions({ configs: configs.configs || [], reports: reports.reports || [], social });
     loadActionItems();
+    // Social activity / sentiment / creators / source health are owned by
+    // intel.js. Do not add loaders for #dash-social-activity, #dash-sentiment,
+    // #dash-creators, or #dash-source-health here — two writers on the same
+    // node will race and can leave "Loading…" stuck.
   }
 
   function renderStats({ reports, runs, social }) {

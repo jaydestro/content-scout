@@ -37,14 +37,17 @@ Users will request these operations using natural language. Map their requests t
 | "scout trends", "show trends", "compare months" | `.github/prompts/scout-trends.prompt.md` | Month-over-month trajectory analysis |
 | "scout creators", "influence movers", "log intervention", "record outcome" | `.github/prompts/scout-creators.prompt.md` | View creator trajectories, log outreach, track sentiment outcomes |
 | "scout doctor", "health check", "validate setup", "check keys" | `.github/prompts/scout-doctor.prompt.md` | Validate config, `.env` keys, source reachability, state integrity |
+| "scout keys", "add API keys", "set up credentials", "add reddit creds", "add bluesky creds" | `.github/prompts/scout-keys.prompt.md` | Interactive credential setup that writes safely to `.env` and verifies reachability |
 | "scout replay", "replay scan", "re-run filters" | `.github/prompts/scout-replay.prompt.md` | Re-apply filters/scoring/sentiment to a saved scan with no API calls |
+| "scout seo", "audit SEO", "optimize this page", "SEO check" | `.github/prompts/scout-seo.prompt.md` | SEO audit and concrete rewrite recommendations for one or more URLs |
 
 When reading prompt files, the `${{input:...}}` placeholders are VS Code syntax. Instead, ask the user for those inputs conversationally.
 
 ## Output Locations
 
 - Reports: `reports/{YYYY-MM-DD-HHmm}-{slug}-content.md`
-- Social posts: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-social-posts.md`
+- Social posts (bulk from report): `social-posts/{YYYY-MM-DD-HHmm}-{slug}-social-posts.md`
+- Social posts (solo / one-off from a single URL): `social-posts/{YYYY-MM-DD-HHmm}-{slug}-solo-{url-slug}.md` where `{url-slug}` = host + last path segment, lowercased, hyphenated, max 40 chars (fallback `solo-link`)
 - Posting calendars: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-posting-calendar.md`
 - Trends: `reports/{YYYY-MM-DD-HHmm}-{slug}-trends.md`
 - Thumbnails: `social-posts/images/{YYYY-MM-DD-HHmm}/`

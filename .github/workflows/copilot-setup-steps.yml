@@ -1,0 +1,52 @@
+# Copilot cloud agent setup steps
+#
+# Pre-installs project dependencies so Copilot cloud agent can begin work
+# without spending its session bootstrapping the environment.
+#
+# See: https://docs.github.com/copilot/how-tos/use-copilot-agents/cloud-agent/customize-the-agent-environment
+
+name: Copilot setup steps
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install web UI dependencies
+        working-directory: tools/web-ui
+        run: npm install --no-audit --no-fund
+
+      - name: Install thumbnail renderer dependencies
+        working-directory: tools/render-thumbnails
+        run: npm install --no-audit --no-fund
+
+      - name: Verify Node syntax (web UI)
+        working-directory: tools/web-ui
+        run: |
+          node --check server.js
+          for f in public/*.js lib/*.js; do
+            [ -f "$f" ] && node --check "$f"
+          done
+
+      - name: Verify prompt + agent files exist
+        run: |
+          test -f .github/agents/content-scout.agent.md
+          test -f .github/copilot-instructions.md
+          test -f CLAUDE.md
+          test -f AGENTS.md || echo "AGENTS.md not present (optional)"

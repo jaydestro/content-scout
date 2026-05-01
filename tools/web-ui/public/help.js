@@ -39,6 +39,21 @@
       what: 'A config is a markdown file that defines one subject — its name, search terms, sources, topic tags, and your role (developer advocate, marketer, PM, etc.).',
       tips: ['Edit configs to refine what counts as relevant content.'],
     },
+    'Custom RSS Feeds': {
+      what: 'Add any RSS or Atom feed as an extra source. The agent fetches it and applies the same date + relevancy + scoring filters as built-in sources. Format: one entry per line as "Name | URL".',
+      tips: [
+        'Most blogs already publish a feed — try /feed, /rss, /feed.xml, or /atom.xml on the site URL. View page source and search for "application/rss+xml" if those don\'t work.',
+        'For sites without a feed (X/Twitter, Instagram, search pages), use an RSS bridge: rss.app (paid, point-and-click) or RSSHub (free, self-hostable, https://docs.rsshub.app/).',
+        'X/Twitter keyword:  https://rsshub.app/twitter/keyword/<term>',
+        'X/Twitter user:     https://rsshub.app/twitter/user/<handle>',
+        'Google News:        https://news.google.com/rss/search?q=<query>&hl=en-US',
+        'YouTube channel:    https://www.youtube.com/feeds/videos.xml?channel_id=<UC...>',
+        'GitHub releases:    https://github.com/<owner>/<repo>/releases.atom',
+        'Subreddit:          https://www.reddit.com/r/<sub>/.rss',
+        'Verify before adding — paste the URL into a browser. You should see XML. If you get HTML or 404, it\'s not a valid feed.',
+        'Full guide: docs/SOURCES.md → Custom RSS Feeds.',
+      ],
+    },
     'Run a command': {
       what: 'Pick a Scout command, choose subjects, and start the agent. Output streams live below.',
       tips: [

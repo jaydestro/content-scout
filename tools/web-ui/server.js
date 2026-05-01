@@ -5,6 +5,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { validateFormat, testReachability, listSupportedKeys } from './lib/key-checks.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1181,6 +1182,38 @@ app.post('/api/env', async (req, res) => {
   }
 });
 
+// Validate and (optionally) live-test a single env key. The UI calls this from
+// the per-row Test button; scout-keys uses the same endpoint so both paths
+// share one source of truth.
+//
+// Body: { key: "YOUTUBE_API_KEY", value: "...", liveTest?: boolean,
+//         extras?: { OTHER_KEY: "..." } }
+// Returns: { key, supported, format: {ok,message}, reachability: {reachable,status,message}? }
+app.post('/api/env/test', express.json(), async (req, res) => {
+  const key = String(req.body?.key || '').trim();
+  const value = typeof req.body?.value === 'string' ? req.body.value : '';
+  const liveTest = req.body?.liveTest !== false; // default true
+  const extras = (req.body?.extras && typeof req.body.extras === 'object') ? req.body.extras : {};
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+    return res.status(400).json({ error: 'invalid key name' });
+  }
+  const supported = listSupportedKeys().includes(key.toUpperCase());
+  const format = validateFormat(key, value);
+  let reachability = null;
+  if (liveTest && format.ok && supported) {
+    // Merge persisted .env values so multi-key sources (Reddit, Bluesky)
+    // can read sibling fields. The supplied {key,value,extras} override .env.
+    let persisted = {};
+    try {
+      const { raw } = await readEnvRaw();
+      persisted = Object.fromEntries(parseEnv(raw).map((e) => [e.key, e.value]));
+    } catch { /* ignore — fall back to provided values only */ }
+    const envBag = { ...persisted, ...extras, [key]: value };
+    reachability = await testReachability(key, envBag);
+  }
+  res.json({ key, supported, format, reachability });
+});
+
 app.get('/api/configs', async (_req, res) => {
   res.json({ configs: await listConfigs() });
 });
@@ -1635,6 +1668,466 @@ app.get('/api/social/:name', async (req, res) => {
     res.json(await readMarkdown(SOCIAL_DIR, req.params.name));
   } catch (err) {
     res.status(404).json({ error: String(err.message || err) });
+  }
+});
+
+// =====================================================================
+// Item / conversation / author / source index
+// ---------------------------------------------------------------------
+// Lazily builds an in-memory index by parsing every *-content.md report.
+// Cached for 30s (or until reports/ mtime changes) so /api/items,
+// /api/conversations, /api/authors, /api/search, /api/source-health all
+// share the same scan. Read-only; never writes back to disk.
+// =====================================================================
+
+let _indexCache = null; // { builtAt, signature, items, conversations, authors, sources, reports }
+const INDEX_TTL_MS = 30_000;
+
+async function getIndex() {
+  const reports = (await listMarkdownFiles(REPORTS_DIR)).filter((r) =>
+    /-content\.md$/.test(r.name)
+  );
+  const signature = reports
+    .map((r) => `${r.name}@${r.mtime || ''}`)
+    .sort()
+    .join('|');
+  if (
+    _indexCache &&
+    _indexCache.signature === signature &&
+    Date.now() - _indexCache.builtAt < INDEX_TTL_MS
+  ) {
+    return _indexCache;
+  }
+
+  const items = [];
+  const conversations = [];
+  const authors = new Map(); // name -> aggregate
+  const sources = new Map(); // sourceKey -> aggregate
+  const reportsMeta = [];
+
+  for (const r of reports) {
+    let raw = '';
+    try {
+      raw = await fs.readFile(path.join(REPORTS_DIR, r.name), 'utf8');
+    } catch {
+      continue;
+    }
+    const parsed = parseReport(raw, r.name);
+    reportsMeta.push({
+      name: r.name,
+      mtime: r.mtime,
+      slug: parsed.slug,
+      generatedAt: parsed.generatedAt,
+      itemCount: parsed.items.length,
+      convoCount: parsed.conversations.length,
+      sentimentTotals: parsed.sentimentTotals,
+      skippedSources: parsed.skippedSources,
+    });
+    for (const it of parsed.items) items.push({ ...it, report: r.name });
+    for (const c of parsed.conversations) conversations.push({ ...c, report: r.name });
+
+    for (const it of parsed.items) {
+      if (it.author) {
+        const key = it.author.toLowerCase();
+        const entry =
+          authors.get(key) ||
+          { name: it.author, items: 0, conversations: 0, lastSeen: '', sentiments: {}, slugs: new Set(), urls: new Set() };
+        entry.items += 1;
+        if (it.date && it.date > entry.lastSeen) entry.lastSeen = it.date;
+        entry.slugs.add(parsed.slug);
+        if (it.url) entry.urls.add(it.url);
+        authors.set(key, entry);
+      }
+      if (it.source) {
+        const key = it.source.toLowerCase();
+        const entry = sources.get(key) || { source: it.source, items: 0, lastSeen: '', skipped: 0 };
+        entry.items += 1;
+        if (it.date && it.date > entry.lastSeen) entry.lastSeen = it.date;
+        sources.set(key, entry);
+      }
+    }
+    for (const c of parsed.conversations) {
+      if (c.author) {
+        const key = c.author.toLowerCase();
+        const entry =
+          authors.get(key) ||
+          { name: c.author, items: 0, conversations: 0, lastSeen: '', sentiments: {}, slugs: new Set(), urls: new Set() };
+        entry.conversations += 1;
+        const s = (c.sentiment || 'unknown').toLowerCase();
+        entry.sentiments[s] = (entry.sentiments[s] || 0) + 1;
+        if (c.date && c.date > entry.lastSeen) entry.lastSeen = c.date;
+        entry.slugs.add(parsed.slug);
+        if (c.url) entry.urls.add(c.url);
+        authors.set(key, entry);
+      }
+      if (c.platform) {
+        const key = c.platform.toLowerCase();
+        const entry = sources.get(key) || { source: c.platform, items: 0, lastSeen: '', skipped: 0 };
+        entry.items += 1;
+        if (c.date && c.date > entry.lastSeen) entry.lastSeen = c.date;
+        sources.set(key, entry);
+      }
+    }
+    for (const s of parsed.skippedSources) {
+      const key = s.name.toLowerCase();
+      const entry = sources.get(key) || { source: s.name, items: 0, lastSeen: '', skipped: 0 };
+      entry.skipped += 1;
+      entry.lastSkipReason = s.reason;
+      sources.set(key, entry);
+    }
+  }
+
+  _indexCache = {
+    builtAt: Date.now(),
+    signature,
+    items,
+    conversations,
+    authors: [...authors.values()].map((a) => ({
+      name: a.name,
+      items: a.items,
+      conversations: a.conversations,
+      lastSeen: a.lastSeen,
+      sentiments: a.sentiments,
+      slugs: [...a.slugs],
+      urls: [...a.urls],
+    })),
+    sources: [...sources.values()],
+    reports: reportsMeta,
+  };
+  return _indexCache;
+}
+
+// Parse a single content report into structured items + conversations + meta.
+function parseReport(raw, fileName) {
+  const lines = raw.split(/\r?\n/);
+  const slugMatch = fileName.match(/^\d{4}-\d{2}-\d{2}-\d{4}-(.+)-content\.md$/);
+  const slug = slugMatch ? slugMatch[1] : '';
+  const genMatch = raw.match(/\*\*Generated:\*\*\s*([^\n]+)/);
+  const generatedAt = genMatch ? genMatch[1].trim() : '';
+
+  const items = [];
+  const conversations = [];
+  let currentSection = '';
+  const seenItems = new Set();
+  const sentimentTotals = { positive: 0, neutral: 0, negative: 0, mixed: 0, unknown: 0 };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const headerMatch = line.match(/^##+\s+(.+)$/);
+    if (headerMatch) {
+      currentSection = headerMatch[1].trim();
+      continue;
+    }
+    if (!/^\s*\|/.test(line)) continue;
+    const next = lines[i + 1] || '';
+    if (!/^\s*\|[\s:|-]+\|\s*$/.test(next)) continue;
+    const headers = line
+      .split('|')
+      .slice(1, -1)
+      .map((s) => s.trim().toLowerCase());
+    const idx = (names) => headers.findIndex((h) => names.includes(h));
+    const titleIdx = idx(['title', 'topic', 'session', 'summary', 'post', 'thread', 'discussion', 'mention']);
+    const linkIdx = idx(['link', 'url']);
+    const dateIdx = idx(['date']);
+    const epIdx = idx(['ep', 'score']);
+    const authorIdx = idx(['speaker', 'author']);
+    const sourceIdx = idx(['source', 'channel', 'platform']);
+    const tagsIdx = idx(['tags']);
+    const sentimentIdx = idx(['sentiment']);
+    const summaryIdx = idx(['summary']);
+    const communityIdx = idx(['community']);
+    const engagementIdx = idx(['engagement']);
+    const isConversation = sentimentIdx >= 0 || /conversations|mentions/i.test(currentSection);
+
+    let j = i + 2;
+    while (j < lines.length && /^\s*\|/.test(lines[j])) {
+      const cells = lines[j]
+        .split('|')
+        .slice(1, -1)
+        .map((s) => s.trim());
+      const titleCell = titleIdx >= 0 ? cells[titleIdx] || '' : '';
+      const linkCell = linkIdx >= 0 ? cells[linkIdx] || '' : '';
+      const dateCell = dateIdx >= 0 ? cells[dateIdx] || '' : '';
+      const epRaw = epIdx >= 0 ? cells[epIdx] || '' : '';
+      const authorCell = authorIdx >= 0 ? cells[authorIdx] || '' : '';
+      const sourceCell = sourceIdx >= 0 ? cells[sourceIdx] || '' : '';
+      const tagsCell = tagsIdx >= 0 ? cells[tagsIdx] || '' : '';
+      const sentimentCell = sentimentIdx >= 0 ? cells[sentimentIdx] || '' : '';
+      const summaryCell = summaryIdx >= 0 ? cells[summaryIdx] || '' : '';
+      const communityCell = communityIdx >= 0 ? cells[communityIdx] || '' : '';
+      const engagementCell = engagementIdx >= 0 ? cells[engagementIdx] || '' : '';
+
+      const linkMatch = linkCell.match(/\((https?:\/\/[^\s)]+)\)/);
+      const url = linkMatch ? linkMatch[1] : '';
+      const title = titleCell
+        .replace(/\\\|/g, '|')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const ep = parseInt(epRaw, 10);
+
+      if (!title || title.length < 3) {
+        j++;
+        continue;
+      }
+      const sentiment = normalizeSentiment(sentimentCell);
+      const tags = tagsCell
+        .split(/[,;]/)
+        .map((t) => t.replace(/[`*_]/g, '').trim())
+        .filter(Boolean);
+
+      if (isConversation) {
+        sentimentTotals[sentiment] = (sentimentTotals[sentiment] || 0) + 1;
+        const community = (communityCell || '').replace(/[`*_]/g, '').trim().toLowerCase();
+        // Heuristic: rows tagged "official", "product", "first-party", or matching
+        // a known Microsoft/official handle pattern get classified as product.
+        // Everything else (including blanks, "community", "third-party", "story",
+        // "user", "mvp") is community-generated.
+        const isProduct =
+          /^(official|product|first[\s-]?party|microsoft|brand|company)$/.test(community) ||
+          /microsoft|@msft|@azure/i.test(authorCell);
+        conversations.push({
+          date: dateCell,
+          platform: sourceCell || 'Unknown',
+          author: authorCell || '',
+          summary: summaryCell || title,
+          sentiment,
+          community: isProduct ? 'product' : 'community',
+          communityRaw: community || '',
+          engagement: engagementCell.replace(/[`*_]/g, '').trim(),
+          url,
+          section: currentSection,
+        });
+      } else {
+        const dedupKey = url || `${title}::${authorCell}`;
+        if (!seenItems.has(dedupKey)) {
+          seenItems.add(dedupKey);
+          items.push({
+            title,
+            url,
+            date: dateCell,
+            ep: Number.isFinite(ep) ? ep : null,
+            author: authorCell || '',
+            source: sourceCell || '',
+            tags,
+            section: currentSection,
+            kind: classifyItem(currentSection, sourceCell, url),
+          });
+        }
+      }
+      j++;
+    }
+    i = j - 1;
+  }
+
+  // Skipped sources from "Sources That Could Not Be Reached" or "Skipped Sources" sections.
+  const skippedSources = [];
+  const skipStart = lines.findIndex((l) =>
+    /^##\s+(Sources That Could Not Be Reached|Skipped Sources|Sources Skipped)/i.test(l)
+  );
+  if (skipStart >= 0) {
+    for (let k = skipStart + 1; k < lines.length; k++) {
+      const l = lines[k];
+      if (/^##\s+/.test(l)) break;
+      const m = l.match(/^\s*[-*]\s+\*\*([^*]+)\*\*\s*[—:-]\s*(.+)$/);
+      if (m) skippedSources.push({ name: m[1].trim(), reason: m[2].trim() });
+    }
+  }
+
+  return { slug, generatedAt, items, conversations, sentimentTotals, skippedSources };
+}
+
+function normalizeSentiment(cell) {
+  if (!cell) return 'unknown';
+  const lower = cell.toLowerCase();
+  if (cell.includes('🟢') || /positive|advoc/i.test(lower)) return 'positive';
+  if (cell.includes('🔴') || /negative|critic|frustrat/i.test(lower)) return 'negative';
+  if (cell.includes('🟡') || /mixed|cautious|confus/i.test(lower)) return 'mixed';
+  if (/neutral/i.test(lower)) return 'neutral';
+  return 'unknown';
+}
+
+function classifyItem(section, source, url) {
+  const s = (section + ' ' + source + ' ' + url).toLowerCase();
+  if (/youtube\.com|youtu\.be|video/i.test(s)) return 'video';
+  if (/dev\.to|medium\.com|hashnode|dzone|infoq|blog|article/i.test(s)) return 'blog';
+  if (/github\.com|repo|project/i.test(s)) return 'repo';
+  if (/reddit/i.test(s)) return 'reddit';
+  if (/hacker news|news\.ycombinator/i.test(s)) return 'hn';
+  if (/bluesky|bsky/i.test(s)) return 'bluesky';
+  if (/twitter|^x$|\bx\/|x\.com/i.test(s)) return 'x';
+  if (/stack overflow|stackoverflow/i.test(s)) return 'stackoverflow';
+  if (/conf|talk|session|stream/i.test(s)) return 'video';
+  return 'other';
+}
+
+app.get('/api/items', async (req, res) => {
+  try {
+    const idx = await getIndex();
+    const { slug, minEp, kind, tag, q } = req.query;
+    let items = idx.items;
+    if (slug) items = items.filter((i) => i.report.includes(`-${slug}-`) || i.report.includes(`-${slug}.`));
+    if (minEp) {
+      const n = parseInt(minEp, 10);
+      if (Number.isFinite(n)) items = items.filter((i) => (i.ep ?? -1) >= n);
+    }
+    if (kind) items = items.filter((i) => i.kind === kind);
+    if (tag) {
+      const t = String(tag).toLowerCase();
+      items = items.filter((i) => i.tags.some((x) => x.toLowerCase() === t));
+    }
+    if (q) {
+      const needle = String(q).toLowerCase();
+      items = items.filter(
+        (i) =>
+          i.title.toLowerCase().includes(needle) ||
+          (i.author || '').toLowerCase().includes(needle) ||
+          i.tags.some((t) => t.toLowerCase().includes(needle))
+      );
+    }
+    res.json({ items, total: items.length, builtAt: idx.builtAt });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+app.get('/api/conversations', async (req, res) => {
+  try {
+    const idx = await getIndex();
+    const { sentiment, platform, slug, q } = req.query;
+    let convs = idx.conversations;
+    if (slug)
+      convs = convs.filter((c) => c.report.includes(`-${slug}-`) || c.report.includes(`-${slug}.`));
+    if (sentiment) convs = convs.filter((c) => c.sentiment === sentiment);
+    if (platform)
+      convs = convs.filter((c) => (c.platform || '').toLowerCase() === String(platform).toLowerCase());
+    if (q) {
+      const needle = String(q).toLowerCase();
+      convs = convs.filter(
+        (c) =>
+          (c.summary || '').toLowerCase().includes(needle) ||
+          (c.author || '').toLowerCase().includes(needle)
+      );
+    }
+    convs = convs
+      .slice()
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    res.json({ conversations: convs, total: convs.length, builtAt: idx.builtAt });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+app.get('/api/authors', async (req, res) => {
+  try {
+    const idx = await getIndex();
+    const { slug, q } = req.query;
+    let authors = idx.authors;
+    if (slug) authors = authors.filter((a) => a.slugs.includes(slug));
+    if (q) {
+      const needle = String(q).toLowerCase();
+      authors = authors.filter((a) => a.name.toLowerCase().includes(needle));
+    }
+    authors = authors
+      .slice()
+      .sort((a, b) => b.items + b.conversations - (a.items + a.conversations));
+    res.json({ authors, total: authors.length, builtAt: idx.builtAt });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+app.get('/api/source-health', async (_req, res) => {
+  try {
+    const idx = await getIndex();
+    const sources = idx.sources
+      .slice()
+      .sort((a, b) => b.items - a.items || (b.lastSeen || '').localeCompare(a.lastSeen || ''));
+    const lastReportName = idx.reports
+      .slice()
+      .sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''))[0]?.name;
+    const lastSkipped =
+      idx.reports
+        .slice()
+        .sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''))[0]?.skippedSources || [];
+    res.json({ sources, lastReport: lastReportName, lastSkipped, builtAt: idx.builtAt });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+app.get('/api/sentiment-summary', async (_req, res) => {
+  try {
+    const idx = await getIndex();
+    // Sort reports by generatedAt then mtime; aggregate by slug.
+    const bySlug = new Map();
+    for (const r of idx.reports) {
+      const list = bySlug.get(r.slug) || [];
+      list.push(r);
+      bySlug.set(r.slug, list);
+    }
+    const groups = [];
+    for (const [slug, list] of bySlug.entries()) {
+      list.sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''));
+      const latest = list[0];
+      const prior = list[1];
+      groups.push({
+        slug,
+        latest: latest && {
+          report: latest.name,
+          generatedAt: latest.generatedAt,
+          totals: latest.sentimentTotals,
+          convoCount: latest.convoCount,
+          itemCount: latest.itemCount,
+        },
+        prior: prior && {
+          report: prior.name,
+          generatedAt: prior.generatedAt,
+          totals: prior.sentimentTotals,
+        },
+      });
+    }
+    res.json({ groups, builtAt: idx.builtAt });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+app.get('/api/search', async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (!q) return res.json({ q, items: [], conversations: [], reports: [], authors: [] });
+    const idx = await getIndex();
+    const needle = q.toLowerCase();
+    const itemHits = idx.items
+      .filter(
+        (i) =>
+          i.title.toLowerCase().includes(needle) ||
+          (i.author || '').toLowerCase().includes(needle) ||
+          i.tags.some((t) => t.toLowerCase().includes(needle))
+      )
+      .slice(0, 20);
+    const convoHits = idx.conversations
+      .filter(
+        (c) =>
+          (c.summary || '').toLowerCase().includes(needle) ||
+          (c.author || '').toLowerCase().includes(needle) ||
+          (c.platform || '').toLowerCase().includes(needle)
+      )
+      .slice(0, 20);
+    const reportHits = idx.reports.filter((r) => r.name.toLowerCase().includes(needle)).slice(0, 10);
+    const authorHits = idx.authors
+      .filter((a) => a.name.toLowerCase().includes(needle))
+      .slice(0, 10);
+    res.json({
+      q,
+      items: itemHits,
+      conversations: convoHits,
+      reports: reportHits,
+      authors: authorHits,
+      builtAt: idx.builtAt,
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
   }
 });
 
