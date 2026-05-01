@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { validateFormat, testReachability, listSupportedKeys } from './lib/key-checks.js';
 import { isValidSlug, isValidFilename, safeJoin } from './lib/security.js';
+import { validateRawConfig } from './lib/config-validator.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1418,8 +1419,9 @@ app.get('/api/configs/:slug', async (req, res) => {
 
 app.put('/api/configs/:slug', async (req, res) => {
   try {
-    if (typeof req.body?.raw !== 'string') {
-      return res.status(400).json({ error: 'raw must be a string' });
+    const v = validateRawConfig(req.body?.raw);
+    if (!v.ok) {
+      return res.status(400).json({ error: v.error, code: v.code });
     }
     await writeConfig(req.params.slug, req.body.raw);
     res.json({ ok: true });
@@ -2284,4 +2286,19 @@ app.listen(PORT, HOST, async () => {
   console.log(`Repo root: ${REPO_ROOT}`);
   console.log(`Bind: ${HOST}${HOST === '0.0.0.0' ? ' (LAN-exposed — set SCOUT_HOST=127.0.0.1 to restrict)' : ' (loopback only)'}`);
   console.log(`Runner: ${runner || '(none — pick an agent on the Setup view)'}${source !== 'none' ? ` [${source}]` : ''}`);
+  // Health check: warn if any command-prompt files referenced by the UI are missing.
+  const expectedPrompts = [
+    'scout-onboard.prompt.md', 'scout-scan.prompt.md', 'scout-post.prompt.md',
+    'scout-calendar.prompt.md', 'scout-gaps.prompt.md', 'scout-trends.prompt.md',
+    'scout-creators.prompt.md', 'scout-doctor.prompt.md', 'scout-keys.prompt.md',
+    'scout-replay.prompt.md', 'scout-seo.prompt.md',
+  ];
+  const missing = [];
+  for (const name of expectedPrompts) {
+    try { await fs.access(path.join(PROMPTS_DIR, name)); }
+    catch { missing.push(name); }
+  }
+  if (missing.length) {
+    console.warn(`[warn] missing prompt files (${missing.length}): ${missing.join(', ')}`);
+  }
 });
