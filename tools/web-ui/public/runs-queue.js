@@ -34,6 +34,21 @@
   let activeStream = null;
   let activeRunId = null;
   let lastSnapshot = [];
+  // Track previously-seen status per run id so we can detect transitions
+  // (running → success/error) and surface a toast notification on completion.
+  const knownStatus = new Map();
+  let firstPoll = true;
+
+  function isTerminalStatus(s) {
+    if (!s) return false;
+    if (s === 'running') return false;
+    return true; // success, error, exited *, killed, etc.
+  }
+  function isSuccessStatus(s) {
+    if (s === 'success') return true;
+    if (typeof s === 'string' && s.startsWith('exited 0')) return true;
+    return false;
+  }
 
   function build() {
     if (launcher) return;
@@ -101,12 +116,59 @@
       if (!res.ok) return;
       const data = await res.json();
       const list = (data && Array.isArray(data.runs)) ? data.runs : [];
+      // Detect run completions: previously "running" or unknown → now terminal.
+      // Skip on the very first poll so we don't toast for runs that were
+      // already finished before the page loaded.
+      if (!firstPoll) {
+        for (const r of list) {
+          if (!r || !r.id) continue;
+          const prev = knownStatus.get(r.id);
+          if (prev === 'running' && isTerminalStatus(r.status)) {
+            notifyRunFinished(r);
+          }
+        }
+      }
+      // Update tracking map (and prune ids no longer present).
+      const seen = new Set();
+      for (const r of list) {
+        if (r && r.id) {
+          knownStatus.set(r.id, r.status);
+          seen.add(r.id);
+        }
+      }
+      for (const id of [...knownStatus.keys()]) {
+        if (!seen.has(id)) knownStatus.delete(id);
+      }
+      firstPoll = false;
+
       lastSnapshot = list;
       const runningCount = list.filter((r) => r.status === 'running').length;
       updateBadge(runningCount);
       if (drawer.classList.contains('open') && !activeRunId) renderList();
     } catch {
       // Silent — server may be restarting.
+    }
+  }
+
+  function notifyRunFinished(run) {
+    const cmd = shortCommand(run.command);
+    const ok = isSuccessStatus(run.status);
+    const title = ok ? `Run finished: ${cmd}` : `Run failed: ${cmd}`;
+    const desc = ok
+      ? 'Click the Runs button to see the output.'
+      : `Status: ${run.status || 'error'} — click Runs to see details.`;
+    if (window.toast) {
+      const fn = ok ? window.toast.success : window.toast.error;
+      try {
+        fn(title, desc, { duration: ok ? 6000 : 9000 });
+      } catch {
+        // Fallback to plain toast.
+        window.toast({ title, description: desc, type: ok ? 'success' : 'error' });
+      }
+    }
+    // Try the browser Notification API too if the user granted permission.
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      try { new Notification(title, { body: desc, silent: true }); } catch { /* ignore */ }
     }
   }
 
