@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { validateFormat, testReachability, listSupportedKeys } from './lib/key-checks.js';
+import { isValidSlug, isValidFilename, safeJoin } from './lib/security.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -23,6 +24,13 @@ const ENV_EXAMPLE = path.join(REPO_ROOT, '.env.example');
 const SETTINGS_FILE = path.join(__dirname, '.scout-web-settings.json');
 
 const PORT = Number(process.env.PORT || 4477);
+// Bind to loopback by default. Set SCOUT_HOST=0.0.0.0 to expose on the LAN
+// (NOT recommended — this server can spawn shell commands and read repo files).
+const HOST = process.env.SCOUT_HOST || '127.0.0.1';
+
+// Slug + filename validation and safe-path join helpers live in ./lib/security.js
+// so they can be unit-tested. Used by every route that builds a filesystem path
+// from a request param.
 
 // Built-in agent presets. `{prompt}` is replaced with the slash-style command.
 const AGENT_PRESETS = {
@@ -171,13 +179,15 @@ async function listConfigs() {
 }
 
 async function readConfig(slug) {
-  const file = path.join(PROMPTS_DIR, `scout-config-${slug}.prompt.md`);
+  if (!isValidSlug(slug)) throw new Error('invalid slug');
+  const file = safeJoin(PROMPTS_DIR, `scout-config-${slug}.prompt.md`);
   const raw = await fs.readFile(file, 'utf8');
   return { slug, file: `scout-config-${slug}.prompt.md`, raw };
 }
 
 async function writeConfig(slug, raw) {
-  const file = path.join(PROMPTS_DIR, `scout-config-${slug}.prompt.md`);
+  if (!isValidSlug(slug)) throw new Error('invalid slug');
+  const file = safeJoin(PROMPTS_DIR, `scout-config-${slug}.prompt.md`);
   await fs.writeFile(file, raw, 'utf8');
 }
 
@@ -998,10 +1008,10 @@ async function listMarkdownFiles(dir) {
 }
 
 async function readMarkdown(dir, name) {
-  if (name.includes('..') || name.includes('/') || name.includes('\\')) {
+  if (!isValidFilename(name) || !name.endsWith('.md')) {
     throw new Error('invalid filename');
   }
-  const file = path.join(dir, name);
+  const file = safeJoin(dir, name);
   const raw = await fs.readFile(file, 'utf8');
   return { name, raw, html: marked.parse(raw) };
 }
@@ -1423,10 +1433,10 @@ app.put('/api/configs/:slug', async (req, res) => {
 app.delete('/api/configs/:slug', async (req, res) => {
   try {
     const slug = String(req.params.slug || '').toLowerCase();
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) {
+    if (!isValidSlug(slug)) {
       return res.status(400).json({ error: 'invalid slug' });
     }
-    const file = path.join(PROMPTS_DIR, `scout-config-${slug}.prompt.md`);
+    const file = safeJoin(PROMPTS_DIR, `scout-config-${slug}.prompt.md`);
     try {
       await fs.unlink(file);
     } catch (err) {
@@ -2267,9 +2277,11 @@ app.get('/api/runs/:id/stream', (req, res) => {
   req.on('close', () => run.listeners.delete(res));
 });
 
-app.listen(PORT, async () => {
+app.listen(PORT, HOST, async () => {
   const { runner, source } = await getRunner();
-  console.log(`Content Scout web UI running at http://localhost:${PORT}`);
+  const displayHost = HOST === '0.0.0.0' ? 'localhost' : HOST;
+  console.log(`Content Scout web UI running at http://${displayHost}:${PORT}`);
   console.log(`Repo root: ${REPO_ROOT}`);
+  console.log(`Bind: ${HOST}${HOST === '0.0.0.0' ? ' (LAN-exposed — set SCOUT_HOST=127.0.0.1 to restrict)' : ' (loopback only)'}`);
   console.log(`Runner: ${runner || '(none — pick an agent on the Setup view)'}${source !== 'none' ? ` [${source}]` : ''}`);
 });
