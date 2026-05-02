@@ -61,3 +61,31 @@ When a post uses "link in first comment" or a URL won't generate a link card, th
 - **Logo** from your brand assets directory (never generated or fabricated — only actual logos you provide are used; text-only layout if none configured)
 - **Product name** uses your brand naming rules (canonical form, correct casing)
 - Saved to `social-posts/images/{YYYY-MM}/`
+
+## File Structure
+
+```
+.github/
+├── agents/
+│   └── content-scout.agent.md             # Agent definition (single source of truth)
+├── copilot-instructions.md                # GitHub Copilot CLI adapter
+└── prompts/
+    ├── scout-onboard.prompt.md            # Onboarding wizard
+    ├── scout-config-{slug}.prompt.md      # Your config (gitignored)
+    ├── scout-scan.prompt.md
+    ├── scout-post.prompt.md
+    ├── scout-calendar.prompt.md
+    ├── scout-gaps.prompt.md
+    └── scout-trends.prompt.md
+CLAUDE.md                                  # Claude Code adapter
+.clinerules                                # Cline adapter
+.windsurfrules                             # Windsurf adapter
+.cursor/rules/content-scout.mdc            # Cursor adapter
+docs/                                      # WORKFLOW, SOURCES, API-KEYS, EDITORS, ARCHITECTURE
+examples/                                  # Sample outputs
+reports/                                   # Generated content & trends reports
+social-posts/                              # Generated posts, calendars, thumbnails
+tools/web-ui/                              # Local browser dashboard
+.env.example                               # API key template (copy to .env)
+```
+
