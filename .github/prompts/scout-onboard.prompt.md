@@ -296,7 +296,7 @@ Present the full source list and ask: **"Select all, or pick the ones you want."
 | 7 | YouTube (community channels) | YouTube Data API v3 key (free) |
 | 8 | GitHub (community repos) | None |
 | 9 | Stack Overflow | None |
-| 10 | Reddit | OAuth2 app credentials (free) |
+| 10 | Reddit | None required (cascading no-auth scanner; OAuth optional) |
 | 11 | Hacker News | None |
 | 12 | Bluesky | App password (free) |
 | 13 | LinkedIn | None |
@@ -323,7 +323,8 @@ For each custom source, collect: **name**, **URL or search pattern**, and **type
 > **For every prompt below, also tell the user: "Full step-by-step walkthrough: `docs/API-KEYS.md`."** If they say they're stuck on any step, point them at the matching anchor (e.g., `docs/API-KEYS.md#reddit`).
 
 - If **YouTube** was selected: "YouTube requires a free API key. Without it, YouTube is skipped and community videos won't appear in reports. Paste your YouTube Data API v3 key, or say **skip**. Quick link: https://console.cloud.google.com/apis/credentials — full walkthrough: `docs/API-KEYS.md#youtube-data-api-v3`."
-- If **Reddit** was selected: "Reddit requires free OAuth2 app credentials. Without them, Reddit scanning is skipped. Register a 'script' type app at https://www.reddit.com/prefs/apps/ — you'll get a client ID and secret. Paste your Reddit client ID and client secret, or say **skip**. Full walkthrough (which fields to fill in, where to find the client ID): `docs/API-KEYS.md#reddit`."
+- If **Reddit** was selected: "Reddit needs no credentials by default — Content Scout uses a layered scanner (old.reddit.com RSS → HTML scrape → Google PSE → manual import). You can optionally add Reddit OAuth2 creds for higher rate limits, but Reddit's 'Responsible Builder Policy' denies most new app registrations, so this is fine to skip. Paste a Reddit client ID + secret if you have them, or say **skip**. Walkthrough: `docs/API-KEYS.md#reddit`."
+- If **Reddit Layer 3 (Google PSE)** is wanted: "Optional: enable Reddit Layer 3 (Google Programmable Search) to catch threads in subreddits you didn't list. Free tier = 100 queries/day. Paste a `GOOGLE_PSE_KEY` and `GOOGLE_PSE_CX` (engine ID restricted to `reddit.com/*`), or say **skip**. Walkthrough: `docs/API-KEYS.md#google-pse`."
 - If **Bluesky** was selected: "Bluesky requires a free app password for authenticated search. Without it, Bluesky is skipped and mentions/hashtag posts won't be tracked. Paste your Bluesky handle and app password, or say **skip**. Quick link: https://bsky.app/settings/app-passwords — full walkthrough: `docs/API-KEYS.md#bluesky`."
 - If **X/Twitter** was selected: "X requires a bearer token. The $200/mo Basic plan is recommended for reliable scanning. Without a key, Content Scout will attempt best-effort public search, but results may be incomplete or blocked. Paste your X bearer token, or say **skip**. Full walkthrough: `docs/API-KEYS.md#xtwitter`."
 - If **GitHub** community-repo scanning is enabled (always on by default): "GitHub works without a key, but unauthenticated requests are capped at 60/hour vs 5,000/hour authenticated. Want to add a free GitHub personal access token for higher rate limits? Paste it or say **skip**. Quick link: https://github.com/settings/tokens — full walkthrough (no scopes needed): `docs/API-KEYS.md#github-token`."

@@ -27,7 +27,9 @@ Ignore VS Code frontmatter. Ask the user conversationally.
 
 > **Tip — when the web UI is running:** the same validation + reachability logic is exposed at `POST http://localhost:4477/api/env/test` with body `{ key, value, extras?: { OTHER_KEY: "..." }, liveTest?: true }`. You can call that endpoint instead of hand-rolling each check below; it returns `{ format: {ok,message}, reachability: {reachable,status,message} }`. The hand-rolled curl/HTTP recipes below stay authoritative when the UI isn't running.
 
-### Reddit (script-type OAuth app)
+### Reddit (script-type OAuth app — OPTIONAL)
+
+> Reddit needs **no credentials** by default. The cascading no-auth scanner (old.reddit RSS → HTML → Google PSE → manual import) handles unauthenticated access. Only collect these creds if the user has been approved for a Reddit OAuth app. If they got a "Responsible Builder Policy" denial, **skip this section** and offer to set up Google PSE (Layer 3) instead.
 
 1. Direct user to https://www.reddit.com/prefs/apps → **create another app...** → choose **script** → name `content-scout` → redirect URI `http://localhost:8080`.
 2. Ask for **Client ID** (the short string under the app name, ~14 chars, alphanumeric + dashes/underscores). Validate: 8–30 chars, no spaces.
@@ -40,6 +42,21 @@ Ignore VS Code frontmatter. Ask the user conversationally.
    REDDIT_USER_AGENT=content-scout/1.0 by <username>
    ```
 6. Reachability check: POST `https://www.reddit.com/api/v1/access_token` with HTTP Basic auth (`client_id:client_secret`) and form body `grant_type=client_credentials`. Expect 200 + `access_token` field. On 401, the most common cause is a swapped id/secret — offer to re-enter.
+
+### Google Programmable Search Engine (Reddit Layer 3 — OPTIONAL)
+
+> Enables Reddit Layer 3 — catches threads in subreddits the user didn't list. Free tier = 100 queries/day. Skip if the user only wants the no-auth defaults.
+
+1. Direct user to https://console.cloud.google.com/apis/credentials → **Create credentials** → **API key**. Then enable **Custom Search API** at https://console.cloud.google.com/apis/library/customsearch.googleapis.com.
+2. Direct user to https://programmablesearchengine.google.com/ → **Add** → set **Sites to search** to `reddit.com/*` → **Create**. Copy the **Search engine ID** (looks like `xxxxxxxxxxxx:yyyyyyyyyyy`).
+3. Ask for **GOOGLE_PSE_KEY**. Validate: starts with `AIza`, length 39, alphanumeric + `-_`.
+4. Ask for **GOOGLE_PSE_CX**. Validate: 10–40 chars, alphanumeric + `:` + `-` + `_`. Format hint: contains `:` or is purely alphanumeric.
+5. Write:
+   ```
+   GOOGLE_PSE_KEY=<key>
+   GOOGLE_PSE_CX=<cx>
+   ```
+6. Reachability: GET `https://www.googleapis.com/customsearch/v1?key=<key>&cx=<cx>&q=test+site:reddit.com&num=1`. Expect 200 + `items` array (may be empty for an obscure query — only the 200 matters). On 403, either the Custom Search API isn't enabled or the daily quota is exhausted; link them to the library page.
 
 ### Bluesky (app password)
 

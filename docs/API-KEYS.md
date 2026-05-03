@@ -11,7 +11,8 @@ All API keys are optional. Without them, the agent skips those sources and scans
 | Service | Cost | Without It |
 |---------|------|-----------|
 | [YouTube Data API v3](#youtube-data-api-v3) | Free | YouTube scanning skipped — community videos won't appear in reports |
-| [Reddit OAuth2](#reddit) | Free (optional) | Falls back to public `.json` endpoint with browser User-Agent + ≥2s delays. Lower volume, more 429 skips, but Reddit still scans. |
+| [Reddit OAuth2](#reddit) | Free (optional) | Layered no-auth scanner takes over: `old.reddit.com` RSS → HTML scrape → [Google PSE](#google-pse) → manual import via `/scout-reddit-import`. Reddit is never silently dropped. |
+| [Google PSE](#google-pse) | Free (100 queries/day) | Reddit Layer 3 disabled — you'll still get RSS/HTML/manual layers, but won't catch threads in subreddits you didn't list. |
 | [Bluesky](#bluesky) | Free | Bluesky scanning skipped — mentions and hashtag posts won't be tracked |
 | [X/Twitter](#xtwitter) | $200/mo (Basic) or free tier (limited) | X/Twitter scanning skipped — conversations and mentions won't be tracked |
 | [GitHub Token](#github-token) | Free | GitHub still works, but unauthenticated requests are capped at 60/hr (vs 5000/hr authenticated) |
@@ -45,7 +46,7 @@ When you select YouTube during onboarding, the agent asks for this key. Paste it
 
 **Cost:** Free (and **optional** — Content Scout falls back to the public `.json` endpoint when creds are missing).
 
-Reddit OAuth2 app-only (client credentials) auth gives higher rate limits and more reliable scanning, but it's no longer required — Content Scout falls back to the public `.json` endpoint when `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` aren't set. The fallback is lower-volume and 429-prone, but Reddit is never silently dropped.
+Reddit OAuth2 app-only (client credentials) auth gives higher rate limits, but it's NOT required — and Reddit's "Responsible Builder Policy" denies most new app registrations anyway. Content Scout uses a layered no-auth scanner by default: Layer 1 = `old.reddit.com` RSS, Layer 2 = `old.reddit.com` HTML scrape, Layer 3 = [Google Programmable Search Engine](#google-pse) (opt-in), Layer 4 = manual import via `/scout-reddit-import`. Reddit is never silently dropped.
 
 ### Setup
 1. Log in to Reddit, then go to [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps/) (or [old.reddit.com/prefs/apps](https://old.reddit.com/prefs/apps/) if the new flow is gated by Reddit's Responsible Builder Policy)
@@ -66,7 +67,32 @@ Reddit OAuth2 app-only (client credentials) auth gives higher rate limits and mo
 - Free forever for personal/script use
 
 ### In Content Scout
-When you select Reddit during onboarding, the agent offers to collect a client ID and client secret. Paste them or say "skip" — if skipped, the agent uses the unauthenticated `.json` fallback automatically. Stored in `.env` as `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and `REDDIT_USER_AGENT` (format: `content-scout/1.0 by <reddit-username>`).
+When you select Reddit during onboarding, the agent offers to collect a client ID and client secret. Paste them or say "skip" — if skipped, the agent uses the no-auth layered scanner automatically. Stored in `.env` as `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and `REDDIT_USER_AGENT` (format: `content-scout/1.0 by <reddit-username>`).
+
+---
+
+## Google PSE
+
+**Cost:** Free — 100 queries/day on the free tier.
+
+**What it enables:** Reddit Layer 3. Programmable Search lets Content Scout discover Reddit threads in subreddits the user didn't list explicitly, by running `site:reddit.com {term}` queries via Google's Custom Search API. It runs only after RSS (Layer 1) and HTML (Layer 2) layers complete.
+
+### Setup
+
+1. Get a Google API key at https://console.cloud.google.com/apis/credentials. Enable **Custom Search API** at https://console.cloud.google.com/apis/library/customsearch.googleapis.com.
+2. Create a Programmable Search Engine at https://programmablesearchengine.google.com/. Set **Sites to search** to `reddit.com/*`. Copy the **Search engine ID** (the `cx`).
+3. Add to `.env`:
+   ```
+   GOOGLE_PSE_KEY=AIza...
+   GOOGLE_PSE_CX=xxxxxxxxxxxx:yyyyyyyy
+   ```
+4. Verify with `scout doctor` (or `/api/env/test` in the web UI).
+
+### Notes
+
+- The free tier is 100 queries/day. Each Reddit Layer 3 invocation uses 1–3 queries depending on how many search terms you have, so this is plenty for daily scans.
+- If you exceed the quota, Google returns 403; Content Scout falls through to Layer 4 (manual import) and notes the quota exhaustion in the run summary.
+- Restrict the search engine to `reddit.com/*` — don't enable "Search the entire web" or you'll waste quota on non-Reddit results.
 
 > **Note:** Script apps don't require a username/password for the app-only client-credentials flow Content Scout uses — the client ID + secret is enough to read public content.
 
@@ -166,6 +192,7 @@ These all work out of the box:
 
 | Source | How to Get Credentials | Cost |
 |--------|----------------------|------|
-| Reddit | **Optional.** Register a "script" app at [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps/) (or `old.reddit.com/prefs/apps`) and set `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` / `REDDIT_USER_AGENT` in `.env` for higher limits. Without creds, Content Scout uses the public `.json` fallback. | Free |
+| Reddit | **Optional.** Register a "script" app at [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps/) (or `old.reddit.com/prefs/apps`) and set `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` / `REDDIT_USER_AGENT` in `.env` for higher limits. Without creds, Content Scout uses the layered no-auth scanner (RSS → HTML → PSE → manual). | Free |
+| Google PSE | **Optional.** Enables Reddit Layer 3. Set `GOOGLE_PSE_KEY` and `GOOGLE_PSE_CX` in `.env`. See [#google-pse](#google-pse). | Free (100/day) |
 | YouTube | Get an API key at [console.cloud.google.com](https://console.cloud.google.com/apis/credentials). Set `YOUTUBE_API_KEY` in `.env`. | Free |
 | Bluesky | Create an app password at [bsky.app/settings/app-passwords](https://bsky.app/settings/app-passwords). Set `BLUESKY_HANDLE` and `BLUESKY_APP_PASSWORD` in `.env`. | Free |

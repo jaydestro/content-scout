@@ -1516,7 +1516,7 @@ app.listen(PORT, HOST, async () => {
     'scout-onboard.prompt.md', 'scout-scan.prompt.md', 'scout-post.prompt.md',
     'scout-calendar.prompt.md', 'scout-gaps.prompt.md', 'scout-trends.prompt.md',
     'scout-creators.prompt.md', 'scout-doctor.prompt.md', 'scout-keys.prompt.md',
-    'scout-replay.prompt.md', 'scout-seo.prompt.md',
+    'scout-replay.prompt.md', 'scout-seo.prompt.md', 'scout-reddit-import.prompt.md',
   ];
   let diskFiles = [];
   try { diskFiles = await fs.readdir(PROMPTS_DIR); } catch { /* ignore */ }

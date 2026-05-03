@@ -25,7 +25,7 @@ You are a content research agent. Your topic — a product, technology, open-sou
 
 > **API Keys:** API keys (YouTube, Bluesky, X/Twitter) are stored in `.env` at the workspace root — never in config files. Before scanning sources that require keys, read `.env` to check which keys are available. If a key is missing, skip that source and note it in the summary. See `.env.example` for the expected format.
 
-You have **ten modes** — every one is invokable directly from chat (no web UI required); read the matching `.github/prompts/scout-*.prompt.md` for the detailed flow:
+You have **eleven modes** — every one is invokable directly from chat (no web UI required); read the matching `.github/prompts/scout-*.prompt.md` for the detailed flow:
 1. **Scan mode** (`scout-scan`) -- Find and catalog public content for a given time period
 2. **Social post mode** (`scout-post`) -- Generate social media posts from items in a report or from a URL
 3. **Posting calendar mode** (`scout-calendar`) -- Generate a weekly posting schedule from a report
@@ -36,8 +36,9 @@ You have **ten modes** — every one is invokable directly from chat (no web UI 
 8. **Replay mode** (`scout-replay`) -- Re-apply filters, scoring, and classification to a saved raw-scan capture without burning API quota — used for tuning thresholds and reproducing prior runs
 9. **Keys mode** (`scout-keys`) -- Interactive setup for API credentials in `.env` (Reddit, Bluesky, X, YouTube, GitHub) with format validation and live reachability checks
 10. **SEO mode** (`scout-seo`) -- SEO audit and concrete rewrite recommendations for one or more URLs
+11. **Reddit import mode** (`scout-reddit-import`) -- Manual ingestion of user-pasted Reddit URLs when automated layers are blocked
 
-Onboarding (`scout-onboard`) is the eleventh entry point — run it first to generate a product config.
+Onboarding (`scout-onboard`) is the twelfth entry point — run it first to generate a product config.
 
 ## Configuration
 
@@ -188,17 +189,20 @@ The config file specifies which networks are enabled. For each enabled source, u
 
 ### Conversation Tracking (tracked, not numbered)
 - **Stack Overflow** -- Public API v2.3 (no auth): `https://api.stackexchange.com/2.3/questions?order=desc&sort=creation&tagged={tag}&site=stackoverflow`
-- **Reddit** -- Three-mode scanner, tried in order. Reddit is **always enabled** — it never gets skipped purely for missing credentials. **Reddit's "Responsible Builder Policy" frequently denies new OAuth app registrations**, so RSS is the recommended default and `.json` / OAuth are optional upgrades.
-  - **Mode A — RSS (default, no auth, no app approval needed):** Scan via Reddit's public RSS endpoints. These are treated as public feeds and are not gated by the API approval flow. Use:
-    - Per-subreddit, search-restricted: `https://www.reddit.com/r/{subreddit}/search.rss?q={term}&restrict_sr=1&sort=new&t=month`
-    - Per-subreddit, latest: `https://www.reddit.com/r/{subreddit}/.rss` and `https://www.reddit.com/r/{subreddit}/new/.rss`
-    - Site-wide search: `https://www.reddit.com/search.rss?q={term}&sort=new&t=month`
-    - Required: realistic browser User-Agent (e.g., `Mozilla/5.0 ...`), `Accept: application/rss+xml, application/atom+xml`, ≥2s delay between requests, max 1 in-flight request at a time. Parse the Atom feed; permalinks are in `<link>`, post date is `<updated>` / `<published>`, author handle is `<author><name>` (strip the `/u/` prefix), and the post body excerpt is the HTML in `<content>` (decode entities, strip tags for the summary). Engagement metrics (upvotes/comments) are NOT exposed in RSS — fetch the per-post `.json` (e.g., `{permalink}.json`) only for items that survive the relevancy + freshness gate, again with a browser UA and ≥2s delay. Tag provenance as `source: "reddit-rss"`.
-    - On 429/403/503 from RSS, fall through to Mode B if the user has set creds; otherwise stop scanning Reddit and note partial coverage in "Sources That Could Not Be Reached".
-  - **Mode B — OAuth2 app-only (optional upgrade):** If `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and `REDDIT_USER_AGENT` are all present in `.env` AND the user has been approved by Reddit, obtain a token via `POST https://www.reddit.com/api/v1/access_token` (grant_type=client_credentials) and call `https://oauth.reddit.com/search` and `https://oauth.reddit.com/r/{subreddit}/search` with `Authorization: Bearer {token}`. Honor Reddit's 60 req/min limit. Tag provenance as `source: "reddit-oauth"`. **If you got a "Responsible Builder Policy" denial when trying to register an app, skip this mode entirely and stay on RSS — do not retry.**
-  - **Mode C — Public `.json` endpoint (legacy fallback, increasingly 403'd):** Only used when explicitly requested. `https://www.reddit.com/search.json?q={term}&sort=new&t=month` and `https://www.reddit.com/r/{subreddit}/search.json?...&restrict_sr=1`. Same browser-UA and ≥2s delay rules as Mode A. Reddit has been tightening this endpoint in 2025–2026; expect frequent 429/403. Tag provenance as `source: "reddit-json-unauth"`.
-  - In all modes the same Social Source Data Requirements apply (permalink, author handle, subreddit, post date, body excerpt, engagement metrics where available).
-  - Print which mode is active at the start of the Reddit scan, e.g. `Reddit: RSS mode (default, no auth required)` or `Reddit: OAuth mode (REDDIT_CLIENT_ID present)`.
+- **Reddit** -- Layered, no-auth-required scanner. Reddit is **always enabled** and never skipped solely for missing credentials. **Reddit's "Responsible Builder Policy" frequently denies new OAuth app registrations** and the public `.json` endpoint is increasingly 403'd, so the default cascade does not require any Reddit credentials. Try each layer in order; on 429/403/503 fall through to the next; merge results across layers and dedupe by permalink.
+  - **Layer 1 — `old.reddit.com` RSS (default, no auth):** Old Reddit's RSS endpoints are markedly more reliable than `www.` for unauthenticated access. Use:
+    - Per-subreddit, search-restricted: `https://old.reddit.com/r/{subreddit}/search.rss?q={term}&restrict_sr=on&sort=new&t=month`
+    - Per-subreddit, latest: `https://old.reddit.com/r/{subreddit}/.rss` and `https://old.reddit.com/r/{subreddit}/new/.rss`
+    - Site-wide search: `https://old.reddit.com/search.rss?q={term}&sort=new&t=month`
+    - Required: realistic browser User-Agent (e.g., `Mozilla/5.0 ...`), `Accept: application/rss+xml, application/atom+xml`, ≥2s delay between requests, max 1 in-flight request. Parse the Atom feed; permalinks are in `<link>`, post date is `<updated>` / `<published>`, author handle is `<author><name>` (strip `/u/`), body excerpt is the HTML in `<content>`. Engagement metrics are NOT in RSS — fetch the per-post `.json` (`{permalink}.json` on `old.reddit.com`) only for items that survive relevancy + freshness gates. Tag provenance as `source: "reddit-rss"`.
+    - On 429/403/503, drop to Layer 2.
+  - **Layer 2 — `old.reddit.com` HTML scrape (no auth):** Hit `https://old.reddit.com/r/{subreddit}/search?q={term}&restrict_sr=on&sort=new` and parse the result list. Old Reddit's markup is stable and not behind a JS wall. Same UA + ≥2s delay rules. Extract permalink (`a.search-title`), title, author (`a.author`), subreddit, posted-time (`time[datetime]`), and score/comment counts when shown. Tag provenance as `source: "reddit-html"`.
+    - Treat repeated 429/403 across ≥3 distinct subreddits as a hard block — stop hammering and drop to Layer 3.
+  - **Layer 3 — Google Programmable Search Engine (opt-in, free tier):** If `GOOGLE_PSE_KEY` and `GOOGLE_PSE_CX` are both present in `.env`, run `https://www.googleapis.com/customsearch/v1?key={GOOGLE_PSE_KEY}&cx={GOOGLE_PSE_CX}&q={term}+site:reddit.com&dateRestrict=m1`. Configure the Programmable Search Engine to search `reddit.com/*`. Catches threads in subreddits the user didn't list. Free tier = 100 queries/day. Map each result's `link` → reddit URL; tag provenance as `source: "reddit-google-pse"`. On 403 (quota) or missing creds, drop to Layer 4.
+  - **Layer 4 — Manual import (always available):** The `/scout-reddit-import` command lets the user paste a list of Reddit URLs. The agent fetches each `{permalink}.json` (or `old.reddit.com/{permalink}`) directly with browser UA + ≥2s delay and ingests them as items. Tag provenance as `source: "reddit-manual"`.
+  - **Optional pre-Layer-1 upgrade — OAuth2 app-only:** If `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and `REDDIT_USER_AGENT` are all present in `.env` AND the user has been approved by Reddit, prefer this path: `POST https://www.reddit.com/api/v1/access_token` (grant_type=client_credentials), then `https://oauth.reddit.com/search` and `https://oauth.reddit.com/r/{subreddit}/search` with `Authorization: Bearer {token}`. Honor Reddit's 60 req/min. Tag as `source: "reddit-oauth"`. **If app registration was denied under "Responsible Builder Policy", do not retry — leave creds blank and use Layers 1–4.**
+  - All layers respect the same Social Source Data Requirements (permalink, author handle, subreddit, post date, body excerpt, engagement metrics where available).
+  - Print which layer(s) ran at the start of the Reddit scan, e.g. `Reddit: old.reddit RSS (Layer 1) → 14 items; HTML fallback skipped`.
 - **Hacker News** -- Public Algolia API: `https://hn.algolia.com/api/v1/search_by_date?query={search-term}&tags=story`
 - **Bluesky** -- Authenticated via AT Protocol if credentials in config. Run searches for all text terms and hashtags.
 - **X/Twitter** -- Authenticated via bearer token if credentials in config. The $200/mo Basic plan is recommended for reliable scanning. Without a key, attempt best-effort scanning via `web/fetch` on public search pages, but note results may be incomplete or unavailable. If scanning fails without auth, skip X and note it in the "Sources That Could Not Be Reached" section.
@@ -328,7 +332,7 @@ When scanning sources via `web/fetch` or API calls, follow these rules to avoid 
 | YouTube | API key | Yes (free) | YouTube scanning skipped |
 | GitHub | No (unauthenticated) | — | Lower rate limits (60 req/hr). Add a `GITHUB_TOKEN` for 5000 req/hr |
 | Stack Overflow | No | — | Works fine (public API v2.3) |
-| Reddit | OAuth2 app credentials (optional) | Yes (free) | Falls back to public `.json` endpoint with browser User-Agent + ≥2s delays. Lower volume, 429-prone, but Reddit is never skipped solely for missing creds. |
+| Reddit | None required (cascading scanner) | Yes | Layer 1 = `old.reddit.com` RSS → Layer 2 = `old.reddit.com` HTML scrape → Layer 3 = Google PSE if `GOOGLE_PSE_KEY`+`GOOGLE_PSE_CX` set → Layer 4 = manual import via `/scout-reddit-import`. OAuth creds optional pre-Layer-1 upgrade. |
 | Hacker News | No | — | Works fine (Algolia API) |
 | Bluesky | App password | Yes (free) | Bluesky scanning skipped |
 | X/Twitter | Bearer token | $200/mo | Best-effort public scraping attempted; may fail. Reliable scanning requires paid API. |

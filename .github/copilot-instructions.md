@@ -25,6 +25,7 @@ Before any operation, read config files from `.github/prompts/scout-config-*.pro
 | scout keys | `.github/prompts/scout-keys.prompt.md` | Interactive setup for API credentials in `.env` (Reddit, Bluesky, X, YouTube, GitHub) |
 | scout replay | `.github/prompts/scout-replay.prompt.md` | Re-run filters/scoring against a saved scan with no API calls |
 | scout seo | `.github/prompts/scout-seo.prompt.md` | SEO audit + recommendations for one or more URLs |
+| scout reddit-import | `.github/prompts/scout-reddit-import.prompt.md` | Manually ingest Reddit URLs when automated layers are blocked |
 
 Read the corresponding prompt file for each command's detailed flow. Ignore VS Code frontmatter and `${{input:...}}` placeholders — ask users for inputs conversationally.
 

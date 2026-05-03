@@ -19,7 +19,7 @@ Select all or pick individually during onboarding.
 | 7 | C# Corner | Blog | None (RSS) | Search by keywords |
 | 8 | InfoQ | Blog | None (RSS) | Search by keywords |
 | 9 | Stack Overflow | Forum | None (public API v2.3, 300 req/day free) | Questions tagged with product terms |
-| 10 | Reddit | Forum | OAuth2 app credentials (free) | Posts in relevant subreddits. Register at reddit.com/prefs/apps |
+| 10 | Reddit | Forum | None required (cascading no-auth scanner) | Layered: `old.reddit.com` RSS → HTML scrape → [Google PSE](API-KEYS.md#google-pse) → manual import via `/scout-reddit-import`. OAuth creds optional pre-Layer-1 upgrade. |
 | 11 | Hacker News | Forum | None (public Algolia API) | Submissions and comments mentioning product |
 | 12 | Bluesky | Social | App password (free) | Authenticated search by product terms, hashtags, mentions |
 | 13 | LinkedIn | Social | None | Best-effort search by product name |
@@ -83,7 +83,7 @@ A bridge turns a non-RSS page (search results, profile pages, social posts) into
 | Google News for a topic | `https://news.google.com/rss/search?q=<query>&hl=en-US` |
 | A YouTube channel | `https://www.youtube.com/feeds/videos.xml?channel_id=<UC...>` |
 | A GitHub repo's releases | `https://github.com/<owner>/<repo>/releases.atom` |
-| A subreddit | `https://www.reddit.com/r/<sub>/.rss` |
+| A subreddit | `https://old.reddit.com/r/<sub>/.rss` |
 
 **4. Verify before adding.**
 Paste the URL into a browser. You should see XML (raw or styled). If you get HTML or a 404, it's not a valid feed.

@@ -36,7 +36,7 @@ Ignore VS Code frontmatter (`tools:`, `${{input:...}}`) — that's editor-specif
    - **Missing** — key not in file
    - **Likely invalid** — present but obviously malformed (wrong prefix, wrong length)
 
-   Known keys: `YOUTUBE_API_KEY`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT`, `BLUESKY_HANDLE`, `BLUESKY_APP_PASSWORD`, `X_BEARER_TOKEN`, `GITHUB_TOKEN` (optional), `SCOUT_WEBHOOK_URL` (optional).
+   Known keys: `YOUTUBE_API_KEY`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT`, `GOOGLE_PSE_KEY`, `GOOGLE_PSE_CX`, `BLUESKY_HANDLE`, `BLUESKY_APP_PASSWORD`, `X_BEARER_TOKEN`, `GITHUB_TOKEN` (optional), `SCOUT_WEBHOOK_URL` (optional).
 
 4. **Source reachability ping** — one cheap call per source with a present key:
    - Dev.to RSS — fetch `https://dev.to/feed`
@@ -44,7 +44,8 @@ Ignore VS Code frontmatter (`tools:`, `${{input:...}}`) — that's editor-specif
    - Stack Overflow — `https://api.stackexchange.com/2.3/info?site=stackoverflow`
    - GitHub — `GET /rate_limit` (uses token if present, else unauth)
    - YouTube — `videos.list` with `id=dQw4w9WgXcQ` (smallest possible call)
-   - Reddit — OAuth token fetch + `GET /api/v1/me`
+   - Reddit — OAuth token fetch + `GET /api/v1/me` if creds set; otherwise probe `https://old.reddit.com/r/programming/.rss` (Layer 1 reachability) and report status.
+   - Google PSE — if `GOOGLE_PSE_KEY` + `GOOGLE_PSE_CX` set, run a 1-result `customsearch/v1?q=test+site:reddit.com` and report quota status.
    - Bluesky — `createSession` (then revoke)
    - X — `users/me`
    - MS Learn MCP — list tools

@@ -87,6 +87,21 @@ const FORMAT = {
     if (v.length < 100) return { ok: false, message: `token looks truncated (${v.length} chars, expected ≥100)` };
     return { ok: true };
   },
+  GOOGLE_PSE_KEY(v) {
+    if (!v) return { ok: false, message: 'empty' };
+    if (!v.startsWith('AIza')) return { ok: false, message: 'Google API keys start with "AIza"' };
+    if (v.length !== 39) return { ok: false, message: `expected 39 chars, got ${v.length}` };
+    return { ok: true };
+  },
+  GOOGLE_PSE_CX(v) {
+    if (!v) return { ok: false, message: 'empty' };
+    // Programmable Search Engine IDs are typically 17–40 chars, alphanumeric
+    // with optional `:` separator (legacy format) or a single token.
+    if (!/^[a-z0-9:_-]{8,40}$/i.test(v)) {
+      return { ok: false, message: 'expected 8–40 alphanumeric chars (with optional `:`/`-`/`_`)' };
+    }
+    return { ok: true };
+  },
   SCOUT_WEBHOOK_URL(v) {
     if (!v) return { ok: false, message: 'empty' };
     try {
@@ -188,6 +203,25 @@ const REACH = {
   },
   async REDDIT_CLIENT_SECRET(env) { return REACH.REDDIT_CLIENT_ID(env); },
   async REDDIT_USER_AGENT(env) { return REACH.REDDIT_CLIENT_ID(env); },
+
+  async GOOGLE_PSE_KEY({ GOOGLE_PSE_KEY, GOOGLE_PSE_CX }) {
+    if (!GOOGLE_PSE_KEY) return { reachable: false, status: 0, message: 'no key set' };
+    if (!GOOGLE_PSE_CX) return { reachable: false, status: 0, message: 'GOOGLE_PSE_CX not set' };
+    const url = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(GOOGLE_PSE_KEY)}&cx=${encodeURIComponent(GOOGLE_PSE_CX)}&q=test+site:reddit.com&num=1`;
+    const r = await safeFetch(url);
+    if (!r.ok) return { reachable: false, status: 0, message: r.error };
+    if (r.status === 200) return { reachable: true, status: 200, message: 'customsearch.list returned 200' };
+    if (r.status === 403) {
+      const body = await r.res.text().catch(() => '');
+      return { reachable: false, status: 403, message: `Custom Search API not enabled or quota exhausted: ${body.slice(0, 200)}` };
+    }
+    if (r.status === 400) {
+      const body = await r.res.text().catch(() => '');
+      return { reachable: false, status: 400, message: `bad request — check CX value: ${body.slice(0, 200)}` };
+    }
+    return { reachable: false, status: r.status, message: `unexpected ${r.status}` };
+  },
+  async GOOGLE_PSE_CX(env) { return REACH.GOOGLE_PSE_KEY(env); },
 
   async X_BEARER_TOKEN({ X_BEARER_TOKEN }) {
     if (!X_BEARER_TOKEN) return { reachable: false, status: 0, message: 'no token set' };

@@ -169,7 +169,7 @@ const ENV_KEY_META = {
     anchor: 'youtube-data-api-v3',
   },
   REDDIT_CLIENT_ID: {
-    tip: 'Reddit OAuth2 client ID (free, OPTIONAL). Without it, Content Scout falls back to the public .json endpoint. Register a "script" app at reddit.com/prefs/apps for higher limits.',
+    tip: 'Reddit OAuth2 client ID (free, OPTIONAL). Reddit works without any creds via the layered no-auth scanner (old.reddit RSS → HTML → Google PSE → manual import). Add this only if Reddit approved your app.',
     anchor: 'reddit',
   },
   REDDIT_CLIENT_SECRET: {
@@ -179,6 +179,14 @@ const ENV_KEY_META = {
   REDDIT_USER_AGENT: {
     tip: 'User-Agent string Reddit requires on API calls. Any descriptive string works (e.g., "content-scout/1.0").',
     anchor: 'reddit',
+  },
+  GOOGLE_PSE_KEY: {
+    tip: 'Google API key for Programmable Search Engine (free, OPTIONAL). Enables Reddit Layer 3 — catches threads in subreddits you didn\'t list. 100 free queries/day.',
+    anchor: 'google-pse',
+  },
+  GOOGLE_PSE_CX: {
+    tip: 'Programmable Search Engine ID (cx). Restrict the engine to reddit.com/* at programmablesearchengine.google.com.',
+    anchor: 'google-pse',
   },
   BLUESKY_HANDLE: {
     tip: 'Your Bluesky handle (e.g., yourname.bsky.social). Bluesky has no API keys — scans authenticate AS your user via an app password.',

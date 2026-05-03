@@ -40,6 +40,7 @@ Users will request these operations using natural language. Map their requests t
 | "scout keys", "add API keys", "set up credentials", "add reddit creds", "add bluesky creds" | `.github/prompts/scout-keys.prompt.md` | Interactive credential setup that writes safely to `.env` and verifies reachability |
 | "scout replay", "replay scan", "re-run filters" | `.github/prompts/scout-replay.prompt.md` | Re-apply filters/scoring/sentiment to a saved scan with no API calls |
 | "scout seo", "audit SEO", "optimize this page", "SEO check" | `.github/prompts/scout-seo.prompt.md` | SEO audit and concrete rewrite recommendations for one or more URLs |
+| "scout reddit-import", "import reddit threads", "reddit fallback", "manual reddit" | `.github/prompts/scout-reddit-import.prompt.md` | Manually ingest Reddit URLs when automated layers are blocked |
 
 When reading prompt files, the `${{input:...}}` placeholders are VS Code syntax. Instead, ask the user for those inputs conversationally.
 
