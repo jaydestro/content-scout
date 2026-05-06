@@ -3,14 +3,16 @@ import { marked } from 'marked';
 import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { validateFormat, testReachability, listSupportedKeys } from './lib/key-checks.js';
-import { isValidSlug, isValidFilename, safeJoin } from './lib/security.js';
+import { isValidSlug, isValidFilename, safeJoin, redactSecrets } from './lib/security.js';
 import { validateRawConfig } from './lib/config-validator.js';
 import createSuggestionsRouter from './routes/suggestions.js';
 import { ROLE_PRESETS, renderConfigTemplate } from './lib/config-template.js';
 import { findMissingPrompts, findUnreferencedPrompts } from './lib/prompt-health.js';
+import { describeImage, formatVisionReport, probeVision, getVisionProvider } from './lib/vision.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -109,7 +111,20 @@ async function getRunner() {
 }
 
 const app = express();
-app.use(express.json({ limit: '2mb' }));
+// Global JSON parser (2 MB cap). Skip routes that mount their own body parser
+// with a different limit (e.g. /api/alt/upload uses 25 MB).
+const LARGE_BODY_ROUTES = new Set(['/api/alt/upload']);
+app.use((req, res, next) => {
+  if (LARGE_BODY_ROUTES.has(req.path)) return next();
+  return express.json({ limit: '2mb' })(req, res, next);
+});
+// JSON-format any body-parser errors so the client doesn't get HTML
+app.use((err, req, res, next) => {
+  if (err && err.type && /entity\.(too\.large|parse\.failed)/.test(err.type)) {
+    return res.status(err.status || 400).json({ error: err.message || 'bad request body' });
+  }
+  return next(err);
+});
 // Disable browser caching for the SPA assets so iterative dev changes are picked up.
 app.use((req, res, next) => {
   if (/\.(html|js|css)$/.test(req.path) || req.path === '/') {
@@ -128,12 +143,198 @@ app.use('/brand-assets', express.static(path.join(REPO_ROOT, 'social-posts', 'im
 
 // --- in-memory run log ---------------------------------------------
 const runs = new Map();
+// Bulk-run tracking. Each bulkId points at a record describing the original
+// command + slug, every URL submitted, and its per-URL outcome (the run id,
+// final status, and any produced social-posts/*.md file). When the last
+// queued run closes, we write a manifest file to social-posts/ so the user
+// can see at a glance which URLs got posts and which did NOT.
+const bulkRuns = new Map();
+
+// Scan a run's accumulated stdout/stderr for any path pointing into the
+// social-posts/ folder (e.g. "Wrote social-posts/2026-05-06-...-solo-foo.md").
+// Returns the unique paths in the order they were first mentioned.
+function extractSocialPostPaths(output) {
+  if (!output) return [];
+  const re = /social-posts[\\/][^\s)\]'"`<>]+\.md/gi;
+  const seen = new Set();
+  const out = [];
+  let m;
+  while ((m = re.exec(output)) !== null) {
+    const p = m[0].replace(/\\/g, '/');
+    if (!seen.has(p)) { seen.add(p); out.push(p); }
+  }
+  return out;
+}
+
+function pad2(n) { return n < 10 ? `0${n}` : `${n}`; }
+function bulkTimestamp(d = new Date()) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}`;
+}
+
+// Write a Markdown summary of a bulk run to social-posts/. The summary
+// is fully self-contained: every generated post is inlined into this one
+// file. We do NOT link to per-URL `social-posts/*.md` files because (a)
+// those files aren't always written by every variant of `/scout-post`
+// and (b) cross-file relative links don't resolve cleanly in every
+// markdown viewer the user might use. One file in, one file out.
+async function writeBulkSummary(bulkId) {
+  const bulk = bulkRuns.get(bulkId);
+  if (!bulk || bulk.summaryWritten) return;
+  bulk.summaryWritten = true;
+  const ts = bulkTimestamp(new Date(bulk.startedAt));
+  const slug = bulk.slug || 'unscoped';
+  const fname = `${ts}-${slug}-bulk-${bulk.command}-summary.md`;
+  const fpath = path.join(SOCIAL_DIR, fname);
+  // Pre-resolve the post body for every item so we can compute accurate
+  // success / missing counts up front (success now means "we have post
+  // body to show", regardless of where it came from).
+  const resolved = await Promise.all(bulk.items.map((item) => resolveItemPostBody(item)));
+  const successCount = resolved.filter((r) => r.body).length;
+  const missingCount = bulk.items.length - successCount;
+  const lines = [];
+  lines.push(`# Bulk \`/${bulk.command}\` — all posts`);
+  lines.push('');
+  lines.push(`- **Bulk id:** \`${bulkId}\``);
+  lines.push(`- **Subject:** ${slug}`);
+  lines.push(`- **Started:** ${bulk.startedAt}`);
+  lines.push(`- **Finished:** ${new Date().toISOString()}`);
+  lines.push(`- **URLs submitted:** ${bulk.items.length}`);
+  lines.push(`- **Posts generated:** ${successCount}`);
+  lines.push(`- **URLs without a post:** ${missingCount}`);
+  lines.push('');
+
+  // Quick index — links use intra-document anchors (#1-url) so they always
+  // work regardless of where the file is opened from.
+  lines.push('## Index');
+  lines.push('');
+  bulk.items.forEach((item, i) => {
+    const r = resolved[i];
+    const flag = r.body ? '✅' : '⚠️';
+    const anchor = `${i + 1}-${slugifyForAnchor(item.url)}`;
+    lines.push(`${i + 1}. ${flag} [${item.url}](#${anchor}) — ${item.status}`);
+  });
+  lines.push('');
+
+  if (missingCount > 0) {
+    lines.push('## URLs that did NOT produce a post');
+    lines.push('');
+    lines.push('| # | URL | Notes | Status | Reason |');
+    lines.push('| - | --- | ----- | ------ | ------ |');
+    bulk.items.forEach((item, i) => {
+      if (resolved[i].body) return;
+      const reason = item.status === 'success'
+        ? 'Run finished but no post content was detected in the output.'
+        : (item.error || `Run ended with status: ${item.status}.`);
+      const notes = (item.notes || '').replace(/\|/g, '\\|') || '_(none)_';
+      lines.push(`| ${i + 1} | <${item.url}> | ${notes} | ${item.status} | ${reason.replace(/\|/g, '\\|')} |`);
+    });
+    lines.push('');
+  }
+
+  // Inline every post into the same file. Headings inside the post body
+  // are demoted so they nest under each ### URL section without breaking
+  // the document outline.
+  lines.push('## Posts');
+  lines.push('');
+  for (let i = 0; i < bulk.items.length; i++) {
+    const item = bulk.items[i];
+    const r = resolved[i];
+    const anchor = `${i + 1}-${slugifyForAnchor(item.url)}`;
+    lines.push(`<a id="${anchor}"></a>`);
+    lines.push('');
+    lines.push(`### ${i + 1}. ${item.url}`);
+    lines.push('');
+    if (item.notes) {
+      lines.push(`> **Notes:** ${item.notes}`);
+      lines.push('');
+    }
+    if (!r.body) {
+      lines.push(`_(No post generated — status: ${item.status}${item.error ? `; ${item.error}` : ''}.)_`);
+      lines.push('');
+      lines.push('---');
+      lines.push('');
+      continue;
+    }
+    const demoted = r.body.replace(/^(#{1,4})\s/gm, (_m, hashes) => `${hashes}##`.slice(0, 6) + ' ');
+    lines.push(demoted.trimEnd());
+    lines.push('');
+    lines.push('---');
+    lines.push('');
+  }
+
+  try {
+    await fs.mkdir(SOCIAL_DIR, { recursive: true });
+    await fs.writeFile(fpath, lines.join('\n'), 'utf8');
+    bulk.summaryFile = `social-posts/${fname}`;
+  } catch (err) {
+    bulk.summaryError = err.message;
+  }
+}
+
+// Resolve the post body for a bulk item. Preference order:
+//   1. Read the per-URL `social-posts/*.md` file referenced in run output.
+//   2. Fall back to the largest markdown-shaped block in the run's stdout.
+//   3. Return an empty body, which the caller renders as "no post".
+async function resolveItemPostBody(item) {
+  // Try every captured file path in order; first one that reads wins.
+  for (const rel of item.posts || []) {
+    try {
+      const abs = path.join(REPO_ROOT, rel);
+      const body = await fs.readFile(abs, 'utf8');
+      if (body && body.trim()) return { body: body.trim(), source: 'file' };
+    } catch {
+      // fall through to next path / fallback
+    }
+  }
+  const fromOutput = extractPostFromOutput(item.output || '');
+  if (fromOutput) return { body: fromOutput, source: 'output' };
+  return { body: '', source: 'none' };
+}
+
+// Heuristic: pull a post-shaped markdown block out of raw run output so the
+// bulk summary still shows post copy even when the agent didn't write a
+// file. Looks for the section between the last "## " heading and the end
+// of output, falling back to a fenced markdown block if present.
+function extractPostFromOutput(output) {
+  if (!output || typeof output !== 'string') return '';
+  // Prefer the largest fenced ```markdown / ```md block.
+  const fenceRe = /```(?:markdown|md)?\s*\n([\s\S]*?)\n```/gi;
+  let bestFence = '';
+  let m;
+  while ((m = fenceRe.exec(output)) !== null) {
+    if (m[1] && m[1].length > bestFence.length) bestFence = m[1];
+  }
+  if (bestFence && bestFence.trim().length > 80) return bestFence.trim();
+  // Otherwise, grab from the first "## " heading onward, capped to keep
+  // the summary readable (post copy is rarely > 8 KB even with thumbnails).
+  const headingIdx = output.indexOf('\n## ');
+  if (headingIdx >= 0) {
+    const tail = output.slice(headingIdx + 1).trim();
+    if (tail.length > 80) return tail.slice(0, 8000);
+  }
+  return '';
+}
+
+// Lowercased, hyphenated, alphanumeric-only anchor slug for in-document
+// links in the bulk summary. Capped at 60 chars so anchors stay readable.
+function slugifyForAnchor(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/https?:\/\//, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60) || 'item';
+}
 
 function pushRunOutput(run, chunk) {
-  run.output += chunk;
+  // Always run terminal output through the secret redactor before storing
+  // or streaming. Defense-in-depth: even if a CLI prints a key, the UI and
+  // the persisted in-memory log will only ever see [REDACTED:KEY].
+  const safe = redactSecrets(chunk);
+  run.output += safe;
   for (const listener of run.listeners) {
     try {
-      listener.write(`data: ${JSON.stringify({ chunk })}\n\n`);
+      listener.write(`data: ${JSON.stringify({ chunk: safe })}\n\n`);
     } catch {}
   }
 }
@@ -148,6 +349,42 @@ function closeRun(run, status) {
     } catch {}
   }
   run.listeners.clear();
+  // Auto-render thumbnails for any run that produces a social-posts/*.md
+  // (scout-post bulk + solo, plus scout-scan when posts are auto-generated).
+  // Fire-and-forget so the SSE close above isn't delayed.
+  if (status === 'success' && (run.cmdName === 'scout-post' || run.cmdName === 'scout-scan')) {
+    autoRenderThumbnails(run).catch(() => {});
+  }
+}
+
+// Spawn `node tools/render-thumbnails/index.js` to produce LinkedIn (1200x1200)
+// + X (1600x900) PNGs for every `**Thumbnail spec:**` block in the newest
+// social-posts markdown file. Output is appended to the originating run log
+// so the user sees it in the Operations drawer / Run view.
+async function autoRenderThumbnails(run) {
+  const renderer = path.join(REPO_ROOT, 'tools', 'render-thumbnails', 'index.js');
+  try {
+    await fs.access(renderer);
+  } catch {
+    return; // renderer not installed — silently skip
+  }
+  pushRunOutput(run, `\n[scout-web] Auto-rendering thumbnails (LinkedIn 1200x1200 + X 1600x900) from the newest social-posts/*.md…\n`);
+  const child = spawn(process.execPath, [renderer], {
+    cwd: REPO_ROOT,
+    env: process.env,
+  });
+  child.stdout.on('data', (d) => pushRunOutput(run, `[thumbnails] ${d.toString()}`));
+  child.stderr.on('data', (d) => pushRunOutput(run, `[thumbnails] ${d.toString()}`));
+  await new Promise((resolve) => {
+    child.on('close', (code) => {
+      pushRunOutput(run, `[scout-web] Thumbnail render exited ${code}\n`);
+      resolve();
+    });
+    child.on('error', (err) => {
+      pushRunOutput(run, `[scout-web] Thumbnail render failed: ${err.message}\n`);
+      resolve();
+    });
+  });
 }
 
 // --- helpers -------------------------------------------------------
@@ -678,6 +915,150 @@ app.get('/api/reports', async (_req, res) => {
     reports: await listMarkdownFiles(REPORTS_DIR),
     social: await listMarkdownFiles(SOCIAL_DIR),
   });
+});
+
+// Convenience alias: just the social-posts/ markdown files.
+// (The dashboard previously fetched this directly and silently 404'd, which
+// was why the "Social posts" stat was always 0.)
+app.get('/api/social', async (_req, res) => {
+  res.json({ posts: await listMarkdownFiles(SOCIAL_DIR) });
+});
+
+// Count rendered thumbnail PNGs grouped by their YYYY-MM-DD-HHmm batch
+// directory. Skips the brand/logo asset folder. Used by /api/activity so
+// the dashboard can show "thumbnails generated" alongside reports + posts.
+async function listThumbnailBatches() {
+  const root = path.join(SOCIAL_DIR, 'images');
+  let entries = [];
+  try {
+    entries = await fs.readdir(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const ent of entries) {
+    if (!ent.isDirectory()) continue;
+    if (ent.name === 'brand') continue;
+    const dir = path.join(root, ent.name);
+    let pngs = [];
+    try {
+      pngs = (await fs.readdir(dir)).filter((f) => f.toLowerCase().endsWith('.png'));
+    } catch { continue; }
+    if (!pngs.length) continue;
+    let mtime = null;
+    try {
+      const st = await fs.stat(dir);
+      mtime = st.mtime.toISOString();
+    } catch {}
+    out.push({ batch: ent.name, count: pngs.length, mtime });
+  }
+  return out.sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''));
+}
+
+// Unified dashboard feed: real totals + a single time-sorted activity stream
+// that mixes reports, social posts, posting calendars, thumbnail batches, and
+// recent runs. The "doesn't truly represent what's been done" complaint is
+// solved here — no more cards-of-counts that ignore half the work.
+app.get('/api/activity', async (_req, res) => {
+  const [reportFiles, socialFiles, thumbBatches] = await Promise.all([
+    listMarkdownFiles(REPORTS_DIR),
+    listMarkdownFiles(SOCIAL_DIR),
+    listThumbnailBatches(),
+  ]);
+
+  const reports = reportFiles.filter((f) => /-content\.md$/.test(f.name));
+  const calendars = socialFiles.filter((f) => /-posting-calendar\.md$/.test(f.name));
+  const trends = reportFiles.filter((f) => /-trends\.md$/.test(f.name));
+  const altText = socialFiles.filter((f) => /-alt-/.test(f.name));
+  const soloPosts = socialFiles.filter((f) => /-solo[-.]/.test(f.name));
+  const bulkPosts = socialFiles.filter(
+    (f) =>
+      /-social-posts\.md$/.test(f.name) &&
+      !/-posting-calendar\.md$/.test(f.name)
+  );
+  const otherSocial = socialFiles.filter(
+    (f) =>
+      !calendars.some((c) => c.name === f.name) &&
+      !altText.some((a) => a.name === f.name) &&
+      !soloPosts.some((s) => s.name === f.name) &&
+      !bulkPosts.some((b) => b.name === f.name)
+  );
+
+  const totals = {
+    reports: reports.length,
+    socialBulk: bulkPosts.length,
+    socialSolo: soloPosts.length,
+    calendars: calendars.length,
+    trends: trends.length,
+    altText: altText.length,
+    thumbnailBatches: thumbBatches.length,
+    thumbnailImages: thumbBatches.reduce((n, b) => n + b.count, 0),
+    runs: runs.size,
+  };
+
+  const lastByName = (arr) => (arr[0] && arr[0].mtime) || null;
+  const last = {
+    scan: lastByName(reports),
+    socialBulk: lastByName(bulkPosts),
+    socialSolo: lastByName(soloPosts),
+    calendar: lastByName(calendars),
+    thumbnails: thumbBatches[0]?.mtime || null,
+    altText: lastByName(altText),
+    trends: lastByName(trends),
+  };
+
+  // Build the unified activity stream.
+  const slugFromFile = (name) => {
+    // Pattern: YYYY-MM-DD-HHmm-{slug}-{kind}.md  or  …-{slug}-solo-…
+    const m = name.match(/^\d{4}-\d{2}-\d{2}-\d{4}-(.+?)-(content|social-posts|posting-calendar|trends|solo|alt)/);
+    return m ? m[1] : '';
+  };
+  const stream = [];
+  const push = (kind, label, item, extra = {}) =>
+    stream.push({
+      kind,
+      label,
+      name: item.name || extra.name || '',
+      mtime: item.mtime,
+      slug: extra.slug ?? slugFromFile(item.name || ''),
+      href: extra.href || null,
+      ...extra,
+    });
+
+  for (const r of reports) push('report', 'Scan report', r, { href: `#reports?file=${encodeURIComponent(r.name)}` });
+  for (const s of bulkPosts) push('social-bulk', 'Social posts (bulk)', s, { href: `#social?file=${encodeURIComponent(s.name)}` });
+  for (const s of soloPosts) push('social-solo', 'Social posts (solo)', s, { href: `#social?file=${encodeURIComponent(s.name)}` });
+  for (const c of calendars) push('calendar', 'Posting calendar', c, { href: `#social?file=${encodeURIComponent(c.name)}` });
+  for (const t of trends) push('trends', 'Trends report', t, { href: `#reports?file=${encodeURIComponent(t.name)}` });
+  for (const a of altText) push('alt', 'Alt text', a, { href: `#social?file=${encodeURIComponent(a.name)}` });
+  for (const o of otherSocial) push('social-other', 'Social file', o, { href: `#social?file=${encodeURIComponent(o.name)}` });
+  for (const b of thumbBatches) {
+    stream.push({
+      kind: 'thumbnails',
+      label: 'Thumbnails rendered',
+      name: b.batch,
+      mtime: b.mtime,
+      slug: '',
+      href: null,
+      count: b.count,
+    });
+  }
+  for (const r of [...runs.values()]) {
+    stream.push({
+      kind: 'run',
+      label: r.cmdName ? `/${r.cmdName} run` : 'Run',
+      name: r.cmdName || r.command,
+      mtime: r.finishedAt || r.startedAt,
+      slug: '',
+      href: null,
+      status: r.status,
+      runId: r.id,
+    });
+  }
+
+  stream.sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''));
+
+  res.json({ totals, last, activity: stream.slice(0, 25) });
 });
 
 // --- Action items: parse the latest content report per subject ----
@@ -1370,12 +1751,43 @@ app.get('/api/runs', (_req, res) => {
     .map((r) => ({
       id: r.id,
       status: r.status,
-      command: r.command,
+      command: redactSecrets(r.command),
       startedAt: r.startedAt,
       finishedAt: r.finishedAt,
+      bulkId: r.bulkId || null,
+      bulkLabel: r.bulkLabel || null,
     }))
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-  res.json({ runs: list });
+  // Lightweight bulk index so the UI can render a single parent
+  // "operation" per bulk submission and group its child runs under it.
+  // The bulk is considered done only once every child has finished.
+  const bulks = [...bulkRuns.values()].map((b) => {
+    const total = b.items.length;
+    const done = b.items.filter((i) => i.status && i.status !== 'running' && i.status !== 'queued').length;
+    const failed = b.items.filter((i) => i.status === 'error' || i.status === 'cancelled').length;
+    const running = b.items.filter((i) => i.status === 'running').length;
+    let status;
+    if (b.cancelled && done < total) status = 'running'; // still draining
+    else if (done < total) status = 'running';
+    else if (failed > 0) status = 'error';
+    else status = 'success';
+    return {
+      bulkId: b.bulkId,
+      command: b.command,
+      slug: b.slug || null,
+      concurrency: b.concurrency || 1,
+      startedAt: b.startedAt,
+      total,
+      done,
+      failed,
+      running,
+      pending: b.pending,
+      cancelled: !!b.cancelled,
+      status,
+      summaryFile: b.summaryFile || null,
+    };
+  }).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  res.json({ runs: list, bulks });
 });
 
 app.get('/api/runs/:id', (req, res) => {
@@ -1384,7 +1796,7 @@ app.get('/api/runs/:id', (req, res) => {
   res.json({
     id: run.id,
     status: run.status,
-    command: run.command,
+    command: redactSecrets(run.command),
     startedAt: run.startedAt,
     finishedAt: run.finishedAt,
     output: run.output,
@@ -1402,51 +1814,599 @@ function buildPrompt(command, args = {}) {
   return parts.join(' ');
 }
 
+// --- Image upload for /scout-alt ----------------------------------
+// Accepts a base64-encoded image plus filename, writes it to
+// social-posts/images/{YYYY-MM-DD}/{timestamp}-{safe-name}.{ext}, and returns
+// the workspace-relative path so the agent can read it from disk. Localhost
+// only (server already binds loopback by default); 25 MB cap.
+const ALT_IMAGES_ROOT = path.join(REPO_ROOT, 'social-posts', 'images');
+const ALT_ALLOWED_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.avif']);
+
+function safeImageName(rawName) {
+  const base = String(rawName || 'image').split(/[\\/]/).pop() || 'image';
+  // strip everything except letters, numbers, dot, dash, underscore
+  const cleaned = base.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
+  const finalName = cleaned || 'image';
+  const ext = path.extname(finalName).toLowerCase();
+  return { name: finalName, ext };
+}
+
+app.post('/api/alt/upload', express.json({ limit: '25mb' }), async (req, res) => {
+  try {
+    const { filename, dataBase64 } = req.body || {};
+    if (!filename || typeof filename !== 'string') {
+      return res.status(400).json({ error: 'filename required' });
+    }
+    if (!dataBase64 || typeof dataBase64 !== 'string') {
+      return res.status(400).json({ error: 'dataBase64 required' });
+    }
+    const { name, ext } = safeImageName(filename);
+    if (!ALT_ALLOWED_EXT.has(ext)) {
+      return res.status(400).json({ error: `unsupported extension: ${ext || '(none)'}` });
+    }
+    // strip optional data URL prefix
+    const stripped = dataBase64.replace(/^data:[^;]+;base64,/, '');
+    const buf = Buffer.from(stripped, 'base64');
+    if (buf.length === 0) return res.status(400).json({ error: 'empty image' });
+    if (buf.length > 25 * 1024 * 1024) return res.status(413).json({ error: 'image too large (>25MB)' });
+
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const dayDir = `${yyyy}-${mm}-${dd}`;
+    const targetDir = path.join(ALT_IMAGES_ROOT, dayDir);
+    await fs.mkdir(targetDir, { recursive: true });
+
+    const stamp = Date.now().toString(36);
+    const finalName = `${stamp}-${name}`;
+    const absPath = path.join(targetDir, finalName);
+    // safety: ensure resolved path stays inside ALT_IMAGES_ROOT
+    if (!absPath.startsWith(ALT_IMAGES_ROOT + path.sep)) {
+      return res.status(400).json({ error: 'invalid path' });
+    }
+    await fs.writeFile(absPath, buf);
+
+    const relPath = path.relative(REPO_ROOT, absPath).split(path.sep).join('/');
+    const previewUrl = `/brand-assets/${dayDir}/${finalName}`;
+    res.json({ relativePath: relPath, previewUrl, bytes: buf.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Vision (image describe) for /scout-alt -----------------------
+async function readEnvObject() {
+  const { raw } = await readEnvRaw();
+  const entries = parseEnv(raw);
+  const out = { ...process.env };
+  for (const { key, value } of entries) {
+    if (out[key] === undefined || out[key] === '') out[key] = value;
+  }
+  return out;
+}
+
+app.get('/api/alt/vision-status', async (_req, res) => {
+  try {
+    const env = await readEnvObject();
+    const status = await probeVision(env);
+    res.json(status);
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+// Read/write the small set of vision-related keys without disturbing the rest of .env.
+app.get('/api/vision/config', async (_req, res) => {
+  try {
+    const { raw } = await readEnvRaw();
+    const map = Object.fromEntries(parseEnv(raw).map((e) => [e.key, e.value]));
+    res.json({
+      provider: (map.VISION_PROVIDER || 'none').toLowerCase(),
+      ollamaHost: map.OLLAMA_HOST || '',
+      ollamaModel: map.OLLAMA_VISION_MODEL || '',
+      openaiModel: map.OPENAI_VISION_MODEL || '',
+      hasOpenaiKey: !!map.OPENAI_API_KEY,
+      customBaseUrl: map.CUSTOM_VISION_BASE_URL || '',
+      customModel: map.CUSTOM_VISION_MODEL || '',
+      customAuthStyle: (map.CUSTOM_VISION_AUTH_STYLE || 'bearer').toLowerCase(),
+      hasCustomKey: !!map.CUSTOM_VISION_API_KEY,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/vision/config', express.json(), async (req, res) => {
+  const body = req.body || {};
+  const provider = String(body.provider || 'none').toLowerCase();
+  if (!['none', 'ollama', 'openai', 'custom'].includes(provider)) {
+    return res.status(400).json({ error: 'provider must be none|ollama|openai|custom' });
+  }
+  const authStyle = body.customAuthStyle === 'api-key' ? 'api-key' : 'bearer';
+  const updates = {
+    VISION_PROVIDER: provider === 'none' ? '' : provider,
+    OLLAMA_HOST: typeof body.ollamaHost === 'string' ? body.ollamaHost.trim() : undefined,
+    OLLAMA_VISION_MODEL: typeof body.ollamaModel === 'string' ? body.ollamaModel.trim() : undefined,
+    OPENAI_VISION_MODEL: typeof body.openaiModel === 'string' ? body.openaiModel.trim() : undefined,
+    CUSTOM_VISION_BASE_URL: typeof body.customBaseUrl === 'string' ? body.customBaseUrl.trim() : undefined,
+    CUSTOM_VISION_MODEL: typeof body.customModel === 'string' ? body.customModel.trim() : undefined,
+    CUSTOM_VISION_AUTH_STYLE: typeof body.customAuthStyle === 'string' ? authStyle : undefined,
+  };
+  // Only persist secret keys if explicitly provided (allow blank to leave alone).
+  if (typeof body.openaiApiKey === 'string' && body.openaiApiKey.length > 0) {
+    updates.OPENAI_API_KEY = body.openaiApiKey.trim();
+  }
+  if (typeof body.customApiKey === 'string' && body.customApiKey.length > 0) {
+    updates.CUSTOM_VISION_API_KEY = body.customApiKey.trim();
+  }
+  for (const [k, v] of Object.entries(updates)) {
+    if (v === undefined) continue;
+    if (/[\r\n]/.test(v)) return res.status(400).json({ error: `value for ${k} contains a newline` });
+  }
+  try {
+    const { raw } = await readEnvRaw();
+    const entries = parseEnv(raw);
+    const seen = new Set();
+    const next = [];
+    for (const { key, value } of entries) {
+      if (Object.prototype.hasOwnProperty.call(updates, key)) {
+        seen.add(key);
+        const v = updates[key];
+        if (v === undefined) { next.push({ key, value }); continue; }
+        if (v === '') continue; // drop the row entirely when cleared
+        next.push({ key, value: v });
+      } else {
+        next.push({ key, value });
+      }
+    }
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === undefined || value === '' || seen.has(key)) continue;
+      next.push({ key, value });
+    }
+    await fs.writeFile(ENV_FILE, serializeEnv(next), 'utf8');
+    res.json({ ok: true, provider });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Recommended Ollama vision models surfaced to the UI
+const OLLAMA_VISION_MODELS = [
+  { name: 'llama3.2-vision', size: '~8 GB', note: 'best balance — recommended for charts & diagrams' },
+  { name: 'moondream', size: '~2 GB', note: 'small & fast, great for screenshots' },
+  { name: 'llava', size: '~5 GB', note: 'classic multimodal, broad compatibility' },
+  { name: 'qwen2.5vl:7b', size: '~5 GB', note: 'strong on text-in-image / OCR' },
+  { name: 'bakllava', size: '~5 GB', note: 'alternative to llava' },
+];
+
+app.get('/api/vision/ollama-models', (_req, res) => {
+  res.json({ models: OLLAMA_VISION_MODELS });
+});
+
+// Ollama pull progress: start a pull and stream JSONL via SSE.
+const ollamaPulls = new Map(); // model -> { lines: string[], done: boolean, error?: string, startedAt }
+
+app.post('/api/vision/ollama-pull', express.json(), async (req, res) => {
+  const model = String(req.body?.model || '').trim();
+  if (!/^[a-z0-9._:\-/]+$/i.test(model) || model.length > 80) {
+    return res.status(400).json({ error: 'invalid model name' });
+  }
+  if (ollamaPulls.get(model)?.done === false) {
+    return res.json({ ok: true, alreadyRunning: true });
+  }
+  const host = (process.env.OLLAMA_HOST || 'http://localhost:11434').replace(/\/+$/, '');
+  const state = { lines: [], done: false, startedAt: Date.now() };
+  ollamaPulls.set(model, state);
+  // Use Ollama's HTTP API (no shell) so we don't depend on the CLI being on PATH.
+  (async () => {
+    try {
+      const r = await fetch(`${host}/api/pull`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: model, stream: true }),
+      });
+      if (!r.ok || !r.body) {
+        state.error = `Ollama pull returned ${r.status}`;
+        state.done = true;
+        return;
+      }
+      const reader = r.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const parts = buf.split('\n');
+        buf = parts.pop();
+        for (const line of parts) {
+          if (!line.trim()) continue;
+          state.lines.push(line);
+          if (state.lines.length > 500) state.lines.splice(0, state.lines.length - 500);
+        }
+      }
+      state.done = true;
+    } catch (err) {
+      state.error = err.message;
+      state.done = true;
+    }
+  })();
+  res.json({ ok: true, model });
+});
+
+app.get('/api/vision/ollama-pull/status', (req, res) => {
+  const model = String(req.query?.model || '').trim();
+  const state = ollamaPulls.get(model);
+  if (!state) return res.json({ exists: false });
+  // Parse the last JSONL line for a human-friendly status
+  let last = null;
+  for (let i = state.lines.length - 1; i >= 0; i--) {
+    try { last = JSON.parse(state.lines[i]); break; } catch { /* skip */ }
+  }
+  let percent = null;
+  if (last && typeof last.completed === 'number' && typeof last.total === 'number' && last.total > 0) {
+    percent = Math.round((last.completed / last.total) * 100);
+  }
+  res.json({
+    exists: true,
+    done: state.done,
+    error: state.error || null,
+    status: last?.status || null,
+    percent,
+    elapsedSec: Math.round((Date.now() - state.startedAt) / 1000),
+  });
+});
+
+app.post('/api/alt/describe', express.json({ limit: '256kb' }), async (req, res) => {
+  try {
+    const { relativePath } = req.body || {};
+    if (!relativePath || typeof relativePath !== 'string') {
+      return res.status(400).json({ error: 'relativePath required' });
+    }
+    const abs = path.resolve(REPO_ROOT, relativePath);
+    if (!abs.startsWith(ALT_IMAGES_ROOT + path.sep)) {
+      return res.status(400).json({ error: 'path must be under social-posts/images/' });
+    }
+    try { await fs.access(abs); } catch {
+      return res.status(404).json({ error: 'file not found' });
+    }
+    const env = await readEnvObject();
+    if (getVisionProvider(env) === 'none') {
+      return res.status(400).json({ error: 'No vision provider configured. Set VISION_PROVIDER=ollama|openai in .env.' });
+    }
+    const report = await describeImage(abs, env);
+    res.json({ report, formatted: formatVisionReport(report) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/runs', async (req, res) => {
   const { command, args } = req.body || {};
   if (!command || typeof command !== 'string') {
     return res.status(400).json({ error: 'command required' });
   }
+  const result = await startRunInternal(command, args || {});
+  if (result.error) return res.status(result.status || 400).json(result.error);
+  res.json({ id: result.id, command: result.commandLine, prompt: result.prompt });
+});
+
+// Internal helper extracted so /api/runs and /api/runs/bulk can share spawn
+// logic. Returns { id, commandLine, prompt } on success or { error, status }.
+async function startRunInternal(command, args, opts = {}) {
   const prompt = buildPrompt(command, args || {});
   const { runner } = await getRunner();
-
   if (!runner) {
-    return res.status(400).json({
-      error: 'No agent configured. Pick one on the Setup view, or set SCOUT_RUNNER env var. You can also copy the prompt and run it manually.',
-      prompt,
-    });
+    return {
+      error: {
+        error: 'No agent configured. Pick one on the Setup view, or set SCOUT_RUNNER env var. You can also copy the prompt and run it manually.',
+        prompt,
+      },
+      status: 400,
+    };
   }
-
   const id = randomUUID();
-  const commandLine = runner.replace('{prompt}', prompt);
+  const MAX_INLINE_CMD = 1500;
+  const inlineCmd = runner.replace('{prompt}', prompt);
+  let commandLine = inlineCmd;
+  let usedStdin = false;
+  if (inlineCmd.length > MAX_INLINE_CMD && runner.includes('{prompt}')) {
+    const stripped = runner
+      .replace(/\s*(?:-p|--prompt|exec)\s+["']?\{prompt\}["']?/, '')
+      .replace(/\s*["']?\{prompt\}["']?/, '')
+      .trim();
+    commandLine = stripped;
+    usedStdin = true;
+  }
   const run = {
     id,
     status: 'running',
     command: commandLine,
+    cmdName: command,
     startedAt: new Date().toISOString(),
     finishedAt: null,
     output: '',
     listeners: new Set(),
+    promptFile: null,
+    bulkId: opts.bulkId || null,
+    bulkLabel: opts.bulkLabel || null,
   };
   runs.set(id, run);
-
+  if (usedStdin) {
+    pushRunOutput(run, `[scout-web] Prompt is ${prompt.length} chars (>${MAX_INLINE_CMD}) — piping via the child process's stdin to avoid the OS command-line length limit.\n[scout-web] Spawning: ${commandLine}\n`);
+  }
+  if (opts.bulkLabel) {
+    pushRunOutput(run, `[scout-web] Bulk run — item: ${opts.bulkLabel}\n`);
+  }
   const child = spawn(commandLine, {
     shell: true,
     cwd: REPO_ROOT,
     env: process.env,
+    stdio: ['pipe', 'pipe', 'pipe'],
   });
   run.child = child;
+  if (usedStdin) {
+    try {
+      child.stdin.write(prompt);
+      child.stdin.write('\n');
+      child.stdin.end();
+    } catch (err) {
+      pushRunOutput(run, `\n[scout-web] Failed to write prompt to stdin: ${err.message}\n`);
+    }
+  }
   child.stdout.on('data', (d) => pushRunOutput(run, d.toString()));
   child.stderr.on('data', (d) => pushRunOutput(run, d.toString()));
-  child.on('close', (code) => { run.child = null; closeRun(run, code === 0 ? 'success' : `exited ${code}`); });
+  const cleanupPromptFile = () => {
+    if (run.promptFile) {
+      fs.unlink(run.promptFile).catch(() => {});
+      run.promptFile = null;
+    }
+  };
+  child.on('close', (code) => {
+    run.child = null;
+    cleanupPromptFile();
+    closeRun(run, code === 0 ? 'success' : `exited ${code}`);
+    if (opts.onClose) {
+      try { opts.onClose(run); } catch {}
+    }
+  });
   child.on('error', (err) => {
     pushRunOutput(run, `\n[runner error] ${err.message}\n`);
     run.child = null;
+    cleanupPromptFile();
     closeRun(run, 'error');
+    if (opts.onClose) {
+      try { opts.onClose(run); } catch {}
+    }
   });
+  return { id, commandLine, prompt };
+}
 
-  res.json({ id, command: commandLine, prompt });
+// Allowed bulk commands — these are the ones that take a single URL or
+// per-item input, so running them once-per-URL makes sense.
+const BULK_COMMANDS = new Set(['scout-post', 'scout-seo', 'scout-reddit-import', 'scout-alt']);
+
+// Bulk URL submission. Body: { command, slug, urls: [string], extra?, range? }
+// Spawns one /command run per URL **sequentially** (not in parallel) so the
+// underlying agent doesn't race file writes or rate-limit itself. Returns
+// the list of accepted URLs immediately; clients track progress via the
+// existing /api/runs queue UI.
+app.post('/api/runs/bulk', express.json({ limit: '512kb' }), async (req, res) => {
+  const { command, slug, urls, extra, range, concurrency } = req.body || {};
+  if (!command || typeof command !== 'string' || !BULK_COMMANDS.has(command)) {
+    return res.status(400).json({
+      error: `bulk runs supported only for: ${[...BULK_COMMANDS].join(', ')}`,
+    });
+  }
+  if (!Array.isArray(urls) || !urls.length) {
+    return res.status(400).json({ error: 'urls (non-empty array) required' });
+  }
+  // Sanitize entries: accept either a plain URL string or a { url, notes }
+  // object. Keep http(s) only, dedupe by URL, cap URL/notes length to avoid
+  // abuse. Notes are appended to each URL's prompt so the agent treats them
+  // as guidance for the generated post (tone, audience, angle, etc.).
+  const NOTES_MAX = 500;
+  const sanitizeNotes = (raw) => {
+    if (typeof raw !== 'string') return '';
+    // Strip control chars + collapse whitespace; trim; cap.
+    const cleaned = raw.replace(/[\x00-\x1f\x7f]+/g, ' ').replace(/\s+/g, ' ').trim();
+    return cleaned.length > NOTES_MAX ? cleaned.slice(0, NOTES_MAX) : cleaned;
+  };
+  const seen = new Set();
+  const cleaned = [];
+  for (const raw of urls) {
+    let url;
+    let notes = '';
+    if (typeof raw === 'string') {
+      url = raw;
+    } else if (raw && typeof raw === 'object') {
+      url = raw.url;
+      notes = sanitizeNotes(raw.notes);
+    } else {
+      continue;
+    }
+    if (typeof url !== 'string') continue;
+    const u = url.trim();
+    if (!u) continue;
+    if (!/^https?:\/\//i.test(u)) continue;
+    if (u.length > 2048) continue;
+    if (seen.has(u)) continue;
+    seen.add(u);
+    cleaned.push({ url: u, notes });
+  }
+  if (!cleaned.length) {
+    return res.status(400).json({ error: 'no valid http(s) URLs found' });
+  }
+  if (cleaned.length > 100) {
+    return res.status(400).json({ error: 'bulk run capped at 100 URLs per submission' });
+  }
+  const safeExtra = typeof extra === 'string' ? extra.trim() : '';
+  const safeRange = typeof range === 'string' ? range.trim() : '';
+  const safeSlug = typeof slug === 'string' && isValidSlug(slug) ? slug : '';
+  // Concurrency: how many agent subprocesses to run side-by-side. Each
+  // worker is an independent /scout-* invocation, so this gives genuine
+  // parallelism (separate Node + agent processes, separate network
+  // sockets). Capped to keep CPU/RAM/API-rate-limit usage sane.
+  const MAX_CONCURRENCY = 6;
+  const reqConc = Number(concurrency);
+  const safeConcurrency = Number.isFinite(reqConc) && reqConc >= 1
+    ? Math.min(MAX_CONCURRENCY, Math.floor(reqConc))
+    : 1;
+  const bulkId = randomUUID();
+  const accepted = [];
+
+  // Pre-seed the bulk record so we can update each item as runs close.
+  // Items keep insertion order so the summary table mirrors the input list.
+  const bulkRecord = {
+    bulkId,
+    command,
+    slug: safeSlug,
+    concurrency: safeConcurrency,
+    startedAt: new Date().toISOString(),
+    items: cleaned.map(({ url, notes }) => ({
+      url,
+      notes,
+      runId: null,
+      status: 'queued',
+      posts: [],
+      output: '',
+      error: null,
+    })),
+    pending: cleaned.length,
+    summaryWritten: false,
+    summaryFile: null,
+  };
+  bulkRuns.set(bulkId, bulkRecord);
+
+  const finalizeItem = (item, run) => {
+    item.status = run ? run.status : 'error';
+    item.posts = run ? extractSocialPostPaths(run.output) : [];
+    // Capture the (already-redacted) run output so the bulk summary can
+    // inline the post body even if no `social-posts/*.md` file was written
+    // — and so the bulk report is fully self-contained (no cross-file
+    // links that may or may not resolve in the user's markdown viewer).
+    item.output = run ? (run.output || '') : '';
+    if (run && run.status !== 'success' && !item.error) {
+      item.error = `Run exited with status: ${run.status}`;
+    }
+    bulkRecord.pending = Math.max(0, bulkRecord.pending - 1);
+    if (bulkRecord.pending === 0) {
+      writeBulkSummary(bulkId).catch(() => {});
+    }
+  };
+
+  let cursor = 0;
+  const startNext = async () => {
+    if (bulkRecord.cancelled) {
+      // User pressed Stop. Mark every still-queued item as cancelled and
+      // finalize the bulk run so the summary file gets written.
+      for (let i = cursor; i < bulkRecord.items.length; i++) {
+        const it = bulkRecord.items[i];
+        it.status = 'cancelled';
+        it.error = 'Cancelled before start (Stop pressed).';
+        bulkRecord.pending = Math.max(0, bulkRecord.pending - 1);
+      }
+      cursor = bulkRecord.items.length;
+      if (bulkRecord.pending === 0) {
+        writeBulkSummary(bulkId).catch(() => {});
+      }
+      return;
+    }
+    if (cursor >= bulkRecord.items.length) return;
+    const item = bulkRecord.items[cursor++];
+    // Notes (if any) are surfaced to the agent as a labelled trailing
+    // segment so it's clear they are guidance for shaping the post — not
+    // additional URLs or unrelated args.
+    const noteSegment = item.notes ? `Notes: ${item.notes}` : '';
+    const args = {
+      slug: safeSlug,
+      extra: [safeRange, item.url, safeExtra, noteSegment].filter(Boolean).join(' '),
+    };
+    const r = await startRunInternal(command, args, {
+      bulkId,
+      bulkLabel: item.url,
+      onClose: (run) => {
+        finalizeItem(item, run);
+        startNext().catch(() => {});
+      },
+    });
+    if (r.error) {
+      // Skip this URL and continue with the next so one bad URL doesn't
+      // stall the whole queue. Record the failure so the manifest reports it.
+      item.status = 'error';
+      item.error = (r.error && r.error.error) || 'Failed to start run.';
+      bulkRecord.pending = Math.max(0, bulkRecord.pending - 1);
+      if (bulkRecord.pending === 0) {
+        writeBulkSummary(bulkId).catch(() => {});
+      }
+      startNext().catch(() => {});
+      return;
+    }
+    item.runId = r.id;
+    item.status = 'running';
+    accepted.push({ url: item.url, runId: r.id });
+  };
+
+  // Kick off `safeConcurrency` workers in parallel. Each worker calls
+  // startNext() on close, which pulls the next pending item off the shared
+  // cursor — so workers stay saturated until the queue drains. With
+  // concurrency=1 this is identical to the old sequential behavior.
+  const initial = Math.min(safeConcurrency, bulkRecord.items.length);
+  await Promise.all(Array.from({ length: initial }, () => startNext().catch(() => {})));
+
+  res.json({
+    bulkId,
+    command,
+    queued: cleaned.length,
+    concurrency: safeConcurrency,
+    urls: cleaned.map((c) => c.url),
+  });
 });
+
+// Inspect a bulk run (per-URL status + final summary file once written).
+app.get('/api/runs/bulk/:id', (req, res) => {
+  const bulk = bulkRuns.get(req.params.id);
+  if (!bulk) return res.status(404).json({ error: 'not found' });
+  res.json({
+    bulkId: bulk.bulkId,
+    command: bulk.command,
+    slug: bulk.slug,
+    concurrency: bulk.concurrency || 1,
+    startedAt: bulk.startedAt,
+    pending: bulk.pending,
+    summaryFile: bulk.summaryFile,
+    items: bulk.items.map((i) => ({
+      url: i.url,
+      notes: i.notes || '',
+      runId: i.runId,
+      status: i.status,
+      posts: i.posts,
+      error: i.error,
+    })),
+  });
+});
+
+// Downloadable CSV template for the "Bulk URLs" feature. Headers match the
+// fields that the bulk endpoint understands; comments at the top explain
+// each column. Served as text/csv with a Content-Disposition so the browser
+// triggers a download.
+app.get('/api/templates/urls.csv', (_req, res) => {
+  const csv =
+    'url,notes\n' +
+    '# url    — required. Must be http:// or https://\n' +
+    '# notes  — optional. Free-text guidance that influences the generated post:\n' +
+    '#          tone, audience, angle, hashtags to favor, things to avoid, etc.\n' +
+    '#          Each note is appended to that URL\'s prompt as extra context.\n' +
+    '#          Wrap in double-quotes if the note contains a comma.\n' +
+    'https://example.com/post-one,"casual tone; emphasize the perf gains; one CTA"\n' +
+    'https://example.com/post-two,"developer audience; lead with the code sample"\n';
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="content-scout-urls-template.csv"');
+  res.send(csv);
+});
+
+
 
 // Write a message to a running process's stdin — used by the in-browser
 // "reply to the agent" UI for custom prompts and interactive flows.
@@ -1468,13 +2428,34 @@ app.post('/api/runs/:id/input', express.json(), (req, res) => {
 });
 
 // Request the runner to stop. Tries SIGINT first, then SIGTERM.
+// On Windows, child.kill() doesn't propagate to grandchildren when the child
+// was spawned with `shell: true`, so the actual agent process keeps running
+// after we kill the cmd.exe wrapper. Use `taskkill /pid <pid> /T /F` there to
+// terminate the whole tree. Also mark the parent bulk run (if any) as
+// cancelled so queued items don't auto-start.
 app.post('/api/runs/:id/stop', (req, res) => {
   const run = runs.get(req.params.id);
   if (!run) return res.status(404).json({ error: 'not found' });
+  if (run.bulkId) {
+    const bulk = bulkRuns.get(run.bulkId);
+    if (bulk) bulk.cancelled = true;
+  }
   if (run.status !== 'running' || !run.child) return res.json({ ok: true, note: 'not running' });
   try {
-    run.child.kill('SIGINT');
-    setTimeout(() => { try { run.child && run.child.kill('SIGTERM'); } catch {} }, 2000);
+    run.stopRequested = true;
+    if (process.platform === 'win32') {
+      // /T = tree (kill descendants), /F = force.
+      const killer = spawn('taskkill', ['/pid', String(run.child.pid), '/T', '/F'], {
+        windowsHide: true,
+      });
+      killer.on('error', () => {
+        try { run.child && run.child.kill('SIGTERM'); } catch {}
+      });
+    } else {
+      run.child.kill('SIGINT');
+      setTimeout(() => { try { run.child && run.child.kill('SIGTERM'); } catch {} }, 2000);
+      setTimeout(() => { try { run.child && run.child.kill('SIGKILL'); } catch {} }, 5000);
+    }
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1517,6 +2498,7 @@ app.listen(PORT, HOST, async () => {
     'scout-calendar.prompt.md', 'scout-gaps.prompt.md', 'scout-trends.prompt.md',
     'scout-creators.prompt.md', 'scout-doctor.prompt.md', 'scout-keys.prompt.md',
     'scout-replay.prompt.md', 'scout-seo.prompt.md', 'scout-reddit-import.prompt.md',
+    'scout-alt.prompt.md', 'scout-vision.prompt.md',
   ];
   let diskFiles = [];
   try { diskFiles = await fs.readdir(PROMPTS_DIR); } catch { /* ignore */ }

@@ -4,7 +4,8 @@
   "description": "Local web UI for Content Scout: onboarding, config editing, report viewing, and run launching.",
   "type": "module",
   "bin": {
-    "scout-web": "./bin/scout-web.js"
+    "scout-web": "./bin/scout-web.js",
+    "scout-bulk": "./bin/scout-bulk.js"
   },
   "scripts": {
     "start": "node server.js",

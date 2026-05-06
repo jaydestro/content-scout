@@ -48,19 +48,19 @@
   }
 
   async function loadAll() {
-    let configs = { configs: [] }, reports = { reports: [] }, runs = { runs: [] };
-    let social = [];
-    try { [configs, reports, runs] = await Promise.all([
-      fetchJSON('/api/configs'),
-      fetchJSON('/api/reports'),
-      fetchJSON('/api/runs'),
-    ]); } catch { /* keep defaults */ }
+    let configs = { configs: [] }, reports = { reports: [] };
+    let activity = null;
     try {
-      const r = await fetch('/api/social');
-      if (r.ok) social = (await r.json()).posts || [];
-    } catch { /* no endpoint, fine */ }
+      [configs, reports, activity] = await Promise.all([
+        fetchJSON('/api/configs'),
+        fetchJSON('/api/reports'),
+        fetchJSON('/api/activity'),
+      ]);
+    } catch { /* keep defaults */ }
 
-    renderStats({ reports, runs, social });
+    const social = (reports.social || []);
+    renderStats(activity);
+    renderActivity(activity);
     renderSubjects({ configs: configs.configs || [], reports: reports.reports || [] });
     renderSuggestions({ configs: configs.configs || [], reports: reports.reports || [], social });
     loadActionItems();
@@ -70,17 +70,79 @@
     // node will race and can leave "Loading…" stuck.
   }
 
-  function renderStats({ reports, runs, social }) {
-    const r = $('stat-reports'); if (r) r.textContent = (reports.reports || []).length;
-    const s = $('stat-social'); if (s) s.textContent = (social || []).length || 0;
-    const ru = $('stat-runs'); if (ru) ru.textContent = (runs.runs || []).length;
-    const ls = $('stat-last-scan');
-    if (ls) {
-      const latest = (reports.reports || [])
-        .filter((x) => /-content\.md$/.test(x.name))
-        .sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''))[0];
-      ls.textContent = latest ? relativeDay(latest.mtime) : '—';
+  function renderStats(activity) {
+    const totals = (activity && activity.totals) || {};
+    const last = (activity && activity.last) || {};
+    const r = $('stat-reports'); if (r) r.textContent = totals.reports ?? '—';
+    const s = $('stat-social');
+    if (s) {
+      const n = (totals.socialBulk ?? 0) + (totals.socialSolo ?? 0);
+      s.textContent = n;
     }
+    const t = $('stat-thumbnails');
+    if (t) t.textContent = totals.thumbnailImages ?? '—';
+    const ls = $('stat-last-scan');
+    if (ls) ls.textContent = last.scan ? relativeDay(last.scan) : '—';
+  }
+
+  // Unified timeline: reports + social posts + calendars + thumbnails + runs.
+  // This is the answer to "doesn't truly represent what's been done" — every
+  // category of artifact and every recent run shows up here, in time order.
+  function renderActivity(activity) {
+    const ul = $('dash-activity');
+    const meta = $('dash-activity-meta');
+    if (!ul) return;
+    const items = (activity && activity.activity) || [];
+    if (!items.length) {
+      ul.innerHTML = '<li class="hint">No activity yet — run a scan to get started.</li>';
+      if (meta) meta.textContent = '';
+      return;
+    }
+    if (meta) {
+      const totals = activity.totals || {};
+      const parts = [];
+      if (totals.reports) parts.push(`${totals.reports} report${totals.reports === 1 ? '' : 's'}`);
+      const sp = (totals.socialBulk || 0) + (totals.socialSolo || 0);
+      if (sp) parts.push(`${sp} post file${sp === 1 ? '' : 's'}`);
+      if (totals.calendars) parts.push(`${totals.calendars} calendar${totals.calendars === 1 ? '' : 's'}`);
+      if (totals.thumbnailImages) parts.push(`${totals.thumbnailImages} thumbnail${totals.thumbnailImages === 1 ? '' : 's'}`);
+      meta.textContent = parts.join(' · ');
+    }
+    const KIND = {
+      'report':       { icon: '📄', cls: 'kind-report' },
+      'social-bulk':  { icon: '✉️', cls: 'kind-social' },
+      'social-solo':  { icon: '✉️', cls: 'kind-social' },
+      'social-other': { icon: '✉️', cls: 'kind-social' },
+      'calendar':     { icon: '🗓', cls: 'kind-calendar' },
+      'thumbnails':   { icon: '🖼', cls: 'kind-thumbs' },
+      'trends':       { icon: '📈', cls: 'kind-trends' },
+      'alt':          { icon: '♿', cls: 'kind-alt' },
+      'run':          { icon: '▶', cls: 'kind-run' },
+    };
+    ul.innerHTML = items.map((it) => {
+      const k = KIND[it.kind] || { icon: '•', cls: '' };
+      const when = it.mtime ? relativeDay(it.mtime) : '—';
+      let title;
+      if (it.kind === 'thumbnails') {
+        title = `${esc(it.count || 0)} PNG${(it.count || 0) === 1 ? '' : 's'} <span class="hint">(${esc(it.name)})</span>`;
+      } else if (it.kind === 'run') {
+        const status = esc(it.status || '');
+        title = `<code>${esc(it.name || 'run')}</code> <span class="badge badge-${status}">${status}</span>`;
+      } else if (it.href) {
+        title = `<a href="${esc(it.href)}">${esc(it.name)}</a>`;
+      } else {
+        title = esc(it.name);
+      }
+      const sub = it.slug ? `<span class="hint"> · <code>${esc(it.slug)}</code></span>` : '';
+      return `<li class="activity-row ${k.cls}">
+        <span class="activity-icon" aria-hidden="true">${k.icon}</span>
+        <span class="activity-body">
+          <span class="activity-label">${esc(it.label)}</span>${sub}
+          <span class="activity-title">${title}</span>
+        </span>
+        <span class="activity-when hint">${esc(when)}</span>
+      </li>`;
+    }).join('');
   }
 
   function renderSubjects({ configs, reports }) {

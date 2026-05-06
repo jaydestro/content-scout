@@ -333,6 +333,53 @@ For each custom source, collect: **name**, **URL or search pattern**, and **type
 
 If none of the selected sources require keys, skip the key prompts entirely and tell the user: "All your selected sources work without API keys — no setup needed."
 
+#### Vision provider for `/scout-alt` (optional)
+
+**Don't just describe the options — actively interview the user, then write `.env` for them.**
+
+Ask: "When Content Scout generates alt text for an image (`/scout-alt`), do you want it to actually look at the pixels? You have a few options:
+
+1. **Skip** — agent works only from your typed description (refuses to guess if you don't give one).
+2. **Local model** (free, private, image never leaves your machine) — uses [Ollama](https://ollama.com).
+3. **OpenAI** (cloud, ~$0.0002/image) — uses `gpt-4o-mini` by default.
+4. **Custom / OpenAI-compatible endpoint** — Azure OpenAI, Azure AI Foundry, OpenRouter, LM Studio, vLLM, llama.cpp server, Together, Groq, etc.
+
+Which one?"
+
+Then act on the answer:
+
+- **Skip / none** → leave `VISION_PROVIDER` unset. Done.
+
+- **Local (ollama):**
+  1. Probe whether Ollama is running: `curl -s http://localhost:11434/api/tags`.
+  2. If it fails, **offer to walk them through installation** — don't just paste a link:
+     - Windows: download installer from <https://ollama.com/download/windows>.
+     - macOS: `brew install ollama` then `ollama serve`.
+     - Linux: `curl -fsSL https://ollama.com/install.sh | sh`.
+     Pause until they confirm install succeeded, then re-probe.
+  3. Recommend `llama3.2-vision` (default) or `moondream` (smaller). If the chosen model isn't in `/api/tags`, offer to run `ollama pull <model>` for them via the terminal — confirm before pulling, warn it can take minutes and several GB.
+  4. Write to `.env`: `VISION_PROVIDER=ollama`, `OLLAMA_VISION_MODEL=<model>`, and `OLLAMA_HOST=<url>` only if non-default.
+
+- **OpenAI:**
+  1. Ask if `OPENAI_API_KEY` is set; if not, link <https://platform.openai.com/api-keys> and have them paste a key. Validate `sk-` prefix.
+  2. Write to `.env`: `VISION_PROVIDER=openai`, `OPENAI_API_KEY=<key>` (only if newly provided), `OPENAI_VISION_MODEL=<model>` (default `gpt-4o-mini`).
+
+- **Custom / OpenAI-compatible:**
+  1. Ask which flavor — Azure OpenAI, Azure AI Foundry, OpenRouter, LM Studio, vLLM, Together, Groq, "other". Use the matching preset to suggest a base URL shape:
+     - Azure OpenAI → `https://<resource>.openai.azure.com/openai/deployments/<deployment>/chat/completions?api-version=2024-10-21` (auth: `api-key`).
+     - Azure AI Foundry (Models) → `https://<resource>.services.ai.azure.com/models` (auth: `api-key`).
+     - OpenRouter → `https://openrouter.ai/api/v1` (auth: `bearer`).
+     - LM Studio → `http://localhost:1234/v1` (auth: `bearer`).
+     - vLLM / llama.cpp → `http://localhost:8000/v1` (auth: `bearer`).
+     - Together → `https://api.together.xyz/v1` (auth: `bearer`).
+     - Groq → `https://api.groq.com/openai/v1` (auth: `bearer`).
+  2. Collect base URL, API key, model/deployment name, and auth style (`bearer` or `api-key`).
+  3. Write to `.env`: `VISION_PROVIDER=custom`, `CUSTOM_VISION_BASE_URL=<url>`, `CUSTOM_VISION_API_KEY=<key>` (only if newly provided), `CUSTOM_VISION_MODEL=<name>`, `CUSTOM_VISION_AUTH_STYLE=<bearer|api-key>`.
+
+**Tip:** if the web UI is running on port 4477, prefer `POST /api/vision/config` to perform an atomic merge-write (preserves comments and unrelated keys). Otherwise edit `.env` in place, preserving formatting.
+
+After writing, confirm in one line, e.g.: "Vision provider: `ollama` (model: `llama3.2-vision`). Run `/scout-alt path/to/image.png` to try it."
+
 ### Group 5 — People to Watch (optional)
 Say "none" to skip this group entirely. Otherwise ask each item **one at a time**:
 1. Any **known external authors** whose content should always be included? (MVP bloggers, community champions — they bypass relevancy filter) *(say "none" to skip)*

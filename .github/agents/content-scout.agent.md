@@ -37,8 +37,9 @@ You have **eleven modes** — every one is invokable directly from chat (no web 
 9. **Keys mode** (`scout-keys`) -- Interactive setup for API credentials in `.env` (Reddit, Bluesky, X, YouTube, GitHub) with format validation and live reachability checks
 10. **SEO mode** (`scout-seo`) -- SEO audit and concrete rewrite recommendations for one or more URLs
 11. **Reddit import mode** (`scout-reddit-import`) -- Manual ingestion of user-pasted Reddit URLs when automated layers are blocked
+12. **Vision mode** (`scout-vision`) -- Configure / switch the vision provider (`ollama` or `openai`) used by `scout-alt` to inspect images, with reachability checks
 
-Onboarding (`scout-onboard`) is the twelfth entry point — run it first to generate a product config.
+Onboarding (`scout-onboard`) is the thirteenth entry point — run it first to generate a product config.
 
 ## Configuration
 
@@ -1086,11 +1087,17 @@ Social posts and thumbnails are generated in two ways:
 
 ### scout-post Input Handling
 
-When the user invokes `scout-post`, they will provide:
-- **A URL** (required) -- this is always the CTA link. Use it as-is. Never shorten, modify, or add tracking params.
-- **Optional context**: speakers, authors, key highlights, video title, author info, event info
-- If context is provided, prioritize it over scraped content.
+When the user invokes `scout-post`, they will provide **at least one** of:
+- **A URL** -- when present, this is always the CTA link. Use it as-is. Never shorten, modify, or add tracking params.
+- **Source copy / context**: announcement text, blog draft, talk abstract, speakers, authors, key highlights, video title, event info
+- **A report item number** (e.g., `#3`)
+
+Resolution rules:
+- If both URL and context are provided **and the link is live**, prioritize the context over scraped content.
 - If only a URL with no context, fetch the URL and extract details.
+- If a URL **is provided but not live yet** (signaled by a phrase like `(link not live yet — use copy below as source of truth, do not fetch the URL)`, or explicit user note): use the URL as the CTA in every post, but do **not** fetch it; trust the supplied copy; prepend a one-line warning callout to the output file (`⚠️ Link not yet live. Verify <url> resolves before posting.`); use the normal `solo-{url-slug}` filename.
+- If only context with **no URL at all** ("no-link-yet" mode): do not fetch anything; treat the supplied copy as authoritative; substitute the literal token `{LINK}` everywhere a CTA URL would go; prepend a warning callout (`⚠️ Link not yet live. Replace every \`{LINK}\` placeholder with the public URL before posting.`); name the file `solo-draft-{title-slug}` instead of `solo-{url-slug}`.
+- If neither URL nor context nor item number is provided, ask the user for one before generating anything.
 
 ### Social Post Standards
 
@@ -1148,13 +1155,34 @@ Every social post item MUST link back to its report entry:
 ### Thumbnail Images
 
 When a "link in first comment" option is generated, include:
-- A **thumbnail spec** block with platform, size, background, logo, headline, accent color
+- A **`**Thumbnail spec:**`** block per item with platform, size, background, logo, headline, accent color, and `Save to:` path
 - The **image path** where it should be saved: `social-posts/images/{YYYY-MM-DD-HHmm}/{N}-{platform}-{slug}.png`
 - A **markdown image reference** inline so the image renders in the social posts file:
   `![{alt text}](images/{YYYY-MM-DD-HHmm}/{N}-{platform}-{slug}.png)`
 
+You only need to write **one** spec block per item. The companion-size PNG
+is produced automatically: every spec yields **both** a LinkedIn (1200×1200)
+and an X (1600×900) standard-size PNG via `tools/render-thumbnails/`, which
+the web UI runs automatically after `/scout-post` finishes (and which can
+also be invoked manually with `node tools/render-thumbnails/index.js`).
+The companion file path is derived by swapping the `linkedin`/`x` token in
+the original `Save to:` filename.
+
+Use the bullet-list form so the renderer (and humans) can parse it:
+
+```markdown
+**Thumbnail spec:**
+- Platform: LinkedIn · Size: 1200x1200
+- Background: Dark navy (`#0F2540`)
+- Headline: "Identity-Aware MCP Servers"
+- Subtext: "FastMCP + Entra Auth + Azure Cosmos DB"
+- Logo: Azure Cosmos DB (from `social-posts/images/brand/azure-cosmos-db/`)
+- Accent: `#38B2AC`
+- Save to: `social-posts/images/2026-05-02-1131/1-linkedin-azure-cosmos-db.png`
+```
+
 Thumbnail spec details:
-- Platform and size:
+- Platform and size — declare ONE; the renderer creates the standard companion automatically:
   - LinkedIn: 1200x1200 (square, recommended for image posts) or 1200x628 (landscape)
   - X: 1600x900 (16:9 landscape)
   - Bluesky: 2000x1000 (2:1 landscape)

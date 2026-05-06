@@ -34,9 +34,15 @@
   let activeStream = null;
   let activeRunId = null;
   let lastSnapshot = [];
+  let lastBulks = [];
+  let activeBulkId = null;
   // Track previously-seen status per run id so we can detect transitions
   // (running → success/error) and surface a toast notification on completion.
   const knownStatus = new Map();
+  // Track previously-seen bulk status so we toast exactly once when the
+  // whole batch finishes. Per-child completions are intentionally silent
+  // because they're sub-operations of the parent bulk.
+  const knownBulkStatus = new Map();
   let firstPoll = true;
 
   function isTerminalStatus(s) {
@@ -56,21 +62,21 @@
     launcher = document.createElement('button');
     launcher.id = 'runs-launcher';
     launcher.type = 'button';
-    launcher.title = 'Show run queue';
-    launcher.setAttribute('aria-label', 'Show run queue');
-    launcher.innerHTML = `${ICONS.queue}<span class="rq-launcher-label">Runs</span><span class="rq-badge" id="runs-badge" hidden>0</span>`;
+    launcher.title = 'Show operations queue';
+    launcher.setAttribute('aria-label', 'Show operations queue');
+    launcher.innerHTML = `${ICONS.queue}<span class="rq-launcher-label">Operations</span><span class="rq-badge" id="runs-badge" hidden>0</span>`;
     launcher.addEventListener('click', toggleDrawer);
     document.body.appendChild(launcher);
     badge = launcher.querySelector('#runs-badge');
 
     drawer = document.createElement('aside');
     drawer.id = 'runs-drawer';
-    drawer.setAttribute('aria-label', 'Run queue');
+    drawer.setAttribute('aria-label', 'Operations queue');
     drawer.innerHTML = `
       <header class="rq-header">
         <div class="rq-title">
           ${ICONS.queue}
-          <span>Runs</span>
+          <span>Operations</span>
           <span class="rq-count" id="rq-count">0</span>
         </div>
         <button class="rq-close" id="rq-close" aria-label="Close">${ICONS.close}</button>
@@ -116,19 +122,33 @@
       if (!res.ok) return;
       const data = await res.json();
       const list = (data && Array.isArray(data.runs)) ? data.runs : [];
+      const bulks = (data && Array.isArray(data.bulks)) ? data.bulks : [];
       // Detect run completions: previously "running" or unknown → now terminal.
       // Skip on the very first poll so we don't toast for runs that were
-      // already finished before the page loaded.
+      // already finished before the page loaded. Also skip child runs that
+      // belong to a bulk — the bulk itself owns the completion notification.
       if (!firstPoll) {
         for (const r of list) {
           if (!r || !r.id) continue;
           const prev = knownStatus.get(r.id);
-          if (prev === 'running' && isTerminalStatus(r.status)) {
+          if (prev === 'running' && isTerminalStatus(r.status) && !r.bulkId) {
             notifyRunFinished(r);
           }
         }
+        // Bulk completion toast — fires once per bulk when it transitions
+        // from running → terminal. Replaces the per-child toasts that
+        // would otherwise spam the user during a parallel batch.
+        for (const b of bulks) {
+          if (!b || !b.bulkId) continue;
+          const prev = knownBulkStatus.get(b.bulkId);
+          if ((prev === 'running' || prev === undefined && b.done < b.total)
+              && b.status !== 'running'
+              && b.done >= b.total) {
+            notifyBulkFinished(b);
+          }
+        }
       }
-      // Update tracking map (and prune ids no longer present).
+      // Update tracking maps (and prune ids no longer present).
       const seen = new Set();
       for (const r of list) {
         if (r && r.id) {
@@ -139,12 +159,34 @@
       for (const id of [...knownStatus.keys()]) {
         if (!seen.has(id)) knownStatus.delete(id);
       }
+      const seenBulks = new Set();
+      for (const b of bulks) {
+        if (b && b.bulkId) {
+          knownBulkStatus.set(b.bulkId, b.status);
+          seenBulks.add(b.bulkId);
+        }
+      }
+      for (const id of [...knownBulkStatus.keys()]) {
+        if (!seenBulks.has(id)) knownBulkStatus.delete(id);
+      }
       firstPoll = false;
 
       lastSnapshot = list;
-      const runningCount = list.filter((r) => r.status === 'running').length;
-      updateBadge(runningCount);
-      if (drawer.classList.contains('open') && !activeRunId) renderList();
+      lastBulks = bulks;
+      // Badge counts an in-flight bulk as ONE operation, not N children.
+      const activeBulkChildIds = new Set();
+      for (const b of bulks) {
+        if (b.status === 'running') {
+          for (const r of list) {
+            if (r.bulkId === b.bulkId) activeBulkChildIds.add(r.id);
+          }
+        }
+      }
+      const runningSolo = list.filter((r) => r.status === 'running' && !activeBulkChildIds.has(r.id)).length;
+      const runningBulks = bulks.filter((b) => b.status === 'running').length;
+      updateBadge(runningSolo + runningBulks);
+      if (drawer.classList.contains('open') && !activeRunId && !activeBulkId) renderList();
+      if (drawer.classList.contains('open') && activeBulkId) renderBulkDetail();
     } catch {
       // Silent — server may be restarting.
     }
@@ -172,6 +214,25 @@
     }
   }
 
+  function notifyBulkFinished(bulk) {
+    const cmd = bulk.command ? `/${bulk.command}` : 'bulk run';
+    const ok = bulk.status === 'success';
+    const title = ok
+      ? `Bulk ${cmd} finished — ${bulk.done}/${bulk.total} succeeded`
+      : `Bulk ${cmd} done — ${bulk.done - bulk.failed}/${bulk.total} succeeded, ${bulk.failed} failed`;
+    const desc = bulk.summaryFile
+      ? `Summary: ${bulk.summaryFile}`
+      : 'All sub-operations completed.';
+    if (window.toast) {
+      const fn = ok ? window.toast.success : window.toast.warn;
+      try { fn(title, desc, { duration: 9000 }); }
+      catch { window.toast({ title, description: desc, type: ok ? 'success' : 'warn' }); }
+    }
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      try { new Notification(title, { body: desc, silent: true }); } catch { /* ignore */ }
+    }
+  }
+
   function updateBadge(n) {
     if (n > 0) {
       badge.hidden = false;
@@ -191,12 +252,45 @@
   function renderList() {
     detailEl.hidden = true;
     listEl.hidden = false;
-    document.getElementById('rq-count').textContent = lastSnapshot.length;
-    if (lastSnapshot.length === 0) {
+    // Build a unified list: each bulk is one parent row; standalone runs
+    // (no bulkId) are individual rows. Child runs of a bulk are NOT
+    // rendered here — they live inside the bulk's detail view so the
+    // queue stays uncluttered during parallel batches.
+    const bulkMap = new Map(lastBulks.map((b) => [b.bulkId, b]));
+    const childIds = new Set();
+    for (const r of lastSnapshot) {
+      if (r.bulkId && bulkMap.has(r.bulkId)) childIds.add(r.id);
+    }
+    const standalone = lastSnapshot.filter((r) => !childIds.has(r.id));
+    const merged = [
+      ...lastBulks.map((b) => ({ kind: 'bulk', startedAt: b.startedAt, bulk: b })),
+      ...standalone.map((r) => ({ kind: 'run', startedAt: r.startedAt, run: r })),
+    ].sort((a, b) => (b.startedAt || '').localeCompare(a.startedAt || ''));
+
+    document.getElementById('rq-count').textContent = merged.length;
+    if (merged.length === 0) {
       listEl.innerHTML = `<li class="rq-empty">No runs yet. Start one from the Run view.</li>`;
       return;
     }
-    listEl.innerHTML = lastSnapshot.map((r) => {
+    listEl.innerHTML = merged.map((entry) => {
+      if (entry.kind === 'bulk') {
+        const b = entry.bulk;
+        const m = statusMeta(b.status);
+        const cmd = escapeHtml(`/${b.command} (bulk)`);
+        const when = relativeTime(b.startedAt);
+        const sub = `${b.done}/${b.total} done${b.failed ? ` · ${b.failed} failed` : ''}${b.running ? ` · ${b.running} running` : ''} · ×${b.concurrency}`;
+        return `
+          <li class="rq-item ${m.cls}" data-bulk-id="${escapeHtml(b.bulkId)}">
+            <span class="rq-status" aria-label="${m.label}">${m.icon}</span>
+            <div class="rq-item-body">
+              <div class="rq-item-cmd">${cmd}</div>
+              <div class="rq-item-sub"><span class="rq-status-label">${m.label}</span> · ${sub} · ${when}</div>
+            </div>
+            <span class="rq-chev">${ICONS.chevron}</span>
+          </li>
+        `;
+      }
+      const r = entry.run;
       const m = statusMeta(r.status);
       const cmd = escapeHtml(shortCommand(r.command));
       const when = relativeTime(r.startedAt);
@@ -211,9 +305,59 @@
         </li>
       `;
     }).join('');
-    listEl.querySelectorAll('.rq-item').forEach((el) => {
+    listEl.querySelectorAll('.rq-item[data-id]').forEach((el) => {
       el.addEventListener('click', () => attachToRun(el.dataset.id));
     });
+    listEl.querySelectorAll('.rq-item[data-bulk-id]').forEach((el) => {
+      el.addEventListener('click', () => openBulkDetail(el.dataset.bulkId));
+    });
+  }
+
+  function openBulkDetail(bulkId) {
+    activeBulkId = bulkId;
+    activeRunId = null;
+    detachStream();
+    listEl.hidden = true;
+    detailEl.hidden = false;
+    renderBulkDetail();
+  }
+
+  function renderBulkDetail() {
+    if (!activeBulkId) return;
+    const b = lastBulks.find((x) => x.bulkId === activeBulkId);
+    if (!b) { backToList(); return; }
+    const m = statusMeta(b.status);
+    const stopBtn = document.getElementById('rq-stop');
+    stopBtn.hidden = b.status !== 'running';
+    stopBtn.dataset.kind = 'bulk';
+    document.getElementById('rq-detail-meta').innerHTML = `
+      <div class="rq-detail-cmd">/${escapeHtml(b.command)} (bulk · ×${b.concurrency})</div>
+      <div class="rq-detail-sub">
+        <span class="rq-status-label ${m.cls}">${m.label}</span>
+        · ${b.done}/${b.total} done${b.failed ? ` · ${b.failed} failed` : ''}${b.running ? ` · ${b.running} running` : ''}
+        · started ${relativeTime(b.startedAt)}
+      </div>
+    `;
+    const out = document.getElementById('rq-output');
+    const children = lastSnapshot.filter((r) => r.bulkId === activeBulkId)
+      .sort((a, b2) => (a.startedAt || '').localeCompare(b2.startedAt || ''));
+    const summaryLink = b.summaryFile
+      ? `\nSummary: ${b.summaryFile}\n`
+      : (b.status === 'running' ? '\n(Summary will be written when all sub-operations finish.)\n' : '');
+    const lines = children.map((r, i) => {
+      const sm = statusMeta(r.status);
+      const label = r.bulkLabel || r.id;
+      return `${String(i + 1).padStart(2, ' ')}. [${sm.label.padEnd(7)}] ${label}`;
+    });
+    out.textContent = `Sub-operations (${children.length}/${b.total}):\n` + lines.join('\n') + '\n' + summaryLink;
+    // Make children clickable to drill into their stream.
+    out.classList.add('rq-bulk-children');
+    out.onclick = (ev) => {
+      const text = (ev.target.textContent || '');
+      // crude: find the matching child by label/url substring
+      const match = children.find((r) => text.includes(r.bulkLabel || ''));
+      if (match) attachToRun(match.id);
+    };
   }
 
   function shortCommand(cmd) {
@@ -237,9 +381,12 @@
   // --- Detail / streaming -------------------------------------------
   async function attachToRun(id) {
     activeRunId = id;
+    activeBulkId = null;
     detachStream();
     listEl.hidden = true;
     detailEl.hidden = false;
+    const out = document.getElementById('rq-output');
+    if (out) { out.classList.remove('rq-bulk-children'); out.onclick = null; }
 
     const run = lastSnapshot.find((r) => r.id === id) || { id, status: 'running', command: '', startedAt: '' };
     const m = statusMeta(run.status);
@@ -250,8 +397,6 @@
       <div class="rq-detail-cmd">${escapeHtml(shortCommand(run.command))}</div>
       <div class="rq-detail-sub"><span class="rq-status-label ${m.cls}">${m.label}</span> · started ${relativeTime(run.startedAt)}</div>
     `;
-
-    const out = document.getElementById('rq-output');
 
     // Only stream live output for runs that are still in progress. Finished
     // runs show a brief status placeholder — their full transcript lives in
@@ -302,10 +447,27 @@
   function backToList() {
     detachStream();
     activeRunId = null;
+    activeBulkId = null;
+    const out = document.getElementById('rq-output');
+    if (out) { out.classList.remove('rq-bulk-children'); out.onclick = null; }
     renderList();
   }
 
   async function stopActive() {
+    // Stopping a bulk = stop every still-running child. Each child uses
+    // the same /api/runs/:id/stop path, which on Windows tree-kills the
+    // shell + agent grandchild and on POSIX escalates SIGINT→TERM→KILL.
+    if (activeBulkId) {
+      const children = lastSnapshot.filter((r) => r.bulkId === activeBulkId && r.status === 'running');
+      try {
+        await Promise.all(children.map((r) =>
+          fetch(`/api/runs/${encodeURIComponent(r.id)}/stop`, { method: 'POST' })));
+        window.toast && window.toast.info('Stop requested', `Stopping ${children.length} sub-operation${children.length === 1 ? '' : 's'} and cancelling the queue.`);
+      } catch (e) {
+        window.toast && window.toast.error('Could not stop bulk', String(e.message || e));
+      }
+      return;
+    }
     if (!activeRunId) return;
     try {
       await fetch(`/api/runs/${encodeURIComponent(activeRunId)}/stop`, { method: 'POST' });

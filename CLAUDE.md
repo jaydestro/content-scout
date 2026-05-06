@@ -41,6 +41,8 @@ Users will request these operations using natural language. Map their requests t
 | "scout replay", "replay scan", "re-run filters" | `.github/prompts/scout-replay.prompt.md` | Re-apply filters/scoring/sentiment to a saved scan with no API calls |
 | "scout seo", "audit SEO", "optimize this page", "SEO check" | `.github/prompts/scout-seo.prompt.md` | SEO audit and concrete rewrite recommendations for one or more URLs |
 | "scout reddit-import", "import reddit threads", "reddit fallback", "manual reddit" | `.github/prompts/scout-reddit-import.prompt.md` | Manually ingest Reddit URLs when automated layers are blocked |
+| "scout alt", "alt text", "generate alt text", "describe this image" | `.github/prompts/scout-alt.prompt.md` | Draft accessibility-quality alt text for an image attached to a social post |
+| "scout vision", "set vision provider", "switch to ollama", "use openai vision", "configure vision" | `.github/prompts/scout-vision.prompt.md` | Configure or switch the vision provider used by `/scout-alt` (ollama / openai / none) |
 
 When reading prompt files, the `${{input:...}}` placeholders are VS Code syntax. Instead, ask the user for those inputs conversationally.
 
@@ -50,6 +52,7 @@ When reading prompt files, the `${{input:...}}` placeholders are VS Code syntax.
 - Social posts (bulk from report): `social-posts/{YYYY-MM-DD-HHmm}-{slug}-social-posts.md`
 - Social posts (solo / one-off from a single URL): `social-posts/{YYYY-MM-DD-HHmm}-{slug}-solo-{url-slug}.md` where `{url-slug}` = host + last path segment, lowercased, hyphenated, max 40 chars (fallback `solo-link`)
 - Posting calendars: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-posting-calendar.md`
+- Alt text: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-alt-{image-slug}.md`
 - Trends: `reports/{YYYY-MM-DD-HHmm}-{slug}-trends.md`
 - Thumbnails: `social-posts/images/{YYYY-MM-DD-HHmm}/`
 - Dedup tracker: `reports/.seen-links.json`
