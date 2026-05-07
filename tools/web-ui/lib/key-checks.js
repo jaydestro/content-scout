@@ -102,6 +102,15 @@ const FORMAT = {
     }
     return { ok: true };
   },
+  BRAVE_SEARCH_API_KEY(v) {
+    if (!v) return { ok: false, message: 'empty' };
+    // Brave keys are typically 32 chars, alphanumeric with `_` / `-`. Be
+    // lenient on exact length since Brave hasn't publicly committed to a
+    // fixed format — just sanity-check length and charset.
+    if (v.length < 20 || v.length > 64) return { ok: false, message: `expected 20–64 chars, got ${v.length}` };
+    if (!/^[A-Za-z0-9_-]+$/.test(v)) return { ok: false, message: 'expected alphanumeric + `_`/`-` only' };
+    return { ok: true };
+  },
   SCOUT_WEBHOOK_URL(v) {
     if (!v) return { ok: false, message: 'empty' };
     try {
@@ -213,6 +222,10 @@ const REACH = {
     if (r.status === 200) return { reachable: true, status: 200, message: 'customsearch.list returned 200' };
     if (r.status === 403) {
       const body = await r.res.text().catch(() => '');
+      // Detect the specific "closed to new customers" wording so we can warn.
+      if (/does not have the access to Custom Search/i.test(body)) {
+        return { reachable: false, status: 403, message: 'Custom Search JSON API is closed to new customers since early 2026 — use BRAVE_SEARCH_API_KEY instead. (Existing pre-2026 PSE projects keep working until Jan 1, 2027.)' };
+      }
       return { reachable: false, status: 403, message: `Custom Search API not enabled or quota exhausted: ${body.slice(0, 200)}` };
     }
     if (r.status === 400) {
@@ -222,6 +235,42 @@ const REACH = {
     return { reachable: false, status: r.status, message: `unexpected ${r.status}` };
   },
   async GOOGLE_PSE_CX(env) { return REACH.GOOGLE_PSE_KEY(env); },
+
+  async BRAVE_SEARCH_API_KEY({ BRAVE_SEARCH_API_KEY }) {
+    if (!BRAVE_SEARCH_API_KEY) return { reachable: false, status: 0, message: 'no key set' };
+    // The /web/search endpoint is the primary one Content Scout uses. A 1-result
+    // probe is the cheapest possible call against the user's free quota.
+    const r = await safeFetch(
+      'https://api.search.brave.com/res/v1/web/search?q=test&count=1',
+      {
+        headers: {
+          Accept: 'application/json',
+          'Accept-Encoding': 'gzip',
+          'X-Subscription-Token': BRAVE_SEARCH_API_KEY,
+        },
+      }
+    );
+    if (!r.ok) return { reachable: false, status: 0, message: r.error };
+    if (r.status === 200) {
+      const j = await r.res.json().catch(() => null);
+      const n = j?.web?.results?.length ?? 0;
+      return { reachable: true, status: 200, message: `web/search ok (${n} results in probe)` };
+    }
+    if (r.status === 401 || r.status === 403) {
+      const body = await r.res.text().catch(() => '');
+      return { reachable: false, status: r.status, message: `subscription token rejected (regenerate at api.search.brave.com/app/keys): ${body.slice(0, 200)}` };
+    }
+    if (r.status === 422) {
+      const body = await r.res.text().catch(() => '');
+      // Brave returns 422 with code "SUBSCRIPTION_TOKEN_INVALID" for bad tokens.
+      if (/SUBSCRIPTION_TOKEN_INVALID/i.test(body)) {
+        return { reachable: false, status: 422, message: 'subscription token invalid (regenerate at api.search.brave.com/app/keys)' };
+      }
+      return { reachable: false, status: 422, message: `bad request: ${body.slice(0, 200)}` };
+    }
+    if (r.status === 429) return { reachable: true, status: 429, message: 'token valid but rate-limited (free tier = 1 query/sec, 2000/month)' };
+    return { reachable: false, status: r.status, message: `unexpected ${r.status}` };
+  },
 
   async X_BEARER_TOKEN({ X_BEARER_TOKEN }) {
     if (!X_BEARER_TOKEN) return { reachable: false, status: 0, message: 'no token set' };

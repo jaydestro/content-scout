@@ -27,9 +27,33 @@
     const preview = $('bulk-urls-preview');
     const cmdHint = $('bulk-urls-cmd-hint');
     const dialogCmd = $('bulk-urls-command');
-    if (!wrap || !dialog || !openBtn || !submitBtn) return;
+    if (!dialog || !submitBtn) return;
 
     let parsedUrls = [];
+
+    // Snapshot the full set of bulk-eligible commands at init time so we can
+    // rebuild the dropdown when locked/unlocked. This is more defensive than
+    // toggling `hidden` on the picker (which can be defeated by a stray CSS
+    // rule) — if we lock to scout-post, the <select> literally contains only
+    // that <option> and the user has nothing else to pick.
+    const ALL_CMD_OPTIONS = dialogCmd
+      ? [...dialogCmd.options].map((o) => ({ value: o.value, label: o.textContent }))
+      : [];
+
+    function setCommandOptions(lockedCommand) {
+      if (!dialogCmd) return;
+      const opts = lockedCommand
+        ? ALL_CMD_OPTIONS.filter((o) => o.value === lockedCommand)
+        : ALL_CMD_OPTIONS;
+      dialogCmd.innerHTML = '';
+      for (const o of opts) {
+        const el = document.createElement('option');
+        el.value = o.value;
+        el.textContent = o.label;
+        dialogCmd.appendChild(el);
+      }
+      if (lockedCommand) dialogCmd.value = lockedCommand;
+    }
 
     function chosenCommand() {
       if (dialogCmd && dialogCmd.value) return dialogCmd.value;
@@ -39,8 +63,76 @@
 
     function refreshHint() {
       if (cmdHint) cmdHint.textContent = `Each URL becomes its own /${chosenCommand()} run, executed one at a time.`;
+      refreshInherited();
     }
     if (dialogCmd) dialogCmd.addEventListener('change', refreshHint);
+
+    // Build the same tuner string that app.js's single-post form produces
+    // so bulk runs inherit tone, platforms, length, emoji, hashtags,
+    // link-in-comments, mention-authors, and variants. Returns '' when no
+    // controls are present (defensive against partial DOMs).
+    function buildSocialTuners() {
+      if (!$('social-gen-tone')) return '';
+      const tone = ($('social-gen-tone')?.value || 'conversational').trim();
+      const emoji = ($('social-gen-emoji')?.value || 'light').trim();
+      const variants = ($('social-gen-variants')?.value || '3').trim();
+      const length = ($('social-gen-length')?.value || 'tease').trim();
+      const lic = $('social-gen-lic')?.checked ? 'yes' : 'no';
+      const hashtags = $('social-gen-hashtags')?.checked ? 'yes' : 'no';
+      const mention = $('social-gen-mention')?.checked ? 'yes' : 'no';
+      const platforms = ['li', 'x', 'bsky', 'rd']
+        .filter((k) => $(`social-gen-pf-${k}`)?.checked)
+        .map((k) => ({ li: 'linkedin', x: 'x', bsky: 'bluesky', rd: 'reddit' }[k]))
+        .join(',') || 'linkedin,x';
+      return (
+        ` [tone: ${tone}]` +
+        ` [platforms: ${platforms}]` +
+        ` [length: ${length}]` +
+        ` [emoji: ${emoji}]` +
+        ` [hashtags: ${hashtags}]` +
+        ` [mention-authors: ${mention}]` +
+        ` [link-in-comments: ${lic}]` +
+        ` [variants: ${variants}]`
+      );
+    }
+
+    // Populate the "Options inherited from the form above" panel so users
+    // can see exactly what every queued run will get. Tuners only apply to
+    // /scout-post; hide the row for the other bulk commands.
+    function refreshInherited() {
+      const subjEl = $('bulk-opt-subject');
+      const rangeEl = $('bulk-opt-range');
+      const extraEl = $('bulk-opt-extra');
+      const tunersEl = $('bulk-opt-tuners');
+      const tunersRow = $('bulk-opt-tuners-row');
+      if (subjEl) {
+        const slug = ($('run-slug') && $('run-slug').value) || '';
+        subjEl.textContent = slug || '(none — server picks active config)';
+      }
+      if (rangeEl) {
+        const range = (typeof window.dateRangePhrase === 'function')
+          ? window.dateRangePhrase()
+          : '';
+        rangeEl.textContent = range || '(default)';
+      }
+      if (extraEl) {
+        const extra = ($('run-extra') && $('run-extra').value.trim()) || '';
+        extraEl.textContent = extra || '(none)';
+      }
+      if (tunersRow && tunersEl) {
+        if (chosenCommand() === 'scout-post') {
+          const tuners = buildSocialTuners().trim();
+          if (tuners) {
+            tunersEl.textContent = tuners;
+            tunersRow.hidden = false;
+          } else {
+            tunersRow.hidden = true;
+          }
+        } else {
+          tunersRow.hidden = true;
+        }
+      }
+    }
 
     function extractFromText(text) {
       // Accept one URL per line OR CSV with a header row that includes "url".
@@ -134,10 +226,32 @@
       }
     });
 
-    function openDialog() {
-      // Pre-select the picker from the form's current command if eligible.
-      if (dialogCmd && cmdSelect && BULK_COMMANDS.has(cmdSelect.value)) {
-        dialogCmd.value = cmdSelect.value;
+    function openDialog(opts = {}) {
+      // When the caller pins a command (e.g. "Bulk URLs…" from the Social
+      // view always means /scout-post), hide the picker entirely AND rebuild
+      // the <select> so the only option in it is the locked command. Belt +
+      // suspenders so the user can't accidentally pick scout-seo / scout-alt /
+      // etc. even if a stray CSS rule defeats the hidden attribute.
+      const lockedCommand = opts.lockedCommand || null;
+      const cmdField = dialogCmd ? dialogCmd.closest('label.field') : null;
+      const title = dialog.querySelector('.bulk-dialog-head h3');
+      setCommandOptions(lockedCommand);
+      if (lockedCommand) {
+        if (cmdField) {
+          cmdField.hidden = true;
+          cmdField.style.display = 'none';
+        }
+        if (title) title.textContent = `Bulk /${lockedCommand} from URL list`;
+      } else {
+        if (cmdField) {
+          cmdField.hidden = false;
+          cmdField.style.display = '';
+        }
+        if (title) title.textContent = 'Bulk run from URL list';
+        // Pre-select the picker from the Run-view form's current command if eligible.
+        if (dialogCmd && cmdSelect && BULK_COMMANDS.has(cmdSelect.value)) {
+          dialogCmd.value = cmdSelect.value;
+        }
       }
       refreshHint();
       textarea.value = '';
@@ -151,12 +265,11 @@
       if (typeof dialog.close === 'function') dialog.close();
       else dialog.removeAttribute('open');
     }
-    openBtn.addEventListener('click', openDialog);
+    if (openBtn) openBtn.addEventListener('click', () => openDialog());
     const socialOpen = $('social-bulk-open');
     if (socialOpen) {
       socialOpen.addEventListener('click', () => {
-        if (dialogCmd) dialogCmd.value = 'scout-post';
-        openDialog();
+        openDialog({ lockedCommand: 'scout-post' });
       });
     }
     dialog.querySelectorAll('[data-bulk-close]').forEach((b) => {
@@ -170,7 +283,13 @@
       submitBtn.textContent = 'Queuing…';
       try {
         const slug = ($('run-slug') && $('run-slug').value) || '';
-        const extra = ($('run-extra') && $('run-extra').value.trim()) || '';
+        const extraBase = ($('run-extra') && $('run-extra').value.trim()) || '';
+        // For /scout-post, append the same tuner string the single-post form
+        // produces so bulk runs honor tone/platforms/length/emoji/hashtags/
+        // link-in-comments/mention-authors/variants. Server concatenates
+        // `extra` after each item URL, so the tuners ride along on every run.
+        const tuners = chosenCommand() === 'scout-post' ? buildSocialTuners() : '';
+        const extra = (extraBase + (tuners || '')).trim();
         const range = (typeof window.dateRangePhrase === 'function')
           ? window.dateRangePhrase()
           : '';

@@ -530,7 +530,7 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             </div>
             <div class="dash-hero-actions">
               <button type="button" class="btn-primary" data-goto="run" data-run-cmd="scout-scan">Run a scan</button>
-              <button type="button" data-goto="run" data-run-cmd="scout-post">Generate posts</button>
+              <button type="button" data-goto="social">Generate posts</button>
               <button type="button" id="dash-open-latest-report">Open latest report</button>
             </div>
           </div>
@@ -688,7 +688,6 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             <select id="run-command">
               <option value="scout-onboard">/scout-onboard — interactive setup wizard</option>
               <option value="scout-scan" selected>/scout-scan — scan sources &amp; generate a report</option>
-              <option value="scout-post">/scout-post — generate social posts</option>
               <option value="scout-calendar">/scout-calendar — weekly posting schedule</option>
               <option value="scout-gaps">/scout-gaps — content gap analysis</option>
               <option value="scout-trends">/scout-trends — month-over-month trends</option>
@@ -718,16 +717,6 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             </div>
             <!-- Hidden input carries the computed slug value for backwards-compat. -->
             <input type="hidden" id="run-slug" value="" />
-          </div>
-          <div id="run-bulk-wrap" class="run-bulk">
-            <div class="run-bulk-head">
-              <span>Have a list of URLs?</span>
-              <span class="hint">Queue one run per URL for /scout-post, /scout-seo, /scout-reddit-import, or /scout-alt. Optional <code>notes</code> column shapes each post.</span>
-            </div>
-            <div class="run-bulk-actions">
-              <button type="button" id="run-bulk-open">Bulk URLs…</button>
-              <a class="btn-link" href="/api/templates/urls.csv" download>Download CSV template</a>
-            </div>
           </div>
           <label id="run-extra-wrap">
             Extra args (optional)
@@ -882,7 +871,7 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
           <div class="run-bulk social-bulk-inline">
             <div class="run-bulk-head">
               <span>Have a list of URLs?</span>
-              <span class="hint">Queue one /scout-post run per URL, sequentially.</span>
+              <span class="hint">Each URL becomes its own /scout-post run and inherits the tone, platforms, length, emoji, hashtag, link-in-comments, mention, and variants settings from the form above.</span>
             </div>
             <div class="run-bulk-actions">
               <button type="button" id="social-bulk-open">Bulk URLs…</button>
@@ -1000,6 +989,7 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             <li><span>Subject:</span> <code id="bulk-opt-subject">—</code></li>
             <li><span>Date range:</span> <code id="bulk-opt-range">—</code></li>
             <li><span>Extra:</span> <code id="bulk-opt-extra">—</code></li>
+            <li id="bulk-opt-tuners-row" hidden><span>Post tuners:</span> <code id="bulk-opt-tuners">—</code></li>
           </ul>
           <span class="hint">Close this dialog to change them.</span>
         </div>

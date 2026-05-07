@@ -343,6 +343,53 @@ aside li.selected {
 }
 aside li.selected .mtime { color: var(--muted-2); opacity: 1; }
 
+/* --- Aside list rows: name + open link + mtime --------- */
+aside li[data-name] {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+aside li[data-name] .entry-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+aside li[data-name] .entry-open {
+  color: var(--muted, #8a8a99);
+  text-decoration: none;
+  padding: 0 0.35rem;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+aside li[data-name] .entry-open:hover {
+  color: var(--accent);
+  background: rgba(129,140,248,0.12);
+}
+
+/* --- Inline doc viewer toolbar (Reports / Social) ------ */
+.doc-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px dashed var(--border);
+}
+.doc-open-link {
+  font-size: 0.85rem;
+  text-decoration: none;
+  color: var(--accent);
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+.doc-open-link:hover {
+  background: rgba(129,140,248,0.12);
+}
+
 /* --- Run output: terminal panel ------------------------- */
 #run-output {
   background:
@@ -1058,7 +1105,13 @@ aside li.selected .mtime { color: var(--muted-2); opacity: 1; }
   margin-bottom: 0.5rem;
 }
 .dash-card-head h3 { margin: 0; }
-.dash-activity { list-style: none; padding: 0; margin: 0; }
+.dash-activity {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 22rem;
+  overflow-y: auto;
+}
 .activity-row {
   display: grid;
   grid-template-columns: 1.6rem 1fr auto;

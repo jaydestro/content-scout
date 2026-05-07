@@ -1025,13 +1025,13 @@ app.get('/api/activity', async (_req, res) => {
       ...extra,
     });
 
-  for (const r of reports) push('report', 'Scan report', r, { href: `#reports?file=${encodeURIComponent(r.name)}` });
-  for (const s of bulkPosts) push('social-bulk', 'Social posts (bulk)', s, { href: `#social?file=${encodeURIComponent(s.name)}` });
-  for (const s of soloPosts) push('social-solo', 'Social posts (solo)', s, { href: `#social?file=${encodeURIComponent(s.name)}` });
-  for (const c of calendars) push('calendar', 'Posting calendar', c, { href: `#social?file=${encodeURIComponent(c.name)}` });
-  for (const t of trends) push('trends', 'Trends report', t, { href: `#reports?file=${encodeURIComponent(t.name)}` });
-  for (const a of altText) push('alt', 'Alt text', a, { href: `#social?file=${encodeURIComponent(a.name)}` });
-  for (const o of otherSocial) push('social-other', 'Social file', o, { href: `#social?file=${encodeURIComponent(o.name)}` });
+  for (const r of reports) push('report', 'Scan report', r, { href: `/view/reports/${encodeURIComponent(r.name)}` });
+  for (const s of bulkPosts) push('social-bulk', 'Social posts (bulk)', s, { href: `/view/social/${encodeURIComponent(s.name)}` });
+  for (const s of soloPosts) push('social-solo', 'Social posts (solo)', s, { href: `/view/social/${encodeURIComponent(s.name)}` });
+  for (const c of calendars) push('calendar', 'Posting calendar', c, { href: `/view/social/${encodeURIComponent(c.name)}` });
+  for (const t of trends) push('trends', 'Trends report', t, { href: `/view/reports/${encodeURIComponent(t.name)}` });
+  for (const a of altText) push('alt', 'Alt text', a, { href: `/view/social/${encodeURIComponent(a.name)}` });
+  for (const o of otherSocial) push('social-other', 'Social file', o, { href: `/view/social/${encodeURIComponent(o.name)}` });
   for (const b of thumbBatches) {
     stream.push({
       kind: 'thumbnails',
@@ -1058,7 +1058,9 @@ app.get('/api/activity', async (_req, res) => {
 
   stream.sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''));
 
-  res.json({ totals, last, activity: stream.slice(0, 25) });
+  // Cap the rendered timeline. The full counts still surface in the meta line
+  // and stat cards; the card itself stays a digestible glance, not a feed.
+  res.json({ totals, last, activity: stream.slice(0, 10) });
 });
 
 // --- Action items: parse the latest content report per subject ----
@@ -1283,6 +1285,75 @@ app.get('/api/social/:name', async (req, res) => {
     res.json(await readMarkdown(SOCIAL_DIR, req.params.name));
   } catch (err) {
     res.status(404).json({ error: String(err.message || err) });
+  }
+});
+
+// Standalone, printable view of any report or social-posts file. Lets the
+// dashboard's "Recent activity" links and the per-list "Open ↗" buttons pop
+// the rendered output in its own window/tab, independent of the SPA.
+function renderStandaloneHTML({ name, html, kind }) {
+  const escHtml = (s) =>
+    String(s).replace(/[&<>"']/g, (ch) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    })[ch]);
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${escHtml(name)} — Content Scout</title>
+<link rel="stylesheet" href="/theme-modern.css" />
+<style>
+  body { max-width: 880px; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
+  .standalone-head {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding-bottom: 0.75rem; margin-bottom: 1.25rem;
+    border-bottom: 1px solid var(--border, #2a2a35);
+    flex-wrap: wrap;
+  }
+  .standalone-head .crumb { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted, #8a8a99); }
+  .standalone-head h1 { font-size: 1.05rem; margin: 0; word-break: break-all; }
+  .standalone-head .spacer { flex: 1; }
+  .standalone-head a, .standalone-head button {
+    font-size: 0.85rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: 6px;
+    text-decoration: none;
+  }
+  @media print {
+    .standalone-head { display: none; }
+    body { max-width: none; padding: 0; }
+  }
+</style>
+</head>
+<body>
+  <header class="standalone-head">
+    <span class="crumb">${escHtml(kind)}</span>
+    <h1>${escHtml(name)}</h1>
+    <span class="spacer"></span>
+    <button type="button" onclick="window.print()">Print</button>
+    <a href="/" target="_blank" rel="noopener">Back to Scout</a>
+  </header>
+  <article class="markdown">${html}</article>
+</body>
+</html>`;
+}
+
+app.get('/view/reports/:name', async (req, res) => {
+  try {
+    const { name, html } = await readMarkdown(REPORTS_DIR, req.params.name);
+    res.type('html').send(renderStandaloneHTML({ name, html, kind: 'Report' }));
+  } catch (err) {
+    res.status(404).type('html').send(`<h1>Not found</h1><p>${String(err.message || err)}</p>`);
+  }
+});
+
+app.get('/view/social/:name', async (req, res) => {
+  try {
+    const { name, html } = await readMarkdown(SOCIAL_DIR, req.params.name);
+    res.type('html').send(renderStandaloneHTML({ name, html, kind: 'Social posts' }));
+  } catch (err) {
+    res.status(404).type('html').send(`<h1>Not found</h1><p>${String(err.message || err)}</p>`);
   }
 });
 

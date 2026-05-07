@@ -129,7 +129,7 @@
         const status = esc(it.status || '');
         title = `<code>${esc(it.name || 'run')}</code> <span class="badge badge-${status}">${status}</span>`;
       } else if (it.href) {
-        title = `<a href="${esc(it.href)}">${esc(it.name)}</a>`;
+        title = `<a href="${esc(it.href)}" target="_blank" rel="noopener">${esc(it.name)}</a>`;
       } else {
         title = esc(it.name);
       }

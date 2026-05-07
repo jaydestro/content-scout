@@ -181,12 +181,16 @@ const ENV_KEY_META = {
     anchor: 'reddit',
   },
   GOOGLE_PSE_KEY: {
-    tip: 'Google API key for Programmable Search Engine (free, OPTIONAL). Enables Reddit Layer 3 — catches threads in subreddits you didn\'t list. 100 free queries/day.',
+    tip: 'LEGACY — Google closed Custom Search JSON API to new customers in early 2026 (existing pre-2026 projects supported through Jan 1, 2027). New GCP projects get a permanent 403. Use BRAVE_SEARCH_API_KEY instead.',
     anchor: 'google-pse',
   },
   GOOGLE_PSE_CX: {
-    tip: 'Programmable Search Engine ID (cx). Restrict the engine to reddit.com/* at programmablesearchengine.google.com.',
+    tip: 'LEGACY — only meaningful if GOOGLE_PSE_KEY is from a pre-2026 GCP project. New projects cannot use Custom Search. Use BRAVE_SEARCH_API_KEY instead.',
     anchor: 'google-pse',
+  },
+  BRAVE_SEARCH_API_KEY: {
+    tip: 'Brave Search API key (free tier: 2,000 queries/month, 1 query/sec). RECOMMENDED — the primary free path for Reddit Layer 3 + LinkedIn Layer 1 + X/Twitter Layer 2. Sign up at brave.com/search/api and create a key at api.search.brave.com/app/keys.',
+    anchor: 'brave-search',
   },
   BLUESKY_HANDLE: {
     tip: 'Your Bluesky handle (e.g., yourname.bsky.social). Bluesky has no API keys — scans authenticate AS your user via an app password.',
@@ -197,7 +201,7 @@ const ENV_KEY_META = {
     anchor: 'bluesky',
   },
   X_BEARER_TOKEN: {
-    tip: 'X/Twitter API bearer token. Basic plan ($200/mo) recommended; free tier is typically too rate-limited.',
+    tip: 'X/Twitter API bearer token (OPTIONAL). Free PSE/RSSHub paths cover X without any token — only set this if you have the $200/mo Basic plan and want authenticated API access.',
     anchor: 'xtwitter',
   },
   GITHUB_TOKEN: {
@@ -2499,31 +2503,56 @@ function streamRun(id) {
 async function loadReports() {
   const { reports } = await api('/api/reports');
   $('reports-list').innerHTML = reports
-    .map((r) => `<li data-name="${r.name}">${r.name}<span class="mtime">${r.mtime.slice(0, 10)}</span></li>`)
+    .map((r) => `<li data-name="${r.name}">
+        <span class="entry-name">${r.name}</span>
+        <a class="entry-open" href="/view/reports/${encodeURIComponent(r.name)}" target="_blank" rel="noopener" title="Open in new window" aria-label="Open ${r.name} in new window">↗</a>
+        <span class="mtime">${r.mtime.slice(0, 10)}</span>
+      </li>`)
     .join('') || '<li class="hint">No reports yet.</li>';
   $('reports-list').querySelectorAll('li[data-name]').forEach((li) => {
-    li.addEventListener('click', async () => {
+    li.addEventListener('click', async (e) => {
+      // Don't hijack clicks on the "open in new window" link.
+      if (e.target.closest('.entry-open')) return;
       document.querySelectorAll('#reports-list li').forEach((x) => x.classList.remove('selected'));
       li.classList.add('selected');
       const r = await api(`/api/reports/${encodeURIComponent(li.dataset.name)}`);
-      $('reports-body').innerHTML = r.html;
+      renderDocBody($('reports-body'), { name: li.dataset.name, html: r.html, kind: 'reports' });
     });
   });
 }
 async function loadSocial() {
   const { social } = await api('/api/reports');
   $('social-list').innerHTML = social
-    .map((r) => `<li data-name="${r.name}">${r.name}<span class="mtime">${r.mtime.slice(0, 10)}</span></li>`)
+    .map((r) => `<li data-name="${r.name}">
+        <span class="entry-name">${r.name}</span>
+        <a class="entry-open" href="/view/social/${encodeURIComponent(r.name)}" target="_blank" rel="noopener" title="Open in new window" aria-label="Open ${r.name} in new window">↗</a>
+        <span class="mtime">${r.mtime.slice(0, 10)}</span>
+      </li>`)
     .join('') || '<li class="hint">No social posts yet.</li>';
   $('social-list').querySelectorAll('li[data-name]').forEach((li) => {
-    li.addEventListener('click', async () => {
+    li.addEventListener('click', async (e) => {
+      if (e.target.closest('.entry-open')) return;
       document.querySelectorAll('#social-list li').forEach((x) => x.classList.remove('selected'));
       li.classList.add('selected');
       const r = await api(`/api/social/${encodeURIComponent(li.dataset.name)}`);
-      $('social-body').innerHTML = r.html;
+      renderDocBody($('social-body'), { name: li.dataset.name, html: r.html, kind: 'social' });
       enhanceSocialBody($('social-body'));
     });
   });
+}
+
+// Render a markdown doc into the inline article view, with a toolbar that
+// includes an "Open in new window" link pointing at the standalone /view/*
+// route. Used by both the Reports and Social lists.
+function renderDocBody(article, { name, html, kind }) {
+  if (!article) return;
+  const viewPath = `/view/${kind}/${encodeURIComponent(name)}`;
+  article.innerHTML = `
+    <div class="doc-toolbar">
+      <a href="${viewPath}" target="_blank" rel="noopener" class="doc-open-link" title="Open ${name} in a new window">Open in new window ↗</a>
+    </div>
+    <div class="doc-content">${html}</div>
+  `;
 }
 
 // Enhance a rendered social-posts markdown view with:
