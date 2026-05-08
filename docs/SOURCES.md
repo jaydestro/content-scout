@@ -19,11 +19,11 @@ Select all or pick individually during onboarding.
 | 7 | C# Corner | Blog | None (RSS) | Search by keywords |
 | 8 | InfoQ | Blog | None (RSS) | Search by keywords |
 | 9 | Stack Overflow | Forum | None (public API v2.3, 300 req/day free) | Questions tagged with product terms |
-| 10 | Reddit | Forum | OAuth2 app credentials (free) | Posts in relevant subreddits. Register at reddit.com/prefs/apps |
+| 10 | Reddit | Forum | None required (cascading no-auth scanner) | **Layer 0** (opt-in) = logged-in browser scan via [tools/browser-scan/](../tools/browser-scan) → Layer 1 = `old.reddit.com` RSS → Layer 2 = HTML scrape → Layer 3 = [Brave Search API](API-KEYS.md#brave-search-api) (Layer 3b = legacy [Google PSE](API-KEYS.md#google-pse-legacy)) → Layer 4 = manual import via `/scout-reddit-import`. OAuth creds optional pre-Layer-1 upgrade. |
 | 11 | Hacker News | Forum | None (public Algolia API) | Submissions and comments mentioning product |
 | 12 | Bluesky | Social | App password (free) | Authenticated search by product terms, hashtags, mentions |
-| 13 | LinkedIn | Social | None | Best-effort search by product name |
-| 14 | X/Twitter | Social | X API bearer token ($200/mo Basic recommended) | Authenticated search by terms, hashtags, mentions. Without a key, best-effort public search is attempted but may be blocked. |
+| 13 | LinkedIn | Social | None | **Layer 0** (opt-in) = logged-in browser scan via [tools/browser-scan/](../tools/browser-scan) → Layer 1 = [Brave Search API](API-KEYS.md#brave-search-api) on `linkedin.com/posts/* linkedin.com/pulse/*` → Layer 2 = RSSHub via Custom RSS → Layer 3 = web/fetch on referenced permalinks. |
+| 14 | X/Twitter | Social | None required | **Layer 0** (opt-in, **recommended**) = logged-in browser scan via [tools/browser-scan/](../tools/browser-scan) → Layer 1 = authenticated API (only if `X_BEARER_TOKEN` set; needs $200/mo Basic plan) → Layer 2 = [Brave Search API](API-KEYS.md#brave-search-api) → Layer 3 = RSSHub via Custom RSS → Layer 4 = web/fetch on referenced permalinks. |
 
 ### Community Blog Platforms
 
@@ -83,7 +83,7 @@ A bridge turns a non-RSS page (search results, profile pages, social posts) into
 | Google News for a topic | `https://news.google.com/rss/search?q=<query>&hl=en-US` |
 | A YouTube channel | `https://www.youtube.com/feeds/videos.xml?channel_id=<UC...>` |
 | A GitHub repo's releases | `https://github.com/<owner>/<repo>/releases.atom` |
-| A subreddit | `https://www.reddit.com/r/<sub>/.rss` |
+| A subreddit | `https://old.reddit.com/r/<sub>/.rss` |
 
 **4. Verify before adding.**
 Paste the URL into a browser. You should see XML (raw or styled). If you get HTML or a 404, it's not a valid feed.

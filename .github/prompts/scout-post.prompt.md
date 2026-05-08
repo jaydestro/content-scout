@@ -7,11 +7,11 @@ mode: content-scout
 
 Generate social media posts for LinkedIn and X. Follow all Social Post Standards from the product config. Produce at least 3 LinkedIn options and 3 X options, each with a different framing angle.
 
-${{input:URL (required) -- this is the CTA link for the posts}}
+${{input:URL (optional) -- the CTA link for the posts. Leave blank if the link isn't live yet and you're drafting from raw copy}}
 
-${{input:Item number from report? (optional, e.g., "#3") Leave blank if providing a URL directly}}
+${{input:Item number from report? (optional, e.g., "#3") Leave blank if providing a URL or copy directly}}
 
-${{input:Additional context? (optional) -- speakers, authors, key highlights, event info, video title, anything to emphasize}}
+${{input:Additional context or source copy? (optional if URL provided, REQUIRED if no URL) -- paste the announcement text, talk abstract, blog draft, key highlights, speakers/authors, event info, video title, etc.}}
 
 ${{input:Which report? (optional) Leave blank for the latest, or specify month/year (e.g., "March 2026")}}
 
@@ -22,9 +22,22 @@ ${{input:Product? (optional) Leave blank if only one product is configured, or s
 ## Product Resolution
 1. If the user specified a product slug, load `scout-config-{slug}.prompt.md`.
 2. If only one `scout-config-*.prompt.md` exists, use it automatically.
-3. If multiple configs exist and no product was specified, infer from the URL or report. If still ambiguous, ask.
+3. If multiple configs exist and no product was specified, infer from the URL, report, or supplied copy. If still ambiguous, ask.
 
-Use the URL as the CTA. If additional context is provided, prioritize it. If only a URL is given, fetch it and extract key details.
+## Source resolution
+
+The user must provide **at least one** of: a URL, a report item number, or source copy/context. Resolve the source like this:
+
+1. **URL provided, link is live** — use it as the CTA link as-is (never shorten, never add tracking params). If additional context is provided, prioritize it. If only a URL, fetch it and extract key details.
+2. **URL provided, but link is NOT live yet** — signaled by phrases like `(link not live yet — use copy below as source of truth, do not fetch the URL)` in the input, or an explicit user note that the URL isn't live. Use the URL **as the CTA in every post** exactly as supplied (this is its eventual home), but do **not** fetch it. Treat the provided copy/context as authoritative. At the very top of the output file, add a one-line callout:
+   > ⚠️ Link not yet live. Verify `<url>` resolves before posting.
+   File naming: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-solo-{url-slug}.md` (same as live URL — the URL slug is known).
+3. **No URL, copy provided ("no-link-yet" mode)** — the link doesn't exist yet at all. Do **not** fetch anything. Treat the provided copy/context as authoritative. In every post, use the literal token `{LINK}` everywhere a CTA URL would normally go (post body, link-in-comments block, Reddit body, etc.). At the very top of the output file, add a one-line callout:
+   > ⚠️ Link not yet live. Replace every `{LINK}` placeholder with the public URL before posting.
+   File naming: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-solo-draft-{title-slug}.md` (the `solo-draft-` prefix signals no-URL mode; if a working title can be inferred from the copy, slugify a short form, max 40 chars; otherwise fall back to `solo-draft`).
+4. **No URL, no copy, no item number** — refuse politely and ask for one.
+
+In modes 2 and 3 the post content rules are unchanged — same tone, length, hashtag, mention-author, and platform tuners apply. The only differences are: no URL fetch, the warning callout at the top of the file, and (mode 3 only) the `{LINK}` placeholder.
 
 ## Output File Naming
 
@@ -36,6 +49,8 @@ Use the URL as the CTA. If additional context is provided, prioritize it. If onl
     - `https://devblogs.microsoft.com/cosmosdb/announcing-vector-search/` → `devblogs-microsoft-com-announcing-vector-search`
     - `https://github.com/Azure/azure-cosmos-dotnet-v3/releases/tag/v3.50.0` → `github-com-v3-50-0`
   - If the URL slug would be empty, fall back to `solo-link`.
+- **Solo, no link yet (drafted from copy)**: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-solo-draft-{title-slug}.md`
+  - `{title-slug}` = lowercased, hyphenated short form of a title or topic surfaced from the supplied copy (max 40 chars). If none can be inferred, fall back to `solo-draft`.
 
 When multiple products are configured, always include the product `{slug}`. If only one product is configured, the `{slug}` segment is still included for consistency.
 
@@ -88,6 +103,34 @@ When `link-in-comments: yes` (LinkedIn convention):
 - Omit the URL from the post body.
 - End the post with: `Link in the first comment 👇` (or equivalent — respect emoji setting).
 - Add a second fenced block labeled `LinkedIn — first comment:` containing just the URL (and a one-line framing if useful).
+
+### Thumbnail spec (auto-rendered)
+
+For every item, include exactly **one** `**Thumbnail spec:**` block. The
+renderer at `tools/render-thumbnails/` automatically produces **both** a
+LinkedIn (1200×1200) and an X (1600×900) PNG from that single spec — you
+do not need to repeat the block per platform. The web UI runs the renderer
+automatically after `/scout-post` finishes; it can also be invoked manually
+with `node tools/render-thumbnails/index.js`.
+
+Use this exact bullet shape (case-insensitive keys; the parser also accepts
+`·`-separated combos like `Platform: LinkedIn · Size: 1200x1200`):
+
+```markdown
+**Thumbnail spec:**
+- Platform: LinkedIn · Size: 1200x1200
+- Background: Dark navy (`#0F2540`)
+- Accent: `#38B2AC`
+- Headline: "Identity-Aware MCP Servers"
+- Subtext: "FastMCP + Entra Auth + Azure Cosmos DB"
+- Logo: Azure Cosmos DB (from `social-posts/images/brand/azure-cosmos-db/`)
+- Save to: `social-posts/images/{YYYY-MM-DD-HHmm}/{N}-linkedin-{slug}.png`
+```
+
+Recognized keys: `Platform`, `Size`, `Background`, `Accent`, `Headline`,
+`Subtext`, `Logo`, `Save to` (alias `Save path`). The companion file path
+is derived by swapping the `linkedin`/`x` token in the `Save to:` filename,
+so the X PNG above lands at `…/{N}-x-{slug}.png` automatically.
 
 ### Emoji
 

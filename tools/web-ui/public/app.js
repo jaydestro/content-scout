@@ -169,7 +169,7 @@ const ENV_KEY_META = {
     anchor: 'youtube-data-api-v3',
   },
   REDDIT_CLIENT_ID: {
-    tip: 'Reddit OAuth2 client ID (free, OPTIONAL). Without it, Content Scout falls back to the public .json endpoint. Register a "script" app at reddit.com/prefs/apps for higher limits.',
+    tip: 'Reddit OAuth2 client ID (free, OPTIONAL). Reddit works without any creds via the layered no-auth scanner (old.reddit RSS → HTML → Google PSE → manual import). Add this only if Reddit approved your app.',
     anchor: 'reddit',
   },
   REDDIT_CLIENT_SECRET: {
@@ -180,6 +180,18 @@ const ENV_KEY_META = {
     tip: 'User-Agent string Reddit requires on API calls. Any descriptive string works (e.g., "content-scout/1.0").',
     anchor: 'reddit',
   },
+  GOOGLE_PSE_KEY: {
+    tip: 'LEGACY — Google closed Custom Search JSON API to new customers in early 2026 (existing pre-2026 projects supported through Jan 1, 2027). New GCP projects get a permanent 403. Use BRAVE_SEARCH_API_KEY instead.',
+    anchor: 'google-pse',
+  },
+  GOOGLE_PSE_CX: {
+    tip: 'LEGACY — only meaningful if GOOGLE_PSE_KEY is from a pre-2026 GCP project. New projects cannot use Custom Search. Use BRAVE_SEARCH_API_KEY instead.',
+    anchor: 'google-pse',
+  },
+  BRAVE_SEARCH_API_KEY: {
+    tip: 'Brave Search API key (free tier: 2,000 queries/month, 1 query/sec). RECOMMENDED — the primary free path for Reddit Layer 3 + LinkedIn Layer 1 + X/Twitter Layer 2. Sign up at brave.com/search/api and create a key at api.search.brave.com/app/keys.',
+    anchor: 'brave-search',
+  },
   BLUESKY_HANDLE: {
     tip: 'Your Bluesky handle (e.g., yourname.bsky.social). Bluesky has no API keys — scans authenticate AS your user via an app password.',
     anchor: 'bluesky',
@@ -189,7 +201,7 @@ const ENV_KEY_META = {
     anchor: 'bluesky',
   },
   X_BEARER_TOKEN: {
-    tip: 'X/Twitter API bearer token. Basic plan ($200/mo) recommended; free tier is typically too rate-limited.',
+    tip: 'X/Twitter API bearer token (OPTIONAL). Free PSE/RSSHub paths cover X without any token — only set this if you have the $200/mo Basic plan and want authenticated API access.',
     anchor: 'xtwitter',
   },
   GITHUB_TOKEN: {
@@ -2491,31 +2503,56 @@ function streamRun(id) {
 async function loadReports() {
   const { reports } = await api('/api/reports');
   $('reports-list').innerHTML = reports
-    .map((r) => `<li data-name="${r.name}">${r.name}<span class="mtime">${r.mtime.slice(0, 10)}</span></li>`)
+    .map((r) => `<li data-name="${r.name}">
+        <span class="entry-name">${r.name}</span>
+        <a class="entry-open" href="/view/reports/${encodeURIComponent(r.name)}" target="_blank" rel="noopener" title="Open in new window" aria-label="Open ${r.name} in new window">↗</a>
+        <span class="mtime">${r.mtime.slice(0, 10)}</span>
+      </li>`)
     .join('') || '<li class="hint">No reports yet.</li>';
   $('reports-list').querySelectorAll('li[data-name]').forEach((li) => {
-    li.addEventListener('click', async () => {
+    li.addEventListener('click', async (e) => {
+      // Don't hijack clicks on the "open in new window" link.
+      if (e.target.closest('.entry-open')) return;
       document.querySelectorAll('#reports-list li').forEach((x) => x.classList.remove('selected'));
       li.classList.add('selected');
       const r = await api(`/api/reports/${encodeURIComponent(li.dataset.name)}`);
-      $('reports-body').innerHTML = r.html;
+      renderDocBody($('reports-body'), { name: li.dataset.name, html: r.html, kind: 'reports' });
     });
   });
 }
 async function loadSocial() {
   const { social } = await api('/api/reports');
   $('social-list').innerHTML = social
-    .map((r) => `<li data-name="${r.name}">${r.name}<span class="mtime">${r.mtime.slice(0, 10)}</span></li>`)
+    .map((r) => `<li data-name="${r.name}">
+        <span class="entry-name">${r.name}</span>
+        <a class="entry-open" href="/view/social/${encodeURIComponent(r.name)}" target="_blank" rel="noopener" title="Open in new window" aria-label="Open ${r.name} in new window">↗</a>
+        <span class="mtime">${r.mtime.slice(0, 10)}</span>
+      </li>`)
     .join('') || '<li class="hint">No social posts yet.</li>';
   $('social-list').querySelectorAll('li[data-name]').forEach((li) => {
-    li.addEventListener('click', async () => {
+    li.addEventListener('click', async (e) => {
+      if (e.target.closest('.entry-open')) return;
       document.querySelectorAll('#social-list li').forEach((x) => x.classList.remove('selected'));
       li.classList.add('selected');
       const r = await api(`/api/social/${encodeURIComponent(li.dataset.name)}`);
-      $('social-body').innerHTML = r.html;
+      renderDocBody($('social-body'), { name: li.dataset.name, html: r.html, kind: 'social' });
       enhanceSocialBody($('social-body'));
     });
   });
+}
+
+// Render a markdown doc into the inline article view, with a toolbar that
+// includes an "Open in new window" link pointing at the standalone /view/*
+// route. Used by both the Reports and Social lists.
+function renderDocBody(article, { name, html, kind }) {
+  if (!article) return;
+  const viewPath = `/view/${kind}/${encodeURIComponent(name)}`;
+  article.innerHTML = `
+    <div class="doc-toolbar">
+      <a href="${viewPath}" target="_blank" rel="noopener" class="doc-open-link" title="Open ${name} in a new window">Open in new window ↗</a>
+    </div>
+    <div class="doc-content">${html}</div>
+  `;
 }
 
 // Enhance a rendered social-posts markdown view with:
@@ -2614,11 +2651,34 @@ function enhanceSocialBody(root) {
     output.scrollTop = output.scrollHeight;
   }
 
+  // Defensive: ensure Ctrl/Cmd+A inside these fields selects only the field's
+  // own contents (some global handlers elsewhere on the page can otherwise
+  // expand the selection to the whole document).
+  for (const el of [urlInput, ctxInput]) {
+    if (!el) continue;
+    el.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')) {
+        e.stopPropagation();
+        e.preventDefault();
+        el.focus();
+        el.select();
+      }
+    });
+  }
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const url = urlInput.value.trim();
     const ctx = ctxInput.value.trim();
-    if (!url) { setStatus('URL required', 'error'); return; }
+    const notLive = !!$('social-gen-not-live')?.checked;
+    if (!url && !ctx) {
+      setStatus('Provide a URL, source copy, or both', 'error');
+      return;
+    }
+    if ((!url || notLive) && ctx.length < 20) {
+      setStatus('Source copy is too short — paste the announcement text, draft, or detailed notes', 'error');
+      return;
+    }
 
     // Read tuner controls (all optional — fall back to sensible defaults).
     const tone = ($('social-gen-tone')?.value || 'conversational').trim();
@@ -2634,9 +2694,11 @@ function enhanceSocialBody(root) {
       .join(',') || 'linkedin,x';
 
     // scout-post picks its own config (single = uses it; multi = asks). We
-    // pass URL (required), free-form context, and tuner options as a single
-    // `extra` string so buildPrompt produces:
-    //   /scout-post <url> [— context] [tone:..] [emoji:..] [...]
+    // pass the URL (optional), free-form context/copy, the not-live flag,
+    // and tuner options as one `extra` string so buildPrompt produces:
+    //   /scout-post <url> [— context] [tuners]                                (URL mode, link is live)
+    //   /scout-post <url> (link not live yet — use copy below, do not fetch) — <copy> [tuners]
+    //   /scout-post (no URL yet — draft from copy below, use {LINK} placeholder for CTA) — <copy> [tuners]
     const tuners =
       ` [tone: ${tone}]` +
       ` [platforms: ${platforms}]` +
@@ -2646,7 +2708,17 @@ function enhanceSocialBody(root) {
       ` [mention-authors: ${mention}]` +
       ` [link-in-comments: ${lic}]` +
       ` [variants: ${variants}]`;
-    const extra = ctx ? `${url} — ${ctx}${tuners}` : `${url}${tuners}`;
+    let extra;
+    if (url && !notLive) {
+      extra = ctx ? `${url} — ${ctx}${tuners}` : `${url}${tuners}`;
+    } else if (url && notLive) {
+      // URL is known but the page isn't live yet. Use the URL as the CTA in
+      // the post, but tell the agent NOT to fetch it and to trust the copy.
+      extra = `${url} (link not live yet — use copy below as source of truth, do not fetch the URL) — ${ctx}${tuners}`;
+    } else {
+      // No URL at all — draft from copy and use {LINK} placeholder for CTA.
+      extra = `(no URL yet — draft from copy below; use {LINK} placeholder for CTA) — ${ctx}${tuners}`;
+    }
     output.textContent = '';
     output.hidden = false;
     setStatus('Starting…');
@@ -2682,6 +2754,294 @@ function enhanceSocialBody(root) {
         stream && stream.close();
         stream = null;
         // Refresh the social posts list — a new file may have been written
+        loadSocial().catch(() => {});
+      });
+      stream.onerror = () => { stream && stream.close(); stream = null; setRunning(false); };
+    } catch (err) {
+      setRunning(false);
+      setStatus(`error: ${err.message}`, 'error');
+    }
+  });
+
+  stopBtn.addEventListener('click', async () => {
+    if (!runId) return;
+    setStatus('Stopping…');
+    try { await fetch(`/api/runs/${runId}/stop`, { method: 'POST' }); }
+    catch (err) { setStatus(`stop failed: ${err.message}`, 'error'); }
+  });
+})();
+
+// --- "Generate alt text" — /scout-alt runner ------------------------
+(() => {
+  const form = $('alt-generate-form');
+  if (!form) return;
+  const imgInput = $('alt-gen-img');
+  const descInput = $('alt-gen-desc');
+  const startBtn = $('alt-gen-start');
+  const stopBtn = $('alt-gen-stop');
+  const status = $('alt-gen-status');
+  const output = $('alt-gen-output');
+  const dropzone = $('alt-dropzone');
+  const fileInput = $('alt-gen-file');
+  const dzEmpty = $('alt-dropzone-empty');
+  const dzPreview = $('alt-dropzone-preview');
+  const previewImg = $('alt-preview-img');
+  const previewPath = $('alt-preview-path');
+  const previewClear = $('alt-preview-clear');
+
+  let uploadedPath = null; // workspace-relative path returned by the server
+  let visionReport = null; // formatted text from /api/alt/describe
+  let runId = null;
+  let stream = null;
+  let visionAvailable = false;
+
+  const visionStatus = $('alt-vision-status');
+
+  async function checkVision() {
+    try {
+      const res = await fetch('/api/alt/vision-status');
+      const data = await res.json();
+      visionAvailable = !!data.ok && data.provider !== 'none';
+      if (data.provider === 'none') {
+        visionStatus.textContent = 'Vision provider: none — agent will work from your description, or you can configure VISION_PROVIDER=ollama|openai in .env (run "scout onboard" → vision question).';
+        visionStatus.dataset.tone = 'muted';
+      } else if (data.ok && (data.modelInstalled !== false)) {
+        visionStatus.textContent = `Vision: ${data.message}`;
+        visionStatus.dataset.tone = 'ok';
+      } else {
+        visionStatus.textContent = `Vision: ${data.message}`;
+        visionStatus.dataset.tone = 'error';
+      }
+    } catch (err) {
+      visionStatus.textContent = `Vision status unavailable: ${err.message}`;
+      visionStatus.dataset.tone = 'error';
+    }
+  }
+  checkVision();
+
+  function setStatus(text, tone) {
+    status.textContent = text || '';
+    status.dataset.tone = tone || '';
+  }
+  function setRunning(running) {
+    startBtn.disabled = running;
+    stopBtn.disabled = !running;
+    imgInput.disabled = running;
+    descInput.disabled = running;
+    fileInput.disabled = running;
+    startBtn.textContent = running ? 'Running…' : 'Generate alt text';
+  }
+  function appendOutput(chunk) {
+    output.hidden = false;
+    output.textContent += chunk;
+    output.scrollTop = output.scrollHeight;
+  }
+  function showPreview(previewUrl, relPath) {
+    uploadedPath = relPath;
+    visionReport = null;
+    previewImg.src = previewUrl;
+    previewPath.textContent = relPath;
+    dzEmpty.hidden = true;
+    dzPreview.hidden = false;
+  }
+  function clearPreview() {
+    uploadedPath = null;
+    visionReport = null;
+    previewImg.removeAttribute('src');
+    previewPath.textContent = '';
+    dzPreview.hidden = true;
+    dzEmpty.hidden = false;
+    fileInput.value = '';
+  }
+
+  async function describeUploaded() {
+    if (!uploadedPath || !visionAvailable) return;
+    setStatus('Inspecting image with vision provider…');
+    try {
+      const res = await fetch('/api/alt/describe', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ relativePath: uploadedPath }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setStatus(`Vision describe failed: ${data.error || res.status}`, 'error');
+        return;
+      }
+      visionReport = data.formatted || '';
+      const subj = data.report?.subject ? ` — ${data.report.subject}` : '';
+      setStatus(`Vision OK (${data.report?.provider}/${data.report?.model || ''})${subj}`, 'ok');
+    } catch (err) {
+      setStatus(`Vision describe error: ${err.message}`, 'error');
+    }
+  }
+  previewClear.addEventListener('click', clearPreview);
+
+  // Defensive: keep Ctrl/Cmd+A scoped to this field, not the whole page.
+  for (const el of [imgInput, descInput]) {
+    if (!el) continue;
+    el.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')) {
+        e.stopPropagation();
+        e.preventDefault();
+        el.focus();
+        el.select();
+      }
+    });
+  }
+
+  // ---- Upload helpers ----
+  async function uploadFile(file) {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setStatus(`Not an image: ${file.type || 'unknown type'}`, 'error');
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      setStatus(`Image is ${(file.size / 1024 / 1024).toFixed(1)} MB — limit is 25 MB`, 'error');
+      return;
+    }
+    setStatus(`Uploading ${file.name} (${(file.size / 1024).toFixed(0)} KB)…`);
+    const dataBase64 = await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onerror = () => reject(r.error);
+      r.onload = () => resolve(String(r.result || ''));
+      r.readAsDataURL(file);
+    });
+    try {
+      const res = await fetch('/api/alt/upload', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ filename: file.name, dataBase64 }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setStatus(`Upload failed: ${data.error || res.status}`, 'error');
+        return;
+      }
+      showPreview(data.previewUrl, data.relativePath);
+      setStatus(`Saved to ${data.relativePath}`, 'ok');
+      // Fire-and-forget: ask the configured vision provider to describe the image.
+      describeUploaded();
+    } catch (err) {
+      setStatus(`Upload error: ${err.message}`, 'error');
+    }
+  }
+
+  // ---- Dropzone wiring ----
+  dropzone.addEventListener('click', (e) => {
+    if (e.target.closest('button')) return; // let Clear button work
+    fileInput.click();
+  });
+  dropzone.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      fileInput.click();
+    }
+  });
+  fileInput.addEventListener('change', () => {
+    const f = fileInput.files && fileInput.files[0];
+    if (f) uploadFile(f);
+  });
+  ['dragenter', 'dragover'].forEach((ev) => {
+    dropzone.addEventListener(ev, (e) => {
+      e.preventDefault(); e.stopPropagation();
+      dropzone.classList.add('dragover');
+    });
+  });
+  ['dragleave', 'drop'].forEach((ev) => {
+    dropzone.addEventListener(ev, (e) => {
+      e.preventDefault(); e.stopPropagation();
+      dropzone.classList.remove('dragover');
+    });
+  });
+  dropzone.addEventListener('drop', (e) => {
+    const dt = e.dataTransfer;
+    const file = dt && dt.files && dt.files[0];
+    if (file) uploadFile(file);
+  });
+
+  // Paste from clipboard while focus is anywhere inside the alt card.
+  const altCard = $('alt-generate-card');
+  altCard?.addEventListener('paste', (e) => {
+    // Don't hijack paste into the URL or description fields.
+    const tag = (e.target && e.target.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    const items = e.clipboardData?.items || [];
+    for (const item of items) {
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        const blob = item.getAsFile();
+        if (blob) {
+          e.preventDefault();
+          uploadFile(blob);
+          return;
+        }
+      }
+    }
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const urlOrPath = imgInput.value.trim();
+    const desc = descInput.value.trim();
+    const imageRef = uploadedPath || urlOrPath;
+
+    if (!imageRef && !desc) {
+      setStatus('Drop an image, paste a URL, or write a description — one of those is required', 'error');
+      return;
+    }
+    const platform = ($('alt-gen-platform')?.value || 'generic').trim();
+    const variants = ($('alt-gen-variants')?.value || '3').trim();
+    const decorativeAllowed = $('alt-gen-decorative-allowed')?.checked ? 'yes' : 'no';
+
+    const tuners = ` [platform: ${platform}] [variants: ${variants}] [decorative-allowed: ${decorativeAllowed}]`;
+    const visionBlock = visionReport ? `\n\n${visionReport}\n` : '';
+    let extra;
+    if (imageRef && desc) {
+      extra = `${imageRef} — ${desc}${tuners}${visionBlock}`;
+    } else if (imageRef) {
+      const fallback = visionReport
+        ? '(description from vision provider — see report below)'
+        : '(no description supplied; inspect the image and produce alt text, or refuse with a low-confidence note if you cannot read it)';
+      extra = `${imageRef} — ${fallback}${tuners}${visionBlock}`;
+    } else {
+      extra = `(no image provided — description only) — ${desc}${tuners}`;
+    }
+
+    output.textContent = '';
+    output.hidden = false;
+    setStatus('Starting…');
+    setRunning(true);
+    try {
+      const res = await fetch('/api/runs', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ command: 'scout-alt', args: { extra } }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setRunning(false);
+        setStatus(data.error || 'Failed to start', 'error');
+        if (data.prompt) appendOutput(`Prompt:\n  ${data.prompt}\n\nSet an agent in Setup, or copy/paste this prompt into your agent manually.\n`);
+        return;
+      }
+      runId = data.id;
+      appendOutput(`▶ ${data.command}\n\n`);
+      setStatus(`Running…`);
+      stream = new EventSource(`/api/runs/${runId}/stream`);
+      stream.onmessage = (e) => {
+        try { appendOutput(JSON.parse(e.data).chunk || ''); } catch {}
+      };
+      stream.addEventListener('done', (e) => {
+        try {
+          const { status: s } = JSON.parse(e.data);
+          setStatus(`Done: ${s}`, s === 'exit-0' || s === 'success' ? 'ok' : 'error');
+        } catch {
+          setStatus('Done');
+        }
+        setRunning(false);
+        stream && stream.close();
+        stream = null;
         loadSocial().catch(() => {});
       });
       stream.onerror = () => { stream && stream.close(); stream = null; setRunning(false); };
@@ -2807,3 +3167,391 @@ loadStatus().then((s) => {
   console.error(err);
   gotoView('setup');
 });
+
+// --- Vision provider config panel (Setup + Configs) ---------------
+// Renders into any container with class .vision-config. Reads / writes
+// VISION_PROVIDER, OLLAMA_HOST, OLLAMA_VISION_MODEL, OPENAI_VISION_MODEL,
+// and OPENAI_API_KEY via /api/vision/config (which merges into .env without
+// disturbing other keys).
+const OLLAMA_MODEL_SUGGESTIONS = ['llama3.2-vision', 'llama3.2-vision:11b', 'moondream', 'llava', 'qwen2.5vl:7b', 'bakllava'];
+const OPENAI_MODEL_SUGGESTIONS = ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini'];
+const CUSTOM_PRESETS = [
+  { label: 'Azure OpenAI', baseUrl: 'https://YOUR-RESOURCE.openai.azure.com/openai/deployments/YOUR-DEPLOYMENT/chat/completions?api-version=2024-10-21', auth: 'api-key', model: 'gpt-4o-mini' },
+  { label: 'Azure AI Foundry (Models)', baseUrl: 'https://YOUR-RESOURCE.services.ai.azure.com/models', auth: 'api-key', model: 'gpt-4o-mini' },
+  { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', auth: 'bearer', model: 'openai/gpt-4o-mini' },
+  { label: 'LM Studio (local)', baseUrl: 'http://localhost:1234/v1', auth: 'bearer', model: 'lmstudio-community/llava' },
+  { label: 'vLLM / llama.cpp server', baseUrl: 'http://localhost:8000/v1', auth: 'bearer', model: 'your-model' },
+  { label: 'Together.ai', baseUrl: 'https://api.together.xyz/v1', auth: 'bearer', model: 'meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo' },
+  { label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', auth: 'bearer', model: 'llama-3.2-11b-vision-preview' },
+];
+
+function visionPanelHtml(cfg, instanceId) {
+  const provider = cfg.provider || 'none';
+  const ollamaHost = cfg.ollamaHost || 'http://localhost:11434';
+  const ollamaModel = cfg.ollamaModel || 'llama3.2-vision';
+  const openaiModel = cfg.openaiModel || 'gpt-4o-mini';
+  const hasKey = !!cfg.hasOpenaiKey;
+  const customBaseUrl = cfg.customBaseUrl || '';
+  const customModel = cfg.customModel || '';
+  const customAuthStyle = cfg.customAuthStyle || 'bearer';
+  const hasCustomKey = !!cfg.hasCustomKey;
+  const id = (k) => `${instanceId}-${k}`;
+  return `
+    <div class="vision-grid">
+      <label for="${id('provider')}"><strong>Provider</strong></label>
+      <select id="${id('provider')}" data-vc="provider">
+        <option value="none"${provider === 'none' ? ' selected' : ''}>none — work from typed description only</option>
+        <option value="ollama"${provider === 'ollama' ? ' selected' : ''}>ollama — local, free, private (recommended)</option>
+        <option value="openai"${provider === 'openai' ? ' selected' : ''}>openai — cloud, ~$0.0002/image</option>
+        <option value="custom"${provider === 'custom' ? ' selected' : ''}>custom — Azure OpenAI / Foundry / any OpenAI-compatible endpoint</option>
+      </select>
+    </div>
+
+    <div class="vision-section" data-section="ollama" hidden>
+      <p class="hint">
+        Local vision via <a href="https://ollama.com" target="_blank" rel="noreferrer noopener">Ollama</a>.
+        After install: <code>ollama pull moondream</code> (fast, ~2 GB) or <code>ollama pull llama3.2-vision</code> (better, ~8 GB).
+      </p>
+      <details class="vision-install-help">
+        <summary>Don't have Ollama? Show install instructions</summary>
+        <ul class="hint">
+          <li><strong>Windows:</strong> download from <a href="https://ollama.com/download/windows" target="_blank" rel="noreferrer noopener">ollama.com/download/windows</a> and run the installer.</li>
+          <li><strong>macOS:</strong> <code>brew install ollama</code> then <code>ollama serve</code>.</li>
+          <li><strong>Linux:</strong> <code>curl -fsSL https://ollama.com/install.sh | sh</code></li>
+          <li>Then run: <code>ollama pull llama3.2-vision</code> (or <code>moondream</code>) and click <strong>Test connection</strong>.</li>
+        </ul>
+      </details>
+      <div class="vision-grid">
+        <label for="${id('ollama-host')}">Host URL</label>
+        <input id="${id('ollama-host')}" data-vc="ollamaHost" type="url" value="${escape(ollamaHost)}" placeholder="http://localhost:11434" />
+        <label for="${id('ollama-model')}">Model</label>
+        <input id="${id('ollama-model')}" data-vc="ollamaModel" list="ollama-models" value="${escape(ollamaModel)}" placeholder="llama3.2-vision" />
+      </div>
+    </div>
+
+    <div class="vision-section" data-section="openai" hidden>
+      <p class="hint">
+        OpenAI cloud. <code>gpt-4o-mini</code> is the cheapest and works fine for most images.
+        Get an API key at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer noopener">platform.openai.com/api-keys</a>.
+      </p>
+      <div class="vision-grid">
+        <label for="${id('openai-key')}">API key</label>
+        <input id="${id('openai-key')}" data-vc="openaiApiKey" type="password" autocomplete="off" placeholder="${hasKey ? '••• key set in .env (leave blank to keep)' : 'sk-…'}" />
+        <label for="${id('openai-model')}">Model</label>
+        <input id="${id('openai-model')}" data-vc="openaiModel" list="openai-models" value="${escape(openaiModel)}" placeholder="gpt-4o-mini" />
+      </div>
+    </div>
+
+    <div class="vision-section" data-section="custom" hidden>
+      <p class="hint">
+        Any OpenAI-compatible <code>/chat/completions</code> endpoint with vision support.
+        Pick a preset to autofill, then paste your key + adjust the deployment/model name.
+      </p>
+      <div class="vision-grid">
+        <label for="${id('custom-preset')}">Preset</label>
+        <select id="${id('custom-preset')}" data-vc-preset>
+          <option value="">— pick one —</option>
+          ${CUSTOM_PRESETS.map((p, i) => `<option value="${i}">${escape(p.label)}</option>`).join('')}
+        </select>
+        <label for="${id('custom-base')}">Base URL</label>
+        <input id="${id('custom-base')}" data-vc="customBaseUrl" type="url" value="${escape(customBaseUrl)}" placeholder="https://api.example.com/v1 or full /chat/completions URL" />
+        <label for="${id('custom-key')}">API key</label>
+        <input id="${id('custom-key')}" data-vc="customApiKey" type="password" autocomplete="off" placeholder="${hasCustomKey ? '••• key set in .env (leave blank to keep)' : 'paste key'}" />
+        <label for="${id('custom-model')}">Model / deployment</label>
+        <input id="${id('custom-model')}" data-vc="customModel" value="${escape(customModel)}" placeholder="e.g. gpt-4o-mini" />
+        <label for="${id('custom-auth')}">Auth header</label>
+        <select id="${id('custom-auth')}" data-vc="customAuthStyle">
+          <option value="bearer"${customAuthStyle === 'bearer' ? ' selected' : ''}>Authorization: Bearer (OpenAI / Foundry / OpenRouter / most)</option>
+          <option value="api-key"${customAuthStyle === 'api-key' ? ' selected' : ''}>api-key header (Azure OpenAI)</option>
+        </select>
+      </div>
+      <p class="hint">
+        Tip: for Azure OpenAI, paste the full deployment URL (ending in <code>?api-version=…</code>) into Base URL and pick <strong>api-key</strong>.
+        For everything else, paste the base (e.g. <code>https://openrouter.ai/api/v1</code>) — <code>/chat/completions</code> is appended automatically.
+      </p>
+    </div>
+
+    <datalist id="ollama-models">
+      ${OLLAMA_MODEL_SUGGESTIONS.map((m) => `<option value="${escape(m)}">`).join('')}
+    </datalist>
+    <datalist id="openai-models">
+      ${OPENAI_MODEL_SUGGESTIONS.map((m) => `<option value="${escape(m)}">`).join('')}
+    </datalist>
+
+    <div class="toolbar" style="margin-top:0.75rem">
+      <button type="button" data-vc-action="save">Save vision config</button>
+      <button type="button" class="secondary" data-vc-action="test">Test connection</button>
+      <span class="hint" data-vc-status></span>
+    </div>
+    <div class="vision-banner" data-vc-banner hidden></div>
+  `;
+}
+
+async function mountVisionPanel(containerId) {
+  const root = $(containerId);
+  if (!root) return;
+  root.innerHTML = '<p class="hint">Loading…</p>';
+  let cfg;
+  try {
+    cfg = await api('/api/vision/config');
+  } catch (err) {
+    root.innerHTML = `<div class="warn-text">Failed to load vision config: ${escape(err.message)}</div>`;
+    return;
+  }
+  root.innerHTML = visionPanelHtml(cfg, containerId);
+
+  const providerSel = root.querySelector('[data-vc="provider"]');
+  const statusEl = root.querySelector('[data-vc-status]');
+
+  function syncSections() {
+    const p = providerSel.value;
+    root.querySelectorAll('.vision-section').forEach((sec) => {
+      sec.hidden = sec.dataset.section !== p;
+    });
+  }
+  providerSel.addEventListener('change', syncSections);
+  syncSections();
+
+  // Preset autofill for the custom provider
+  const presetSel = root.querySelector('[data-vc-preset]');
+  if (presetSel) {
+    presetSel.addEventListener('change', () => {
+      const idx = parseInt(presetSel.value, 10);
+      if (!Number.isFinite(idx)) return;
+      const preset = CUSTOM_PRESETS[idx];
+      if (!preset) return;
+      const setVal = (k, v) => {
+        const el = root.querySelector(`[data-vc="${k}"]`);
+        if (el) el.value = v;
+      };
+      setVal('customBaseUrl', preset.baseUrl);
+      setVal('customModel', preset.model);
+      setVal('customAuthStyle', preset.auth);
+    });
+  }
+
+  function readForm() {
+    const get = (k) => {
+      const el = root.querySelector(`[data-vc="${k}"]`);
+      return el ? el.value : '';
+    };
+    return {
+      provider: providerSel.value,
+      ollamaHost: get('ollamaHost'),
+      ollamaModel: get('ollamaModel'),
+      openaiModel: get('openaiModel'),
+      openaiApiKey: get('openaiApiKey'), // empty = unchanged on server
+      customBaseUrl: get('customBaseUrl'),
+      customModel: get('customModel'),
+      customAuthStyle: get('customAuthStyle') || 'bearer',
+      customApiKey: get('customApiKey'), // empty = unchanged on server
+    };
+  }
+
+  function setStatus(msg, tone) {
+    statusEl.textContent = msg || '';
+    if (tone) statusEl.dataset.tone = tone; else delete statusEl.dataset.tone;
+  }
+
+  const banner = root.querySelector('[data-vc-banner]');
+  let pullPollTimer = null;
+  let recommendedModelsCache = null;
+
+  async function loadRecommendedModels() {
+    if (recommendedModelsCache) return recommendedModelsCache;
+    try {
+      const data = await fetch('/api/vision/ollama-models').then((r) => r.json());
+      recommendedModelsCache = data.models || [];
+    } catch { recommendedModelsCache = []; }
+    return recommendedModelsCache;
+  }
+
+  function hideBanner() {
+    if (!banner) return;
+    banner.hidden = true;
+    banner.innerHTML = '';
+    if (pullPollTimer) { clearInterval(pullPollTimer); pullPollTimer = null; }
+  }
+
+  async function showMissingModelBanner(probe) {
+    if (!banner) return;
+    const models = await loadRecommendedModels();
+    const currentModel = probe.model || 'llama3.2-vision';
+    banner.hidden = false;
+    banner.innerHTML = `
+      <div class="vision-banner-card warn-card">
+        <div class="vision-banner-title">⚠ Vision model not installed</div>
+        <p>Ollama is running at <code>${escape(probe.host || '')}</code> but <code>${escape(currentModel)}</code> isn't pulled yet. Pick a model below and I'll pull it for you — or copy the command and run it yourself.</p>
+        <div class="vision-model-grid">
+          ${models.map((m) => `
+            <label class="vision-model-pick">
+              <input type="radio" name="vc-pull-model" value="${escape(m.name)}"${m.name === currentModel ? ' checked' : ''} />
+              <span class="vision-model-name"><code>${escape(m.name)}</code> <span class="hint">(${escape(m.size)})</span></span>
+              <span class="hint">${escape(m.note)}</span>
+            </label>
+          `).join('')}
+        </div>
+        <div class="toolbar" style="margin-top:0.5rem">
+          <button type="button" data-vc-action="pull">Pull selected model now</button>
+          <button type="button" class="secondary" data-vc-action="dismiss-banner">Dismiss</button>
+        </div>
+        <p class="hint">Or run in a terminal: <code data-vc-pull-cmd>ollama pull ${escape(currentModel)}</code></p>
+        <div class="vision-pull-progress" data-vc-pull-progress hidden></div>
+      </div>
+    `;
+    // Update the copy-paste command as the user changes the radio
+    banner.querySelectorAll('input[name="vc-pull-model"]').forEach((r) => {
+      r.addEventListener('change', () => {
+        const cmd = banner.querySelector('[data-vc-pull-cmd]');
+        if (cmd) cmd.textContent = `ollama pull ${r.value}`;
+      });
+    });
+    banner.querySelector('[data-vc-action="dismiss-banner"]').addEventListener('click', hideBanner);
+    banner.querySelector('[data-vc-action="pull"]').addEventListener('click', async () => {
+      const picked = banner.querySelector('input[name="vc-pull-model"]:checked');
+      if (!picked) return;
+      const model = picked.value;
+      const progress = banner.querySelector('[data-vc-pull-progress]');
+      progress.hidden = false;
+      progress.textContent = `Starting pull of ${model}…`;
+      try {
+        const res = await fetch('/api/vision/ollama-pull', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ model }),
+        });
+        const data = await res.json();
+        if (!res.ok) { progress.textContent = `Failed: ${data.error || res.status}`; return; }
+      } catch (err) {
+        progress.textContent = `Failed: ${err.message}`;
+        return;
+      }
+      // Poll progress
+      if (pullPollTimer) clearInterval(pullPollTimer);
+      pullPollTimer = setInterval(async () => {
+        try {
+          const s = await fetch(`/api/vision/ollama-pull/status?model=${encodeURIComponent(model)}`).then((r) => r.json());
+          if (!s.exists) { progress.textContent = 'Not started.'; return; }
+          const pct = (typeof s.percent === 'number') ? ` ${s.percent}%` : '';
+          const elapsed = ` (${s.elapsedSec}s)`;
+          progress.textContent = s.done
+            ? (s.error ? `Pull failed: ${s.error}` : `✓ ${model} installed${elapsed}`)
+            : `${s.status || 'pulling'}${pct}${elapsed}`;
+          if (s.done) {
+            clearInterval(pullPollTimer);
+            pullPollTimer = null;
+            // Re-probe to flip banner state and update the .env model field
+            const modelInput = root.querySelector('[data-vc="ollamaModel"]');
+            if (modelInput) modelInput.value = model;
+            // Save so VISION_PROVIDER=ollama and OLLAMA_VISION_MODEL=<model>
+            try {
+              await fetch('/api/vision/config', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ ...readForm(), provider: 'ollama', ollamaModel: model }),
+              });
+            } catch {}
+            const probe = await fetch('/api/alt/vision-status').then((r) => r.json());
+            if (probe.ok && probe.modelInstalled) {
+              hideBanner();
+              setStatus(probe.message, 'ok');
+            } else {
+              await reflectProbe(probe);
+            }
+          }
+        } catch (err) {
+          progress.textContent = `Status error: ${err.message}`;
+        }
+      }, 1500);
+    });
+  }
+
+  async function reflectProbe(probe) {
+    setStatus(probe.message, probe.ok ? 'ok' : 'error');
+    // Refresh the alt card's status pill if it's mounted
+    const altStatus = $('alt-vision-status');
+    if (altStatus) {
+      altStatus.textContent = `Vision: ${probe.message}`;
+      altStatus.dataset.tone = probe.ok ? 'ok' : (probe.provider === 'none' ? 'muted' : 'error');
+    }
+    // Show the missing-model banner only for ollama-running-but-no-model
+    if (probe.provider === 'ollama' && probe.ok && probe.modelInstalled === false) {
+      await showMissingModelBanner(probe);
+    } else {
+      hideBanner();
+    }
+  }
+
+  root.querySelector('[data-vc-action="save"]').addEventListener('click', async () => {
+    setStatus('Saving…');
+    try {
+      const body = readForm();
+      const res = await fetch('/api/vision/config', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) { setStatus(`Save failed: ${data.error || res.status}`, 'error'); return; }
+      // Clear the password fields so the placeholder reflects the new state
+      const keyInput = root.querySelector('[data-vc="openaiApiKey"]');
+      if (keyInput) keyInput.value = '';
+      const customKeyInput = root.querySelector('[data-vc="customApiKey"]');
+      if (customKeyInput) customKeyInput.value = '';
+      setStatus(`Saved (provider: ${data.provider})`, 'ok');
+      try {
+        const probe = await fetch('/api/alt/vision-status').then((r) => r.json());
+        await reflectProbe(probe);
+      } catch {}
+    } catch (err) {
+      setStatus(`Save error: ${err.message}`, 'error');
+    }
+  });
+
+  root.querySelector('[data-vc-action="test"]').addEventListener('click', async () => {
+    setStatus('Testing…');
+    try {
+      // Save first so the test reflects current form values
+      const body = readForm();
+      const saveRes = await fetch('/api/vision/config', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!saveRes.ok) {
+        const data = await saveRes.json();
+        setStatus(`Save failed before test: ${data.error || saveRes.status}`, 'error');
+        return;
+      }
+      const probe = await fetch('/api/alt/vision-status').then((r) => r.json());
+      await reflectProbe(probe);
+    } catch (err) {
+      setStatus(`Test error: ${err.message}`, 'error');
+    }
+  });
+
+  // Auto-show the banner on initial mount if the saved provider is ollama and the model is missing
+  (async () => {
+    if (cfg.provider === 'ollama') {
+      try {
+        const probe = await fetch('/api/alt/vision-status').then((r) => r.json());
+        if (probe.provider === 'ollama' && probe.ok && probe.modelInstalled === false) {
+          await showMissingModelBanner(probe);
+        }
+      } catch {}
+    }
+  })();
+}
+
+// Mount on Setup view (always visible) and Configs view (lazy when details opens)
+mountVisionPanel('vision-config-panel');
+const configsVisionCard = document.getElementById('configs-vision-card');
+if (configsVisionCard) {
+  let mounted = false;
+  configsVisionCard.addEventListener('toggle', () => {
+    if (configsVisionCard.open && !mounted) {
+      mounted = true;
+      mountVisionPanel('configs-vision-panel');
+    }
+  });
+}

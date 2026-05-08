@@ -296,7 +296,7 @@ Present the full source list and ask: **"Select all, or pick the ones you want."
 | 7 | YouTube (community channels) | YouTube Data API v3 key (free) |
 | 8 | GitHub (community repos) | None |
 | 9 | Stack Overflow | None |
-| 10 | Reddit | OAuth2 app credentials (free) |
+| 10 | Reddit | None required (cascading no-auth scanner; OAuth optional) |
 | 11 | Hacker News | None |
 | 12 | Bluesky | App password (free) |
 | 13 | LinkedIn | None |
@@ -323,14 +323,62 @@ For each custom source, collect: **name**, **URL or search pattern**, and **type
 > **For every prompt below, also tell the user: "Full step-by-step walkthrough: `docs/API-KEYS.md`."** If they say they're stuck on any step, point them at the matching anchor (e.g., `docs/API-KEYS.md#reddit`).
 
 - If **YouTube** was selected: "YouTube requires a free API key. Without it, YouTube is skipped and community videos won't appear in reports. Paste your YouTube Data API v3 key, or say **skip**. Quick link: https://console.cloud.google.com/apis/credentials — full walkthrough: `docs/API-KEYS.md#youtube-data-api-v3`."
-- If **Reddit** was selected: "Reddit requires free OAuth2 app credentials. Without them, Reddit scanning is skipped. Register a 'script' type app at https://www.reddit.com/prefs/apps/ — you'll get a client ID and secret. Paste your Reddit client ID and client secret, or say **skip**. Full walkthrough (which fields to fill in, where to find the client ID): `docs/API-KEYS.md#reddit`."
+- If **Reddit** was selected: "Reddit needs no credentials by default — Content Scout uses a layered scanner (old.reddit.com RSS → HTML scrape → Brave Search API → manual import). You can optionally add Reddit OAuth2 creds for higher rate limits, but Reddit's 'Responsible Builder Policy' denies most new app registrations, so this is fine to skip. Paste a Reddit client ID + secret if you have them, or say **skip**. Walkthrough: `docs/API-KEYS.md#reddit`."
+- If **Reddit Layer 3 / LinkedIn / X free coverage (Brave Search API)** is wanted: "Optional but recommended: a single Brave Search API key gives you free public-web discovery for **three platforms at once** — Reddit Layer 3 (catches threads in subreddits you didn't list), LinkedIn Layer 1 (the primary free path — LinkedIn has no public content API), and X/Twitter Layer 2 (the primary free fallback — avoids X's $200/mo Basic plan). Free tier = 2,000 queries/month at 1 query/second, no credit card required. Sign up at https://brave.com/search/api/ → Free AI plan, then create a token at https://api.search.brave.com/app/keys. Paste your `BRAVE_SEARCH_API_KEY`, or say **skip**. Walkthrough: `docs/API-KEYS.md#brave-search-api`. (Google PSE is supported as a legacy fallback for pre-2026 GCP projects only — Google closed Custom Search to new customers in early 2026.)"
 - If **Bluesky** was selected: "Bluesky requires a free app password for authenticated search. Without it, Bluesky is skipped and mentions/hashtag posts won't be tracked. Paste your Bluesky handle and app password, or say **skip**. Quick link: https://bsky.app/settings/app-passwords — full walkthrough: `docs/API-KEYS.md#bluesky`."
-- If **X/Twitter** was selected: "X requires a bearer token. The $200/mo Basic plan is recommended for reliable scanning. Without a key, Content Scout will attempt best-effort public search, but results may be incomplete or blocked. Paste your X bearer token, or say **skip**. Full walkthrough: `docs/API-KEYS.md#xtwitter`."
+- If **X/Twitter** was selected: "X has two free paths and one paid path. **Free paths (recommended):** (a) the Brave Search API prompt above covers X public tweets; (b) you can also add `https://rsshub.app/twitter/user/<handle>` URLs under `## Custom RSS Feeds` in your config to track specific high-signal accounts. **Paid path:** if you have an X Bearer Token from the $200/mo Basic plan, paste it for authenticated API access. Otherwise say **skip** — the free Brave/RSSHub layers will handle it. Full walkthrough: `docs/API-KEYS.md#xtwitter`."
 - If **GitHub** community-repo scanning is enabled (always on by default): "GitHub works without a key, but unauthenticated requests are capped at 60/hour vs 5,000/hour authenticated. Want to add a free GitHub personal access token for higher rate limits? Paste it or say **skip**. Quick link: https://github.com/settings/tokens — full walkthrough (no scopes needed): `docs/API-KEYS.md#github-token`."
 
 **Saving keys:** When the user provides keys, save them to `.env` at the workspace root. If `.env` doesn't exist, create it from `.env.example`. Never store keys in the config file.
 
 If none of the selected sources require keys, skip the key prompts entirely and tell the user: "All your selected sources work without API keys — no setup needed."
+
+#### Vision provider for `/scout-alt` (optional)
+
+**Don't just describe the options — actively interview the user, then write `.env` for them.**
+
+Ask: "When Content Scout generates alt text for an image (`/scout-alt`), do you want it to actually look at the pixels? You have a few options:
+
+1. **Skip** — agent works only from your typed description (refuses to guess if you don't give one).
+2. **Local model** (free, private, image never leaves your machine) — uses [Ollama](https://ollama.com).
+3. **OpenAI** (cloud, ~$0.0002/image) — uses `gpt-4o-mini` by default.
+4. **Custom / OpenAI-compatible endpoint** — Azure OpenAI, Azure AI Foundry, OpenRouter, LM Studio, vLLM, llama.cpp server, Together, Groq, etc.
+
+Which one?"
+
+Then act on the answer:
+
+- **Skip / none** → leave `VISION_PROVIDER` unset. Done.
+
+- **Local (ollama):**
+  1. Probe whether Ollama is running: `curl -s http://localhost:11434/api/tags`.
+  2. If it fails, **offer to walk them through installation** — don't just paste a link:
+     - Windows: download installer from <https://ollama.com/download/windows>.
+     - macOS: `brew install ollama` then `ollama serve`.
+     - Linux: `curl -fsSL https://ollama.com/install.sh | sh`.
+     Pause until they confirm install succeeded, then re-probe.
+  3. Recommend `llama3.2-vision` (default) or `moondream` (smaller). If the chosen model isn't in `/api/tags`, offer to run `ollama pull <model>` for them via the terminal — confirm before pulling, warn it can take minutes and several GB.
+  4. Write to `.env`: `VISION_PROVIDER=ollama`, `OLLAMA_VISION_MODEL=<model>`, and `OLLAMA_HOST=<url>` only if non-default.
+
+- **OpenAI:**
+  1. Ask if `OPENAI_API_KEY` is set; if not, link <https://platform.openai.com/api-keys> and have them paste a key. Validate `sk-` prefix.
+  2. Write to `.env`: `VISION_PROVIDER=openai`, `OPENAI_API_KEY=<key>` (only if newly provided), `OPENAI_VISION_MODEL=<model>` (default `gpt-4o-mini`).
+
+- **Custom / OpenAI-compatible:**
+  1. Ask which flavor — Azure OpenAI, Azure AI Foundry, OpenRouter, LM Studio, vLLM, Together, Groq, "other". Use the matching preset to suggest a base URL shape:
+     - Azure OpenAI → `https://<resource>.openai.azure.com/openai/deployments/<deployment>/chat/completions?api-version=2024-10-21` (auth: `api-key`).
+     - Azure AI Foundry (Models) → `https://<resource>.services.ai.azure.com/models` (auth: `api-key`).
+     - OpenRouter → `https://openrouter.ai/api/v1` (auth: `bearer`).
+     - LM Studio → `http://localhost:1234/v1` (auth: `bearer`).
+     - vLLM / llama.cpp → `http://localhost:8000/v1` (auth: `bearer`).
+     - Together → `https://api.together.xyz/v1` (auth: `bearer`).
+     - Groq → `https://api.groq.com/openai/v1` (auth: `bearer`).
+  2. Collect base URL, API key, model/deployment name, and auth style (`bearer` or `api-key`).
+  3. Write to `.env`: `VISION_PROVIDER=custom`, `CUSTOM_VISION_BASE_URL=<url>`, `CUSTOM_VISION_API_KEY=<key>` (only if newly provided), `CUSTOM_VISION_MODEL=<name>`, `CUSTOM_VISION_AUTH_STYLE=<bearer|api-key>`.
+
+**Tip:** if the web UI is running on port 4477, prefer `POST /api/vision/config` to perform an atomic merge-write (preserves comments and unrelated keys). Otherwise edit `.env` in place, preserving formatting.
+
+After writing, confirm in one line, e.g.: "Vision provider: `ollama` (model: `llama3.2-vision`). Run `/scout-alt path/to/image.png` to try it."
 
 ### Group 5 — People to Watch (optional)
 Say "none" to skip this group entirely. Otherwise ask each item **one at a time**:

@@ -66,11 +66,19 @@ function parseColor(value) {
   return match ? match[0] : null;
 }
 
-function parsePlatform(value) {
-  if (!value) return { key: 'linkedin', size: PLATFORM_SIZES.linkedin };
+function parsePlatform(value, sizeOverride) {
+  // sizeOverride may be a string like "1200x628" pulled from a separate
+  // `Size:` row.
+  const ovMatch = sizeOverride && String(sizeOverride).match(/(\d{3,4})\s*[x×]\s*(\d{3,4})/);
+  if (!value) {
+    if (ovMatch) {
+      return { key: 'linkedin', size: { w: Number(ovMatch[1]), h: Number(ovMatch[2]) } };
+    }
+    return { key: 'linkedin', size: PLATFORM_SIZES.linkedin };
+  }
   const lower = String(value).toLowerCase();
   // Try size embedded in the platform string e.g. "LinkedIn (1200x1200 square)"
-  const sizeMatch = lower.match(/(\d{3,4})\s*x\s*(\d{3,4})/);
+  const sizeMatch = lower.match(/(\d{3,4})\s*[x×]\s*(\d{3,4})/);
   if (sizeMatch) {
     return {
       key: lower.split(/\s|\(/)[0],
@@ -78,9 +86,19 @@ function parsePlatform(value) {
     };
   }
   for (const key of Object.keys(PLATFORM_SIZES)) {
-    if (lower.includes(key)) return { key, size: PLATFORM_SIZES[key] };
+    if (lower.includes(key)) {
+      const size = ovMatch
+        ? { w: Number(ovMatch[1]), h: Number(ovMatch[2]) }
+        : PLATFORM_SIZES[key];
+      return { key, size };
+    }
   }
-  return { key: lower.split(/\s|\(/)[0], size: PLATFORM_SIZES.linkedin };
+  return {
+    key: lower.split(/\s|\(/)[0] || 'linkedin',
+    size: ovMatch
+      ? { w: Number(ovMatch[1]), h: Number(ovMatch[2]) }
+      : PLATFORM_SIZES.linkedin,
+  };
 }
 
 function stripQuotes(value) {
@@ -96,19 +114,49 @@ function unquoteHeadline(value) {
 
 /**
  * Find every Thumbnail block in the markdown.
- * A block starts at a `**Thumbnail:**` heading and contains a `| Property | Value |` table.
+ *
+ * A block starts at one of:
+ *   - `**Thumbnail:**`           (legacy table form)
+ *   - `**Thumbnail spec:**`      (bullet-list form the agent currently emits)
+ *
+ * The body that follows can be EITHER:
+ *   (a) a `| Property | Value |` markdown table, OR
+ *   (b) a list of `- Key: Value` / `* Key: Value` bullets, OR
+ *   (c) a single inline prose line (parsed best-effort for `Size: 1200x627` etc.)
+ *
+ * Recognized keys (case-insensitive): platform, size, background, accent,
+ * headline, subtext, logo, save path / save to / path.
  */
 function parseThumbnails(markdown) {
   const blocks = [];
   const lines = markdown.split(/\r?\n/);
+  const HEADER_RE = /^\*\*Thumbnail(?:\s+spec)?:\*\*\s*(.*)$/i;
   for (let i = 0; i < lines.length; i++) {
-    if (!/^\*\*Thumbnail:\*\*\s*$/.test(lines[i].trim())) continue;
-    // Look forward for the table.
+    const headerMatch = lines[i].trim().match(HEADER_RE);
+    if (!headerMatch) continue;
     const props = {};
-    let saw = false;
+    // If the header line has trailing prose (e.g. "**Thumbnail spec:** Dark
+    // navy background, 1200x627px"), salvage what we can from it.
+    if (headerMatch[1]) absorbProseLine(props, headerMatch[1]);
+
+    let saw = Object.keys(props).length > 0;
+    let blankRun = 0;
     for (let j = i + 1; j < Math.min(i + 40, lines.length); j++) {
-      const line = lines[j];
-      if (/^###?\s/.test(line) || /^\*\*[^*]+:\*\*/.test(line.trim())) break;
+      const raw = lines[j];
+      const line = raw.trim();
+      // End on next heading or next bold-label header.
+      if (/^###?\s/.test(raw) || /^\*\*[^*]+:\*\*/.test(line)) break;
+      // End on fenced code.
+      if (/^```/.test(line)) break;
+      if (line === '') {
+        blankRun++;
+        // Two blanks in a row terminate the block; one blank inside is OK
+        // (table or list with a separator).
+        if (saw && blankRun >= 1) break;
+        continue;
+      }
+      blankRun = 0;
+      // Table row: | key | value |
       const row = line.match(/^\|\s*([^|]+?)\s*\|\s*(.+?)\s*\|\s*$/);
       if (row && !/^[-:|\s]+$/.test(row[1])) {
         const key = row[1].trim().toLowerCase();
@@ -116,14 +164,63 @@ function parseThumbnails(markdown) {
         if (key === 'property' && /^value$/i.test(value)) continue;
         props[key] = value;
         saw = true;
-      } else if (saw && line.trim() === '') {
-        // blank line after table -> done
-        break;
+        continue;
+      }
+      // Bullet row: - Key: Value / * Key: Value
+      const bullet = line.match(/^[-*]\s+([A-Za-z][\w\s/]*?)\s*[:·]\s*(.+)$/);
+      if (bullet) {
+        const rawKey = bullet[1].trim().toLowerCase();
+        const value = bullet[2].trim();
+        // A single bullet can pack "Platform: LinkedIn · Size: 1200×628".
+        absorbProseLine(props, `${rawKey}: ${value}`);
+        saw = true;
+        continue;
+      }
+      // Inline prose continuation (e.g. "Dark navy (#07101E), 1200x627px.").
+      if (saw || /\d{3,4}\s*[x×]\s*\d{3,4}|#[0-9a-fA-F]{3,8}/.test(line)) {
+        absorbProseLine(props, line);
+        saw = true;
       }
     }
     if (Object.keys(props).length) blocks.push(props);
   }
   return blocks;
+}
+
+/**
+ * Best-effort extraction of thumbnail props from a free-form line. Used for
+ * bullet rows like `- Platform: LinkedIn · Size: 1200×628` and for prose
+ * lines like `Dark navy (#07101E), 1200x627px, accent cyan (#8ee2fc)`.
+ *
+ * Only fills properties that aren't already set, so an explicit table or
+ * bullet earlier in the block always wins over salvaged prose.
+ */
+function absorbProseLine(props, line) {
+  if (!line) return;
+  // Split on `·` first so "Platform: X · Size: 1200×628" becomes two segments.
+  const segments = String(line).split(/\s+[·•|]\s+/);
+  for (const seg of segments) {
+    const m = seg.match(/^\s*([A-Za-z][\w\s/]*?)\s*:\s*(.+?)\s*$/);
+    if (m) {
+      const key = m[1].trim().toLowerCase();
+      const value = m[2].trim();
+      if (key === 'save to') {
+        if (!props['save path']) props['save path'] = value;
+      } else if (!props[key]) {
+        props[key] = value;
+      }
+    }
+  }
+  // Salvage a stray size like "1200x627" or "1600×900".
+  const sizeMatch = line.match(/(\d{3,4})\s*[x×]\s*(\d{3,4})/);
+  if (sizeMatch && !props['size'] && !props['platform']) {
+    props['size'] = `${sizeMatch[1]}x${sizeMatch[2]}`;
+  }
+  // Salvage a hex color labelled like "accent cyan (#8ee2fc)".
+  const accentMatch = line.match(/accent[^#]*?(#[0-9a-fA-F]{3,8})/i);
+  if (accentMatch && !props['accent']) props['accent'] = accentMatch[1];
+  const bgMatch = line.match(/background[^#]*?(#[0-9a-fA-F]{3,8})/i);
+  if (bgMatch && !props['background']) props['background'] = bgMatch[1];
 }
 
 function deriveSavePath(props, sourceFile) {
@@ -229,7 +326,7 @@ async function resolveLogoPath(props) {
 }
 
 async function renderOne(props, sourceFile, index, dryRun = false) {
-  const platform = parsePlatform(props['platform']);
+  const platform = parsePlatform(props['platform'], props['size']);
   const background = parseColor(props['background']) || DEFAULTS.background;
   const accent = parseColor(props['accent']) || DEFAULTS.accent;
   const headline = unquoteHeadline(props['headline'] || '');
@@ -270,9 +367,81 @@ async function renderOne(props, sourceFile, index, dryRun = false) {
   return { savePath, logoPath, platform: platform.key, width: platform.size.w, height: platform.size.h };
 }
 
+// Standard "must-have" sizes per platform family. Scout posts target
+// LinkedIn + X, so every spec block produces both regardless of which
+// platform the agent named in the spec.
+const STANDARD_COMPANIONS = [
+  { key: 'linkedin', label: 'linkedin', size: { w: 1200, h: 1200 } },
+  { key: 'x',        label: 'x',        size: { w: 1600, h: 900  } },
+];
+
+function platformFamily(key) {
+  if (!key) return null;
+  const k = String(key).toLowerCase();
+  if (k.startsWith('linkedin')) return 'linkedin';
+  if (k === 'x' || k === 'twitter') return 'x';
+  return k;
+}
+
 /**
- * Render every thumbnail spec in a markdown file. Returns an array of
- * { savePath, logoPath, platform, width, height, skipped? } results.
+ * Build the save path for an auto-companion variant by injecting the
+ * platform label. Strategy:
+ *   1. If the original path already contains a platform token (e.g.
+ *      `1-linkedin-foo.png`), substitute it.
+ *   2. Otherwise, insert `-{label}` before the extension.
+ */
+function companionSavePath(originalPath, label) {
+  const dir = path.dirname(originalPath);
+  const ext = path.extname(originalPath);
+  const base = path.basename(originalPath, ext);
+  const PLATFORM_TOKEN = /-(linkedin(?:-square|-landscape)?|x|twitter|bluesky|youtube(?:-community)?)-/i;
+  if (PLATFORM_TOKEN.test(base)) {
+    const replaced = base.replace(PLATFORM_TOKEN, `-${label}-`);
+    return path.join(dir, replaced + ext);
+  }
+  // Bare leading platform (e.g. `linkedin-foo`).
+  const LEAD = /^(linkedin(?:-square|-landscape)?|x|twitter|bluesky|youtube(?:-community)?)-/i;
+  if (LEAD.test(base)) {
+    return path.join(dir, base.replace(LEAD, `${label}-`) + ext);
+  }
+  return path.join(dir, `${base}-${label}${ext}`);
+}
+
+/**
+ * Render every spec block at its declared size AND auto-render any missing
+ * standard-platform companion (LinkedIn 1200×1200, X 1600×900). Returns one
+ * result entry per produced PNG.
+ */
+async function renderBlock(props, sourceFile, index, dryRun = false) {
+  const results = [];
+  const primary = await renderOne(props, sourceFile, index, dryRun);
+  results.push({ ok: true, kind: 'declared', ...primary });
+
+  const family = platformFamily(primary.platform);
+  for (const companion of STANDARD_COMPANIONS) {
+    if (companion.key === family) continue; // already produced above
+    const companionPath = companionSavePath(primary.savePath, companion.label);
+    const companionProps = {
+      ...props,
+      platform: companion.label,
+      size: `${companion.size.w}x${companion.size.h}`,
+      'save path': path.relative(REPO_ROOT, companionPath),
+    };
+    try {
+      const r = await renderOne(companionProps, sourceFile, index, dryRun);
+      results.push({ ok: true, kind: 'companion', ...r });
+    } catch (err) {
+      results.push({ ok: false, kind: 'companion', error: String(err.message || err) });
+    }
+  }
+  return results;
+}
+
+/**
+ * Render every thumbnail spec in a markdown file. Each spec produces both
+ * a LinkedIn (1200×1200) and an X (1600×900) PNG — whichever the agent
+ * declared first, plus the missing companion at standard size.
+ * Returns an array of { ok, kind, savePath, logoPath, platform, width, height, skipped? } results.
  */
 export async function renderFile(sourceFile, { dryRun = false } = {}) {
   const markdown = await fs.readFile(sourceFile, 'utf8');
@@ -280,8 +449,8 @@ export async function renderFile(sourceFile, { dryRun = false } = {}) {
   const results = [];
   for (let i = 0; i < blocks.length; i++) {
     try {
-      const r = await renderOne(blocks[i], sourceFile, i, dryRun);
-      results.push({ ok: true, ...r });
+      const rs = await renderBlock(blocks[i], sourceFile, i, dryRun);
+      results.push(...rs);
     } catch (err) {
       results.push({ ok: false, error: String(err.message || err) });
     }
@@ -324,23 +493,32 @@ async function main() {
     return;
   }
 
-  console.log(`Rendering ${blocks.length} thumbnail(s) from ${path.relative(REPO_ROOT, sourceFile)}${DRY_RUN_CLI ? ' [dry-run]' : ''}`);
+  console.log(`Rendering ${blocks.length} thumbnail spec(s) from ${path.relative(REPO_ROOT, sourceFile)}${DRY_RUN_CLI ? ' [dry-run]' : ''} — each produces LinkedIn (1200x1200) + X (1600x900) PNGs.`);
 
   let ok = 0;
+  let total = 0;
   for (let i = 0; i < blocks.length; i++) {
     try {
-      const result = await renderOne(blocks[i], sourceFile, i, DRY_RUN_CLI);
-      if (result.skipped) {
-        console.log(`  [dry-run ${i + 1}/${blocks.length}] ${result.platform} ${result.width}x${result.height} -> ${path.relative(REPO_ROOT, result.savePath)}`);
-      } else {
-        console.log(`  [${i + 1}/${blocks.length}] -> ${path.relative(REPO_ROOT, result.savePath)}${result.logoPath ? ` (logo: ${path.relative(REPO_ROOT, result.logoPath)})` : ' (text-only)'}`);
+      const rs = await renderBlock(blocks[i], sourceFile, i, DRY_RUN_CLI);
+      for (const result of rs) {
+        total++;
+        if (!result.ok) {
+          console.error(`  [${i + 1}/${blocks.length}] (${result.kind || 'extra'}) FAILED:`, result.error);
+          continue;
+        }
+        const tag = result.kind === 'companion' ? ' (companion)' : '';
+        if (result.skipped) {
+          console.log(`  [dry-run ${i + 1}/${blocks.length}]${tag} ${result.platform} ${result.width}x${result.height} -> ${path.relative(REPO_ROOT, result.savePath)}`);
+        } else {
+          console.log(`  [${i + 1}/${blocks.length}]${tag} ${result.platform} ${result.width}x${result.height} -> ${path.relative(REPO_ROOT, result.savePath)}${result.logoPath ? ` (logo: ${path.relative(REPO_ROOT, result.logoPath)})` : ' (text-only)'}`);
+        }
+        ok++;
       }
-      ok++;
     } catch (err) {
       console.error(`  [${i + 1}/${blocks.length}] FAILED:`, err.message);
     }
   }
-  console.log(`Done. ${ok}/${blocks.length} succeeded.`);
+  console.log(`Done. ${ok}/${total} PNG(s) succeeded across ${blocks.length} spec block(s).`);
 }
 
 if (isDirectRun) {

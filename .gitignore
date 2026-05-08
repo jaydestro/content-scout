@@ -12,6 +12,51 @@
 credentials.json
 secrets.json
 
+# OAuth client secret JSON files downloaded from Google Cloud, Azure
+# portal, etc. — file names typically include the client id / project id,
+# so glob on the obvious prefixes regardless of where they land.
+client_secret*.json
+*-client-secret.json
+*.client_secret.json
+
+# AWS / Azure / GCP credential dumps that sometimes get accidentally
+# saved to a project root.
+.aws/credentials
+.azure/credentials
+.gcp/credentials.json
+service-account*.json
+*-service-account.json
+
+# ---------------------------------------------------------------------------
+# Scratch / diagnostic / one-off files (any folder)
+# ---------------------------------------------------------------------------
+# Anything prefixed with `_` or `scratch-` or matching common scratch
+# patterns is treated as throwaway local work. Diagnostic dumps from the
+# browser-scan tool (e.g. linkedin-diag.json, *-first-result.html) follow
+# the same rule. Hidden-file variants (`.scratch-*`) are also covered so
+# files like `tools/.scratch-1525-build.py` don't sneak in.
+scratch/
+scratch-*
+*.scratch
+*.scratch.*
+*-scratch.*
+.scratch/
+.scratch-*
+**/.scratch/
+**/.scratch-*
+_scratch/
+**/_scratch/
+.tmp/
+**/.tmp/
+diag-*
+*-diag.*
+*-first-result.html
+*-first-result.json
+*.tmp
+*.bak
+*.orig
+*.local.*
+
 # Seen-links tracker (local state, not shared)
 reports/.seen-links.json
 
@@ -20,6 +65,25 @@ reports/.seen-links.json
 # can opt into committed shared state by setting `shared_state: true` in
 # their config and committing reports/.scout-state.shared/ to the repo.
 reports/.scout-state/
+
+# Browser-scan sidecars (local-only scrape output that scout scan ingests
+# as Layer 0 for X / LinkedIn / Reddit). Keep them off the wire — they
+# contain logged-in scrape data and personal handles.
+reports/.browser-scan/
+
+# Per-run scan prompts archive. Every time `scout scan` is invoked via a
+# subagent, the resolved prompt (with the run stamp, sidecar paths, and
+# context) is saved here for audit / replay / diff. Local-only.
+reports/.scan-prompts/
+
+# Browser-scan persistent Edge profile — contains live session cookies
+# for X, LinkedIn, and Reddit. NEVER commit.
+tools/browser-scan/.profile/
+
+# Browser-scan dedicated CDP profile (used by `node index.mjs launch` so
+# the user's day-to-day Edge profile is left alone). Also contains live
+# session cookies — NEVER commit.
+tools/browser-scan/.cdp-profile/
 
 # Product configs contain product-specific settings and occasionally API
 # references — do not commit. Use scout-config-example.prompt.md as a template.
