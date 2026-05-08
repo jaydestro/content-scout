@@ -40,6 +40,9 @@ Users will request these operations using natural language. Map their requests t
 | "scout keys", "add API keys", "set up credentials", "add reddit creds", "add bluesky creds" | `.github/prompts/scout-keys.prompt.md` | Interactive credential setup that writes safely to `.env` and verifies reachability |
 | "scout replay", "replay scan", "re-run filters" | `.github/prompts/scout-replay.prompt.md` | Re-apply filters/scoring/sentiment to a saved scan with no API calls |
 | "scout seo", "audit SEO", "optimize this page", "SEO check" | `.github/prompts/scout-seo.prompt.md` | SEO audit and concrete rewrite recommendations for one or more URLs |
+| "scout reddit-import", "import reddit threads", "reddit fallback", "manual reddit" | `.github/prompts/scout-reddit-import.prompt.md` | Manually ingest Reddit URLs when automated layers are blocked |
+| "scout alt", "alt text", "generate alt text", "describe this image" | `.github/prompts/scout-alt.prompt.md` | Draft accessibility-quality alt text for an image attached to a social post |
+| "scout vision", "set vision provider", "switch to ollama", "use openai vision", "configure vision" | `.github/prompts/scout-vision.prompt.md` | Configure or switch the vision provider used by `/scout-alt` (ollama / openai / none) |
 
 When reading prompt files, the `${{input:...}}` placeholders are VS Code syntax. Instead, ask the user for those inputs conversationally.
 
@@ -49,6 +52,7 @@ When reading prompt files, the `${{input:...}}` placeholders are VS Code syntax.
 - Social posts (bulk from report): `social-posts/{YYYY-MM-DD-HHmm}-{slug}-social-posts.md`
 - Social posts (solo / one-off from a single URL): `social-posts/{YYYY-MM-DD-HHmm}-{slug}-solo-{url-slug}.md` where `{url-slug}` = host + last path segment, lowercased, hyphenated, max 40 chars (fallback `solo-link`)
 - Posting calendars: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-posting-calendar.md`
+- Alt text: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-alt-{image-slug}.md`
 - Trends: `reports/{YYYY-MM-DD-HHmm}-{slug}-trends.md`
 - Thumbnails: `social-posts/images/{YYYY-MM-DD-HHmm}/`
 - Dedup tracker: `reports/.seen-links.json`
@@ -63,3 +67,22 @@ When reading prompt files, the `${{input:...}}` placeholders are VS Code syntax.
 6. Tag every item with canonical topic tags from config
 7. Update `.seen-links.json` after saving any report
 8. Auto-generate social posts only if the role has social posts enabled
+
+## Browser-scan tool (X / LinkedIn / Reddit, opt-in)
+
+`tools/browser-scan/` drives Microsoft Edge via Playwright with a persistent
+login profile to scrape the **logged-in** UIs of X, LinkedIn, and Reddit.
+This is the most reliable free way to get coverage from these three
+platforms — anonymous scraping increasingly hits 403s, login walls, and
+rate limits.
+
+- One-time setup per platform: `node tools/browser-scan/index.mjs login --platform x|linkedin|reddit`
+- Run before a scan: `node tools/browser-scan/index.mjs scan --slug {slug}`
+- Output: `reports/.browser-scan/{slug}/{stamp}-{platform}.json`
+- `scout scan` automatically ingests sidecars dated within the last 6 hours
+  as **Layer 0** for each platform (top priority over Brave/RSS/old.reddit
+  cascade results), then dedupes by permalink. See
+  `tools/browser-scan/README.md` for full details.
+
+The `tools/browser-scan/.profile/` directory is gitignored — session
+cookies never leave your machine.

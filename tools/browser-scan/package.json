@@ -1,0 +1,23 @@
+{
+  "name": "content-scout-browser-scan",
+  "version": "0.1.0",
+  "description": "Logged-in Edge/Playwright scanner for X, LinkedIn, and Reddit. Writes normalized JSON sidecars that scout scan ingests as Layer 0.",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "scout-browser-scan": "./index.mjs"
+  },
+  "scripts": {
+    "launch": "node launch-edge.mjs",
+    "scan": "node index.mjs scan",
+    "login:x": "node index.mjs login --platform x",
+    "login:linkedin": "node index.mjs login --platform linkedin",
+    "login:reddit": "node index.mjs login --platform reddit"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "playwright": "^1.45.0"
+  }
+}

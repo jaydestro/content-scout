@@ -249,7 +249,7 @@ async function probeBluesky() {
     }
     const sess = await sessRes.json();
     const searchRes = await timed((signal) =>
-      fetch('https://bsky.social/xrpc/app.bsky.feed.searchPosts?q=cosmosdb&limit=3', {
+      fetch('https://api.bsky.app/xrpc/app.bsky.feed.searchPosts?q=cosmosdb&limit=3', {
         signal,
         headers: { Authorization: `Bearer ${sess.accessJwt}` },
       })
@@ -262,6 +262,49 @@ async function probeBluesky() {
     record('Bluesky session+search', true, `${j.posts?.length ?? 0} posts`);
   } catch (e) {
     record('Bluesky', false, e.message);
+  }
+}
+
+// ---------- Brave Search API ----------
+async function probeBrave() {
+  if (!env.BRAVE_SEARCH_API_KEY) {
+    record('Brave Search API', 'warn', 'No BRAVE_SEARCH_API_KEY in .env (Reddit Layer 3 / LinkedIn Layer 1 / X Layer 2 will all fall through)');
+    return;
+  }
+  try {
+    const res = await timed((signal) =>
+      fetch('https://api.search.brave.com/res/v1/web/search?q=cosmosdb+site%3Areddit.com&count=3', {
+        signal,
+        headers: {
+          Accept: 'application/json',
+          'Accept-Encoding': 'gzip',
+          'X-Subscription-Token': env.BRAVE_SEARCH_API_KEY,
+        },
+      })
+    );
+    if (res.status === 200) {
+      const j = await res.json();
+      const n = j?.web?.results?.length ?? 0;
+      record('Brave Search API', true, `${n} results in probe`);
+      return;
+    }
+    if (res.status === 422) {
+      const body = (await res.text()).slice(0, 200);
+      if (/SUBSCRIPTION_TOKEN_INVALID/i.test(body)) {
+        record('Brave Search API', false, 'subscription token invalid (regenerate at api.search.brave.com/app/keys)');
+      } else {
+        record('Brave Search API', false, `422 :: ${body}`);
+      }
+      return;
+    }
+    if (res.status === 429) {
+      record('Brave Search API', 'warn', 'token valid but rate-limited (free tier = 1 query/sec, 2000/month)');
+      return;
+    }
+    const body = (await res.text()).slice(0, 200);
+    record('Brave Search API', false, `${res.status} ${res.statusText} :: ${body}`);
+  } catch (e) {
+    record('Brave Search API', false, e.message);
   }
 }
 
@@ -306,6 +349,7 @@ await probeRss('InfoQ RSS', 'https://feed.infoq.com/');
 await probeRss('C# Corner RSS', 'https://www.c-sharpcorner.com/rss/articles.xml');
 await probeYouTube();
 await probeBluesky();
+await probeBrave();
 await probeX();
 
 console.log('\n--- summary ---');

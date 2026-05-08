@@ -28,6 +28,7 @@ Content Scout works in any AI coding tool that supports custom instructions. The
 | `/scout-keys` | "scout keys" |
 | `/scout-replay` | "scout replay" |
 | `/scout-seo` | "scout seo" |
+| `/scout-reddit-import` | "scout reddit-import" |
 
 ## Per-tool startup
 

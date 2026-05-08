@@ -86,6 +86,7 @@ examples/                                  # Sample outputs
 reports/                                   # Generated content & trends reports
 social-posts/                              # Generated posts, calendars, thumbnails
 tools/web-ui/                              # Local browser dashboard
+tools/browser-scan/                        # Edge + Playwright (CDP) for X / LinkedIn / Reddit Layer 0
 .env.example                               # API key template (copy to .env)
 ```
 

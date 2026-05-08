@@ -50,7 +50,8 @@ Plus `/scout-creators`, `/scout-doctor`, `/scout-keys`, `/scout-replay`, `/scout
 
 - **No auth needed:** Dev.to, Medium, Hashnode, DZone, C# Corner, InfoQ, GitHub, Stack Overflow, Hacker News, LinkedIn
 - **Free auth:** YouTube (API key), Reddit (RSS by default; OAuth optional), Bluesky (app password)
-- **Paid auth:** X/Twitter ($200/mo Basic plan recommended)
+- **Paid auth (optional):** X/Twitter ($200/mo Basic plan)
+- **Logged-in browser (recommended for X / LinkedIn / Reddit):** [tools/browser-scan/](tools/browser-scan) drives Microsoft Edge over CDP using your real session, no fresh Playwright profile, no anti-bot trips. Launch Edge once with `node tools/browser-scan/launch-edge.mjs`, sign in to each platform, then run `node tools/browser-scan/index.mjs scan --slug {slug}` before each `scout scan` — the resulting JSON sidecars become **Layer 0** for those three platforms.
 
 All API keys are optional — without them, the agent skips those sources. Keys live in `.env` (not in config files). See [docs/API-KEYS.md](docs/API-KEYS.md) and [docs/SOURCES.md](docs/SOURCES.md).
 

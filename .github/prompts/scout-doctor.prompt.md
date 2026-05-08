@@ -36,7 +36,7 @@ Ignore VS Code frontmatter (`tools:`, `${{input:...}}`) — that's editor-specif
    - **Missing** — key not in file
    - **Likely invalid** — present but obviously malformed (wrong prefix, wrong length)
 
-   Known keys: `YOUTUBE_API_KEY`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT`, `BLUESKY_HANDLE`, `BLUESKY_APP_PASSWORD`, `X_BEARER_TOKEN`, `GITHUB_TOKEN` (optional), `SCOUT_WEBHOOK_URL` (optional).
+   Known keys: `YOUTUBE_API_KEY`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT`, `BRAVE_SEARCH_API_KEY`, `GOOGLE_PSE_KEY` (legacy), `GOOGLE_PSE_CX` (legacy), `BLUESKY_HANDLE`, `BLUESKY_APP_PASSWORD`, `X_BEARER_TOKEN`, `GITHUB_TOKEN` (optional), `SCOUT_WEBHOOK_URL` (optional).
 
 4. **Source reachability ping** — one cheap call per source with a present key:
    - Dev.to RSS — fetch `https://dev.to/feed`
@@ -44,7 +44,9 @@ Ignore VS Code frontmatter (`tools:`, `${{input:...}}`) — that's editor-specif
    - Stack Overflow — `https://api.stackexchange.com/2.3/info?site=stackoverflow`
    - GitHub — `GET /rate_limit` (uses token if present, else unauth)
    - YouTube — `videos.list` with `id=dQw4w9WgXcQ` (smallest possible call)
-   - Reddit — OAuth token fetch + `GET /api/v1/me`
+   - Reddit — OAuth token fetch + `GET /api/v1/me` if creds set; otherwise probe `https://old.reddit.com/r/programming/.rss` (Layer 1 reachability) and report status.
+   - Brave Search API — if `BRAVE_SEARCH_API_KEY` set, run a 1-result `GET https://api.search.brave.com/res/v1/web/search?q=test&count=1` with header `X-Subscription-Token: {key}` and report whether the token is valid (200 = ok, 422 with `SUBSCRIPTION_TOKEN_INVALID` = bad token, 429 = rate-limited but valid).
+   - Google PSE (legacy) — if `GOOGLE_PSE_KEY` + `GOOGLE_PSE_CX` set, run a 1-result `customsearch/v1?q=test+site:reddit.com` and report quota status. If response is 403 with *"This project does not have the access to Custom Search JSON API"*, warn the user that their PSE was minted on a post-2026 GCP project and Google has closed the API to new customers — recommend switching to `BRAVE_SEARCH_API_KEY` instead.
    - Bluesky — `createSession` (then revoke)
    - X — `users/me`
    - MS Learn MCP — list tools

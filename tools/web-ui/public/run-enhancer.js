@@ -70,13 +70,27 @@
         startBtn.textContent = 'Start another run';
         startBtn.classList.add('is-done');
         if (window.toast && window.toast.success) {
-          window.toast.success('Run finished', 'Click "Start another run" to launch a new one.');
+          // Surface the latest meta text (which app.js sets to
+          // "Done: <command>") as the description so users get a
+          // useful at-a-glance summary instead of a generic message.
+          const detail = (meta.textContent || '').replace(/^Done:\s*/i, '').trim();
+          window.toast.success(
+            'Run finished',
+            detail || 'Click "Start another run" to launch a new one.',
+          );
         }
         break;
       case 'error':
         startBtn.disabled = false;
         startBtn.textContent = 'Try again';
         startBtn.classList.add('is-error');
+        if (window.toast && window.toast.error) {
+          const detail = (meta.textContent || '').replace(/^error:?\s*/i, '').trim();
+          window.toast.error(
+            'Run failed',
+            detail || 'See the run output for details.',
+          );
+        }
         break;
       case 'idle':
       default:
