@@ -67,3 +67,22 @@ When reading prompt files, the `${{input:...}}` placeholders are VS Code syntax.
 6. Tag every item with canonical topic tags from config
 7. Update `.seen-links.json` after saving any report
 8. Auto-generate social posts only if the role has social posts enabled
+
+## Browser-scan tool (X / LinkedIn / Reddit, opt-in)
+
+`tools/browser-scan/` drives Microsoft Edge via Playwright with a persistent
+login profile to scrape the **logged-in** UIs of X, LinkedIn, and Reddit.
+This is the most reliable free way to get coverage from these three
+platforms — anonymous scraping increasingly hits 403s, login walls, and
+rate limits.
+
+- One-time setup per platform: `node tools/browser-scan/index.mjs login --platform x|linkedin|reddit`
+- Run before a scan: `node tools/browser-scan/index.mjs scan --slug {slug}`
+- Output: `reports/.browser-scan/{slug}/{stamp}-{platform}.json`
+- `scout scan` automatically ingests sidecars dated within the last 6 hours
+  as **Layer 0** for each platform (top priority over Brave/RSS/old.reddit
+  cascade results), then dedupes by permalink. See
+  `tools/browser-scan/README.md` for full details.
+
+The `tools/browser-scan/.profile/` directory is gitignored — session
+cookies never leave your machine.

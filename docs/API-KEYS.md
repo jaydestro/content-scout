@@ -11,11 +11,14 @@ All API keys are optional. Without them, the agent skips those sources and scans
 | Service | Cost | Without It |
 |---------|------|-----------|
 | [YouTube Data API v3](#youtube-data-api-v3) | Free | YouTube scanning skipped — community videos won't appear in reports |
-| [Reddit OAuth2](#reddit) | Free (optional) | Layered no-auth scanner takes over: `old.reddit.com` RSS → HTML scrape → [Google PSE](#google-pse) → manual import via `/scout-reddit-import`. Reddit is never silently dropped. |
-| [Google PSE](#google-pse) | Free (100 queries/day) | Reddit Layer 3 disabled — you'll still get RSS/HTML/manual layers, but won't catch threads in subreddits you didn't list. |
+| [Reddit OAuth2](#reddit) | Free (optional) | Layered no-auth scanner takes over: browser-scan Layer 0 (opt-in) → `old.reddit.com` RSS → HTML scrape → [Brave Search API](#brave-search-api) → manual import via `/scout-reddit-import`. Reddit is never silently dropped. |
+| [Brave Search API](#brave-search-api) | Free (2,000 queries/month) | Reddit Layer 3 / LinkedIn Layer 1 / X Layer 2 fall through — you keep browser-scan Layer 0 + RSS + cascade fallbacks. |
+| [Google PSE](#google-pse-legacy) | Legacy (closed to new GCP projects since early 2026) | No effect on new setups — use Brave Search instead. Pre-2026 PSE projects still work as a fallback. |
 | [Bluesky](#bluesky) | Free | Bluesky scanning skipped — mentions and hashtag posts won't be tracked |
-| [X/Twitter](#xtwitter) | $200/mo (Basic) or free tier (limited) | X/Twitter scanning skipped — conversations and mentions won't be tracked |
+| [X/Twitter](#xtwitter) | $200/mo (Basic) or free tier (limited) | X Layer 1 (authenticated API) skipped. Layer 0 (browser-scan) still works for free if you've signed in to X via [tools/browser-scan/](../tools/browser-scan); Brave Search Layer 2 still works if `BRAVE_SEARCH_API_KEY` is set. |
 | [GitHub Token](#github-token) | Free | GitHub still works, but unauthenticated requests are capped at 60/hr (vs 5000/hr authenticated) |
+
+> **Best free coverage for X / LinkedIn / Reddit:** sign in once via [tools/browser-scan/](../tools/browser-scan) (Microsoft Edge over CDP — no Playwright fingerprint, works with passkeys + 2FA). Each `scout scan` then auto-ingests the resulting JSON sidecar as **Layer 0**. See `tools/browser-scan/README.md` for the full setup.
 
 ---
 

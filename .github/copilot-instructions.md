@@ -49,3 +49,12 @@ Read the corresponding prompt file for each command's detailed flow. Ignore VS C
 4. Deduplicate against `reports/.seen-links.json`
 5. Number items sequentially, tag with canonical topic tags
 6. Auto-generate social posts only if role has them enabled
+
+## Browser-scan tool (X / LinkedIn / Reddit, opt-in)
+
+`tools/browser-scan/` drives Microsoft Edge via Playwright with a persistent login profile to scrape the **logged-in** UIs of X, LinkedIn, and Reddit. This is the most reliable free way to cover these three platforms.
+
+- One-time login per platform: `node tools/browser-scan/index.mjs login --platform x|linkedin|reddit`
+- Refresh sidecars before a scan: `node tools/browser-scan/index.mjs scan --slug {slug}`
+- `scout scan` auto-ingests sidecars in `reports/.browser-scan/{slug}/` (dated within the last 6 hours) as **Layer 0** for each platform — they take priority over Brave / RSS / old.reddit cascade results and dedupe by permalink.
+- See `tools/browser-scan/README.md` for setup and the output schema. The `.profile/` cookie jar is gitignored.

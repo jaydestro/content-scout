@@ -1,0 +1,209 @@
+#!/usr/bin/env node
+// Content Scout — Browser Scan
+// Drives Microsoft Edge to scrape X, LinkedIn, and Reddit search results
+// from the logged-in UI. Writes normalized JSON sidecars that `scout scan`
+// ingests as Layer 0.
+//
+// Default mode is CDP attach: you start Edge yourself with
+//   node tools/browser-scan/launch-edge.mjs
+// then run scans against that running Edge. This is the only reliable way
+// to log in to X (X actively flags fresh Playwright profiles).
+//
+// Commands:
+//   node index.mjs launch                            # spawn Edge with debug port + login tabs
+//   node index.mjs scan --slug <slug>                # CDP attach by default
+//   node index.mjs scan --slug <slug> --mode launch  # legacy: Playwright launches its own profile
+//   node index.mjs login --platform x|linkedin|reddit   # legacy launch-mode helper (NOT recommended)
+//
+// See README.md for the full flow.
+
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { scanX, openXLogin } from './platforms/x.mjs';
+import { scanLinkedIn, openLinkedInLogin } from './platforms/linkedin.mjs';
+import { scanReddit, openRedditLogin } from './platforms/reddit.mjs';
+import { loadConfig } from './lib/config.mjs';
+import { ensureProfileDir, launchEdge, attachEdge } from './lib/browser.mjs';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, '..', '..');
+
+// ---- arg parsing ----
+const argv = process.argv.slice(2);
+const command = argv[0];
+const flags = {};
+for (let i = 1; i < argv.length; i++) {
+  const a = argv[i];
+  if (a.startsWith('--')) {
+    const key = a.slice(2);
+    const next = argv[i + 1];
+    if (next && !next.startsWith('--')) { flags[key] = next; i++; }
+    else flags[key] = true;
+  }
+}
+
+const PLATFORMS = ['x', 'linkedin', 'reddit'];
+const DEFAULT_CDP_PORT = 9222;
+
+function usageAndExit(code = 1) {
+  console.error(`
+Content Scout — Browser Scan
+
+Usage:
+  node index.mjs launch [--port 9222] [--use-default-profile]
+      Spawn Edge with --remote-debugging-port enabled and open the three
+      login tabs. Sign in once; leave Edge running.
+
+  node index.mjs scan --slug <slug>
+                      [--platforms x,linkedin,reddit]
+                      [--mode cdp|launch]              (default: cdp)
+                      [--port 9222]                    (cdp port)
+                      [--days 30] [--max-per-term 25] [--headed]
+
+  node index.mjs login --platform x|linkedin|reddit    (LEGACY launch-mode only)
+
+Examples:
+  node index.mjs launch
+  node index.mjs scan --slug azure-cosmos-db
+  node index.mjs scan --slug azure-cosmos-db --platforms linkedin
+  node index.mjs scan --slug azure-cosmos-db --mode launch --headed
+`);
+  process.exit(code);
+}
+
+if (!command) usageAndExit();
+
+// ---- launch command (delegates to launch-edge.mjs) ----
+if (command === 'launch') {
+  const launcherPath = path.join(__dirname, 'launch-edge.mjs');
+  const childArgs = [launcherPath];
+  if (flags.port) { childArgs.push('--port', String(flags.port)); }
+  if (flags['use-default-profile']) { childArgs.push('--use-default-profile'); }
+  const child = spawn(process.execPath, childArgs, { stdio: 'inherit' });
+  child.on('exit', (c) => process.exit(c ?? 0));
+} else if (command === 'login') {
+  // ---- login (legacy launch-mode helper) ----
+  const platform = String(flags.platform || '').toLowerCase();
+  if (!PLATFORMS.includes(platform)) {
+    console.error(`Unknown platform: ${platform}. Use one of: ${PLATFORMS.join(', ')}`);
+    process.exit(1);
+  }
+  console.warn('[browser-scan] WARNING: `login` uses the legacy launch-mode profile, which X frequently refuses to log in to.');
+  console.warn('[browser-scan] Recommended instead: run `node index.mjs launch` and sign in there once. Then `scan` (default --mode cdp).');
+  const profileDir = ensureProfileDir(__dirname, platform);
+  console.log(`[browser-scan] Opening Edge with persistent profile: ${profileDir}`);
+  console.log(`[browser-scan] Sign in to ${platform}, then close the browser window.`);
+  const handle = await launchEdge({ profileDir, headed: true });
+  const browser = handle.browser;
+  try {
+    if (platform === 'x') await openXLogin(handle);
+    else if (platform === 'linkedin') await openLinkedInLogin(handle);
+    else if (platform === 'reddit') await openRedditLogin(handle);
+    await new Promise((resolve) => browser.on('close', resolve));
+  } finally {
+    if (browser.isConnected && browser.isConnected()) await browser.close().catch(() => {});
+  }
+  console.log(`[browser-scan] Saved session for ${platform} to ${profileDir}`);
+  process.exit(0);
+} else if (command === 'scan') {
+  // ---- scan ----
+  const slug = String(flags.slug || '').trim();
+  if (!slug) {
+    console.error('--slug is required (matches scout-config-{slug}.prompt.md)');
+    process.exit(1);
+  }
+  const requested = String(flags.platforms || PLATFORMS.join(','))
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => PLATFORMS.includes(s));
+  if (requested.length === 0) {
+    console.error(`No valid platforms in --platforms. Use any of: ${PLATFORMS.join(', ')}`);
+    process.exit(1);
+  }
+  const mode = (String(flags.mode || 'cdp').toLowerCase() === 'launch') ? 'launch' : 'cdp';
+  const port = Number(flags.port || DEFAULT_CDP_PORT);
+  const headed = !!flags.headed;
+  const days = Number(flags.days || 30);
+  const maxPerTerm = Number(flags['max-per-term'] || 25);
+
+  const config = loadConfig(ROOT, slug);
+  if (!config) {
+    console.error(`No scout-config-${slug}.prompt.md found in .github/prompts/`);
+    process.exit(1);
+  }
+  console.log(`[browser-scan] Loaded config "${slug}" — ${config.searchTerms.length} search terms, ${days}d window, mode=${mode}`);
+
+  const sinceMs = Date.now() - days * 24 * 60 * 60 * 1000;
+  const stamp = formatStamp(new Date());
+  const outDir = path.join(ROOT, 'reports', '.browser-scan', slug);
+  fs.mkdirSync(outDir, { recursive: true });
+
+  // In CDP mode, attach ONCE and reuse the same context for all platforms —
+  // the user is already logged in to all three in one Edge window.
+  let sharedHandle = null;
+  if (mode === 'cdp') {
+    try {
+      sharedHandle = await attachEdge({ port });
+      console.log(`[browser-scan] Attached to Edge over CDP at http://127.0.0.1:${port}`);
+    } catch (e) {
+      console.error(`[browser-scan] ${e.message}`);
+      process.exit(1);
+    }
+  }
+
+  for (const platform of requested) {
+    let handle = sharedHandle;
+    let ownsHandle = false;
+    if (mode === 'launch') {
+      const profileDir = ensureProfileDir(__dirname, platform);
+      if (!hasSession(profileDir)) {
+        console.warn(`[browser-scan] ${platform}: no session in launch-mode profile — run "node index.mjs login --platform ${platform}" or switch to --mode cdp. Skipping.`);
+        continue;
+      }
+      console.log(`[browser-scan] ${platform}: launching Edge (headed=${headed})…`);
+      handle = await launchEdge({ profileDir, headed });
+      ownsHandle = true;
+    }
+
+    let items = [];
+    try {
+      const ctx = { searchTerms: config.searchTerms, sinceMs, maxPerTerm, slug };
+      if (platform === 'x') items = await scanX(handle, ctx);
+      else if (platform === 'linkedin') items = await scanLinkedIn(handle, ctx);
+      else if (platform === 'reddit') items = await scanReddit(handle, ctx);
+    } catch (e) {
+      console.error(`[browser-scan] ${platform}: error — ${e.message}`);
+    } finally {
+      if (ownsHandle) await handle.browser.close().catch(() => {});
+    }
+    const outFile = path.join(outDir, `${stamp}-${platform}.json`);
+    fs.writeFileSync(outFile, JSON.stringify(items, null, 2));
+    console.log(`[browser-scan] ${platform}: ${items.length} items → ${path.relative(ROOT, outFile)}`);
+  }
+
+  // In CDP mode we do NOT close the user's Edge — they own it. Just disconnect.
+  if (sharedHandle) await sharedHandle.browser.close().catch(() => {});
+
+  console.log(`[browser-scan] Done. scout scan will pick up results from reports/.browser-scan/${slug}/ on its next run.`);
+  process.exit(0);
+} else {
+  usageAndExit();
+}
+
+// ---- helpers ----
+function formatStamp(d) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+}
+
+function hasSession(profileDir) {
+  const cookiesPath = path.join(profileDir, 'Default', 'Cookies');
+  try {
+    const st = fs.statSync(cookiesPath);
+    return st.size > 4096;
+  } catch {
+    return false;
+  }
+}
