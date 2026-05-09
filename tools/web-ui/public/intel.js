@@ -47,6 +47,69 @@
     }
   }
 
+  // Default visible window: most recent 14 days. Anything older is bucketed
+  // by ISO week (Mon-anchored) into collapsible <details> dropdowns. When
+  // the user types a search query (conv-q), the date window is dropped so
+  // the search hits the full archive — that's what "searchable if needed"
+  // means here.
+  const RECENT_WINDOW_DAYS = 14;
+  // Persist which weekly buckets the user expanded across re-renders.
+  const _expandedWeeks = new Set();
+
+  function _parseDate(d) {
+    if (!d) return null;
+    const t = Date.parse(d);
+    return Number.isFinite(t) ? new Date(t) : null;
+  }
+
+  // ISO week-of-year key like "2026-W18". Mon-anchored.
+  function _isoWeekKey(d) {
+    const dt = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    const day = dt.getUTCDay() || 7;
+    dt.setUTCDate(dt.getUTCDate() + 4 - day);
+    const yearStart = new Date(Date.UTC(dt.getUTCFullYear(), 0, 1));
+    const weekNo = Math.ceil(((dt - yearStart) / 86400000 + 1) / 7);
+    return `${dt.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+  }
+
+  // "Mon Apr 20 – Sun Apr 26, 2026" style label for a week-key bucket.
+  function _weekLabel(d) {
+    const dt = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    const day = dt.getUTCDay() || 7;
+    const monday = new Date(dt);
+    monday.setUTCDate(dt.getUTCDate() - (day - 1));
+    const sunday = new Date(monday);
+    sunday.setUTCDate(monday.getUTCDate() + 6);
+    const fmt = (x) =>
+      x.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    return `${fmt(monday)} – ${fmt(sunday)}, ${sunday.getUTCFullYear()}`;
+  }
+
+  function _convRowHtml(c) {
+    const dot = SENTIMENT_DOT[c.sentiment] || '·';
+    const link = c.url
+      ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">Open ↗</a>`
+      : '';
+    const replyBtn =
+      c.url && (c.sentiment === 'negative' || c.sentiment === 'mixed')
+        ? `<button type="button" class="conv-reply-btn" data-url="${esc(
+            c.url
+          )}" data-author="${esc(c.author || '')}">Draft reply post</button>`
+        : '';
+    return `<div class="conv-row sent-${esc(c.sentiment)}">
+      <div class="conv-row-head">
+        <span class="conv-dot" title="${esc(c.sentiment)}">${dot}</span>
+        <strong>${esc(c.author || '(unknown)')}</strong>
+        <span class="conv-platform">${esc(c.platform || '')}</span>
+        <span class="conv-date">${esc(c.date || '')}</span>
+        <span class="conv-spacer"></span>
+        ${link}
+      </div>
+      <div class="conv-summary">${esc(c.summary || '')}</div>
+      <div class="conv-actions">${replyBtn}</div>
+    </div>`;
+  }
+
   function renderConversations() {
     const list = document.getElementById('conv-list');
     if (!list) return;
@@ -68,40 +131,73 @@
       );
     }
 
+    // Split into recent (≤14d) vs older (bucketed by ISO week). When the
+    // user is searching, skip the date split so the query hits everything.
+    const cutoff = Date.now() - RECENT_WINDOW_DAYS * 86400000;
+    const recent = [];
+    const older = []; // { key, label, items }
+    const olderMap = new Map();
+    const isSearching = !!q;
+
+    for (const c of convs) {
+      const dt = _parseDate(c.date);
+      if (isSearching || !dt || dt.getTime() >= cutoff) {
+        recent.push(c);
+        continue;
+      }
+      const key = _isoWeekKey(dt);
+      if (!olderMap.has(key)) {
+        const bucket = { key, label: _weekLabel(dt), sortDate: dt.getTime(), items: [] };
+        olderMap.set(key, bucket);
+        older.push(bucket);
+      }
+      olderMap.get(key).items.push(c);
+    }
+    older.sort((a, b) => b.sortDate - a.sortDate);
+
     const meta = document.getElementById('conv-meta');
-    if (meta) meta.textContent = `${convs.length} of ${_allConvs.length} conversations`;
+    if (meta) {
+      const windowNote = isSearching
+        ? `${convs.length} of ${_allConvs.length} matched (full archive)`
+        : `${recent.length} in last ${RECENT_WINDOW_DAYS}d · ${convs.length - recent.length} older across ${older.length} week${older.length === 1 ? '' : 's'} · ${_allConvs.length} total`;
+      meta.textContent = windowNote;
+    }
 
     if (!convs.length) {
       list.innerHTML = `<p class="hint">No conversations matched. Try clearing filters or running a fresh scan to surface community chatter.</p>`;
       return;
     }
 
-    list.innerHTML = convs
-      .map((c) => {
-        const dot = SENTIMENT_DOT[c.sentiment] || '·';
-        const link = c.url
-          ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">Open ↗</a>`
-          : '';
-        const replyBtn =
-          c.url && (c.sentiment === 'negative' || c.sentiment === 'mixed')
-            ? `<button type="button" class="conv-reply-btn" data-url="${esc(
-                c.url
-              )}" data-author="${esc(c.author || '')}">Draft reply post</button>`
-            : '';
-        return `<div class="conv-row sent-${esc(c.sentiment)}">
-          <div class="conv-row-head">
-            <span class="conv-dot" title="${esc(c.sentiment)}">${dot}</span>
-            <strong>${esc(c.author || '(unknown)')}</strong>
-            <span class="conv-platform">${esc(c.platform || '')}</span>
-            <span class="conv-date">${esc(c.date || '')}</span>
-            <span class="conv-spacer"></span>
-            ${link}
-          </div>
-          <div class="conv-summary">${esc(c.summary || '')}</div>
-          <div class="conv-actions">${replyBtn}</div>
-        </div>`;
+    const recentHtml = recent.length
+      ? recent.map(_convRowHtml).join('')
+      : `<p class="hint">No conversations in the last ${RECENT_WINDOW_DAYS} days. Older weeks are listed below.</p>`;
+
+    const olderHtml = older
+      .map((bucket) => {
+        const open = _expandedWeeks.has(bucket.key) ? ' open' : '';
+        return `<details class="conv-week"${open} data-week="${esc(bucket.key)}">
+          <summary><span class="conv-week-label">${esc(bucket.label)}</span> <span class="conv-week-count">${bucket.items.length} item${bucket.items.length === 1 ? '' : 's'}</span></summary>
+          <div class="conv-week-body">${bucket.items.map(_convRowHtml).join('')}</div>
+        </details>`;
       })
       .join('');
+
+    list.innerHTML =
+      (isSearching
+        ? `<div class="conv-recent">${recentHtml}</div>`
+        : `<div class="conv-recent">${recentHtml}</div>` +
+          (older.length
+            ? `<div class="conv-archive"><h3 class="conv-archive-head">Older — by week</h3>${olderHtml}</div>`
+            : ''));
+
+    list.querySelectorAll('details.conv-week').forEach((d) => {
+      d.addEventListener('toggle', () => {
+        const key = d.dataset.week;
+        if (!key) return;
+        if (d.open) _expandedWeeks.add(key);
+        else _expandedWeeks.delete(key);
+      });
+    });
 
     list.querySelectorAll('.conv-reply-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
