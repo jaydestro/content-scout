@@ -59,6 +59,7 @@ diag-*
 
 # Seen-links tracker (local state, not shared)
 reports/.seen-links.json
+reports/.seen-urls-cache.txt
 
 # Persistent ecosystem state (creators.json etc — local state, not shared)
 # Note: reports/.scout-state.shared/ is intentionally NOT ignored — teams

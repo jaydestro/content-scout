@@ -11,6 +11,7 @@
 // per term cap by default.
 
 import { newPage, sleep } from '../lib/browser.mjs';
+import { buildSearchQuery } from '../lib/query.mjs';
 
 export async function openXLogin(browser) {
   const page = await newPage(browser);
@@ -33,7 +34,9 @@ export async function scanX(browser, ctx) {
   }
 
   for (const term of searchTerms) {
-    const url = `https://x.com/search?q=${encodeURIComponent(term)}&src=typed_query&f=live`;
+    const query = buildSearchQuery(term, 'x');
+    if (!query) continue;
+    const url = `https://x.com/search?q=${encodeURIComponent(query)}&src=typed_query&f=live`;
     try {
       await page.goto(url, { waitUntil: 'domcontentloaded' });
     } catch (e) {
