@@ -37,7 +37,7 @@ Run a content scan using the Content Scout agent.
    - Tag every item with canonical topic tags.
    - If **Conference CFP tracking** is enabled in config, also scan for open CFPs and recent conference talks (see agent definition for sources and format).
    - Number items sequentially across all sections.
-4. Save each topic's report to `reports/{YYYY-MM-DD-HHmm}-{slug}-content.md` (or `reports/{YYYY-MM-DD-HHmm}-content.md` if only one topic).
+4. Save each topic's report to `reports/{YYYY-MM-DD-HHmm}-{slug}-content.md` (or `reports/{YYYY-MM-DD-HHmm}-content.md` if only one topic). **Exactly one report file per scan.** Every item from every layer (browser-scan sidecars, cascade fallbacks, RSS, APIs, MCP, manual imports) goes into that **one** file — never write a separate "supplemental", "addendum", or "sidecar report" alongside it. If a re-scan happens for the same window, edit the existing report file in place. See "One Scan = One Report" in the agent definition for the full rule.
 5. Update `reports/.seen-links.json` with all new URLs.
 6. **Update persistent creator state** at `reports/.scout-state/{slug}/creators.json` (see "Persistent Ecosystem State" in the Content Scout agent definition for schema and upsert rules). Recompute `trajectory` for every creator. Populate the report's **Influence Movers** section (Rising / Stable / Fading / Detractor Watch) from this file. If `creators.json` is empty/new, the Influence Movers section may say "First scan — trajectory data will appear after the next run."
 7. Auto-generate social posts and thumbnail specs for every item. Save to `social-posts/{YYYY-MM-DD-HHmm}-{slug}-social-posts.md` (or `social-posts/{YYYY-MM-DD-HHmm}-social-posts.md` if only one topic).
