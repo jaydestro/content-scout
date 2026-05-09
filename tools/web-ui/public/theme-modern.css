@@ -1425,6 +1425,31 @@ aside li[data-name] .entry-open:hover {
 }
 .conv-reply-btn:hover { filter: brightness(1.1); }
 
+/* Conversations: weekly archive dropdowns (older than 14d) */
+.conv-archive { margin-top: 1.25rem; }
+.conv-archive-head {
+  font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--muted, #94a3b8); margin: 0 0 0.5rem; font-weight: 600;
+}
+details.conv-week {
+  border: 1px solid var(--border, #2a2e44); border-radius: 8px;
+  margin-bottom: 0.4rem; background: var(--surface, #14172230);
+}
+details.conv-week > summary {
+  cursor: pointer; padding: 0.55rem 0.85rem; list-style: none;
+  display: flex; gap: 0.6rem; align-items: baseline; user-select: none;
+}
+details.conv-week > summary::-webkit-details-marker { display: none; }
+details.conv-week > summary::before {
+  content: "▸"; color: var(--muted, #94a3b8); transition: transform 0.15s;
+  display: inline-block; width: 0.9rem;
+}
+details.conv-week[open] > summary::before { transform: rotate(90deg); }
+details.conv-week .conv-week-label { font-weight: 600; }
+details.conv-week .conv-week-count { color: var(--muted, #94a3b8); font-size: 0.85rem; margin-left: auto; }
+details.conv-week .conv-week-body { padding: 0.5rem 0.85rem 0.75rem; }
+details.conv-week .conv-week-body .conv-row:last-child { margin-bottom: 0; }
+
 /* === Dashboard intel cards === */
 #dash-intel-cards { margin-top: 1rem; }
 
