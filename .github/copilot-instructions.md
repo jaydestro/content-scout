@@ -52,9 +52,10 @@ Read the corresponding prompt file for each command's detailed flow. Ignore VS C
 
 ## Browser-scan tool (X / LinkedIn / Reddit, opt-in)
 
-`tools/browser-scan/` drives Microsoft Edge via Playwright with a persistent login profile to scrape the **logged-in** UIs of X, LinkedIn, and Reddit. This is the most reliable free way to cover these three platforms.
+`tools/browser-scan/` attaches to a real Microsoft Edge window over the Chrome DevTools Protocol to scrape the **logged-in** UIs of X, LinkedIn, and Reddit. This is the most reliable free way to cover these three platforms — X actively flags fresh Playwright profiles.
 
-- One-time login per platform: `node tools/browser-scan/index.mjs login --platform x|linkedin|reddit`
-- Refresh sidecars before a scan: `node tools/browser-scan/index.mjs scan --slug {slug}`
+- One-time setup: `node tools/browser-scan/launch-edge.mjs` (spawns Edge on port 9222 + opens login tabs; sign in once; leave Edge running)
+- Refresh sidecars before a scan: `node tools/browser-scan/index.mjs scan --slug {slug}` (default mode = `cdp` attach)
+- Multi-word search terms get phrase-quoted automatically (`Azure Cosmos DB` → `"Azure Cosmos DB"`); hashtags lose the `#` on Reddit
 - `scout scan` auto-ingests sidecars in `reports/.browser-scan/{slug}/` (dated within the last 6 hours) as **Layer 0** for each platform — they take priority over Brave / RSS / old.reddit cascade results and dedupe by permalink.
-- See `tools/browser-scan/README.md` for setup and the output schema. The `.profile/` cookie jar is gitignored.
+- See `tools/browser-scan/README.md` for setup and the output schema. The `.cdp-profile/` and legacy `.profile/` cookie jars are gitignored.

@@ -73,6 +73,23 @@ reports/.browser-scan/{slug}/{YYYY-MM-DD-HHmm}-{platform}.json
 `scout scan` then automatically picks up the newest sidecar per platform
 within the last 6 hours and merges it as Layer 0.
 
+## How queries are built
+
+`lib/query.mjs::buildSearchQuery(term, platform)` shapes each search-term
+from the config before sending it to the platform:
+
+| Config term | X / LinkedIn | Reddit |
+|---|---|---|
+| `Azure Cosmos DB` | `"Azure Cosmos DB"` (phrase match) | `"Azure Cosmos DB"` (phrase match) |
+| `CosmosDB` | `CosmosDB` | `CosmosDB` |
+| `#AzureCosmosDB` | `#AzureCosmosDB` (hashtag match) | `AzureCosmosDB` (Reddit ignores `#`) |
+
+Multi-word terms always get phrase-quoted so platforms don't OR the
+tokens. Single tokens and `#hashtag` terms pass through. Reddit gets the
+leading `#` stripped because Reddit's search treats `#` as punctuation.
+Each search term runs sequentially per platform; results are deduped by
+permalink across all terms before the sidecar is written.
+
 ## CLI reference
 
 | Command | Purpose |
