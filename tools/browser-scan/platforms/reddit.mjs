@@ -1,18 +1,28 @@
 // Reddit — logged-in browser scraper.
+//
 // Strategy:
 //   1. Navigate to https://www.reddit.com/search/?q={term}&type=link&sort=new&t=month
-//      (the new reddit "shreddit" UI exposes posts as <shreddit-post> elements
-//      with rich attributes that include score, comment count, and timestamp)
-//   2. Scroll to load more results; collect post elements
-//   3. Extract permalink, subreddit, author, post date, title, body, engagement
-//   4. De-dupe by permalink across search terms
+//      (multi-word terms get wrapped in "..." for phrase matching by
+//      lib/query.mjs; hashtags get the # stripped because reddit doesn't
+//      index hashtags.)
+//   2. Scroll to load more results
+//   3. Each result card is `div[data-testid="search-post-unit"]`. The
+//      `<search-telemetry-tracker data-faceplate-tracking-context="...">`
+//      element inside each card holds a JSON blob with the post id,
+//      title, author, and subreddit — pull from that for clean extraction.
+//   4. Date comes from the inner `<time datetime="...">` element (faceplate-timeago).
+//   5. Score / comment counts come from sibling spans that match
+//      `\d+\s*(vote|comment)s?`.
+//   6. De-dupe by permalink across search terms.
 //
-// We use new reddit (www.reddit.com) when logged in because it surfaces more
-// of the long-tail search results than old.reddit search does, and avoids the
-// 403/429 the unauth Layer 1/2 cascade hits. Logged-in HTML is also stable
-// because reddit ships post metadata as element attributes for accessibility.
+// Selector notes (verified May 2026):
+//   - <shreddit-post> is no longer used on the search results page (it
+//     still exists in subreddit feeds). Search uses native HTML cards.
+//   - The title text ships inside <faceplate-screen-reader-content>; using
+//     the JSON blob avoids HTML decoding issues.
 
 import { newPage, sleep } from '../lib/browser.mjs';
+import { buildSearchQuery } from '../lib/query.mjs';
 
 export async function openRedditLogin(browser) {
   const page = await newPage(browser);
@@ -26,15 +36,16 @@ export async function scanReddit(browser, ctx) {
 
   await page.goto('https://www.reddit.com/', { waitUntil: 'domcontentloaded' });
   await sleep(2000);
-  // If we get bounced to /login the session is dead.
   if (/\/login\//.test(page.url())) {
-    console.warn('[browser-scan] reddit: session expired — run "node index.mjs login --platform reddit"');
+    console.warn('[browser-scan] reddit: session expired — sign in to Reddit in the Edge tab and re-run.');
     await page.close();
     return [];
   }
 
   for (const term of searchTerms) {
-    const url = `https://www.reddit.com/search/?q=${encodeURIComponent(term)}&type=link&sort=new&t=month`;
+    const query = buildSearchQuery(term, 'reddit');
+    if (!query) continue;
+    const url = `https://www.reddit.com/search/?q=${encodeURIComponent(query)}&type=link&sort=new&t=month`;
     try {
       await page.goto(url, { waitUntil: 'domcontentloaded' });
     } catch (e) {
@@ -42,7 +53,7 @@ export async function scanReddit(browser, ctx) {
       continue;
     }
     try {
-      await page.waitForSelector('shreddit-post, article a[data-testid="post-title"], a[slot="title"]', { timeout: 15000 });
+      await page.waitForSelector('div[data-testid="search-post-unit"], a[data-testid="post-title"]', { timeout: 15000 });
     } catch {
       console.warn(`[browser-scan] reddit: no results rendered for "${term}"`);
       await sleep(3500);
@@ -67,7 +78,7 @@ export async function scanReddit(browser, ctx) {
       await page.evaluate(() => window.scrollBy(0, window.innerHeight * 1.5));
       await sleep(2000);
     }
-    await sleep(3000);
+    await sleep(3000); // polite delay between search terms
   }
 
   await page.close();
@@ -77,23 +88,51 @@ export async function scanReddit(browser, ctx) {
 async function extractPostsOnPage(page) {
   return page.evaluate(() => {
     const out = [];
-    // New reddit ships <shreddit-post> with attributes for almost everything.
-    const posts = document.querySelectorAll('shreddit-post');
-    for (const p of posts) {
-      const permalink = p.getAttribute('permalink');
-      const url = permalink ? new URL(permalink, 'https://www.reddit.com').href : null;
-      const subreddit = p.getAttribute('subreddit-prefixed-name') || p.getAttribute('subreddit-name') || null;
-      const author = p.getAttribute('author');
-      const author_handle = author ? `u/${author}` : null;
-      const post_date = p.getAttribute('created-timestamp') || null;
-      const title = p.getAttribute('post-title') || p.querySelector('a[slot="title"]')?.textContent?.trim() || null;
-      const score = parseInt(p.getAttribute('score') || '0', 10) || 0;
-      const comment_count = parseInt(p.getAttribute('comment-count') || '0', 10) || 0;
-      // Body excerpt — try the inline text slot
-      const bodyEl = p.querySelector('[slot="text-body"]') || p.querySelector('div[id*="post-rtjson-content"]');
-      const body = bodyEl ? bodyEl.innerText.trim().slice(0, 1200) : '';
+    const cards = document.querySelectorAll('div[data-testid="search-post-unit"]');
 
-      if (!url) continue;
+    for (const card of cards) {
+      // Pull the rich JSON blob shipped on the telemetry tracker —
+      // contains post.id, post.title, profile.name, subreddit.name in one shot.
+      const tracker = card.querySelector('search-telemetry-tracker[data-faceplate-tracking-context]');
+      let trackerData = null;
+      if (tracker) {
+        try { trackerData = JSON.parse(tracker.getAttribute('data-faceplate-tracking-context')); }
+        catch { /* fall back to DOM scraping below */ }
+      }
+
+      // Permalink — the post-title anchor's href is /r/{sub}/comments/{id}/{slug}/
+      const titleAnchor = card.querySelector('a[data-testid="post-title"]');
+      if (!titleAnchor) continue;
+      const href = titleAnchor.getAttribute('href') || '';
+      if (!href.includes('/comments/')) continue;
+      const url = new URL(href, 'https://www.reddit.com').href.split('?')[0];
+
+      const title = trackerData?.post?.title
+        || titleAnchor.getAttribute('aria-label')
+        || titleAnchor.textContent.trim();
+
+      const subreddit = trackerData?.subreddit?.name
+        ? `r/${trackerData.subreddit.name}`
+        : (href.match(/^\/r\/([^/]+)/)?.[1] ? `r/${href.match(/^\/r\/([^/]+)/)[1]}` : null);
+
+      const author = trackerData?.profile?.name || null;
+      const author_handle = author ? `u/${author}` : null;
+
+      // Date — <time datetime="...">
+      const timeEl = card.querySelector('time[datetime]');
+      const post_date = timeEl ? timeEl.getAttribute('datetime') : null;
+
+      // Score + comments — sibling spans with "N votes" / "N comments" text.
+      let score = 0;
+      let comment_count = 0;
+      for (const span of card.querySelectorAll('span')) {
+        const t = (span.textContent || '').trim();
+        const voteM = t.match(/^(\d[\d,]*)\s*votes?$/i);
+        if (voteM) score = parseInt(voteM[1].replace(/,/g, ''), 10);
+        const cmtM = t.match(/^(\d[\d,]*)\s*comments?$/i);
+        if (cmtM) comment_count = parseInt(cmtM[1].replace(/,/g, ''), 10);
+      }
+
       out.push({
         platform: 'reddit',
         url,
@@ -102,7 +141,7 @@ async function extractPostsOnPage(page) {
         author_bio: null,
         post_date,
         title,
-        body,
+        body: '', // search cards don't include body text; agent can fetch if needed
         engagement: {
           score,
           comments: comment_count,
@@ -112,32 +151,6 @@ async function extractPostsOnPage(page) {
         scraped_at: new Date().toISOString(),
         source: 'reddit-browser',
       });
-    }
-    // Fallback for the legacy "faceplate" search result cards if shreddit-post
-    // is absent on a given results page.
-    if (out.length === 0) {
-      const cards = document.querySelectorAll('faceplate-tracker[data-testid="search-post"], [data-testid="post-container"]');
-      for (const c of cards) {
-        const a = c.querySelector('a[href*="/comments/"]');
-        if (!a) continue;
-        const url = a.href.split('?')[0];
-        const title = a.textContent?.trim() || null;
-        out.push({
-          platform: 'reddit',
-          url,
-          author_handle: null,
-          author_display: null,
-          author_bio: null,
-          post_date: null,
-          title,
-          body: '',
-          engagement: {},
-          thread_context: null,
-          subreddit: null,
-          scraped_at: new Date().toISOString(),
-          source: 'reddit-browser',
-        });
-      }
     }
     return out;
   });

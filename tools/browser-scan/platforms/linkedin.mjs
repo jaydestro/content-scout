@@ -21,6 +21,7 @@
 //     "1mo") against `now`.
 
 import { newPage, sleep } from '../lib/browser.mjs';
+import { buildSearchQuery } from '../lib/query.mjs';
 
 export async function openLinkedInLogin(browser) {
   const page = await newPage(browser);
@@ -41,7 +42,9 @@ export async function scanLinkedIn(browser, ctx) {
   }
 
   for (const term of searchTerms) {
-    const url = `https://www.linkedin.com/search/results/content/?keywords=${encodeURIComponent(term)}&datePosted=%22past-month%22&sortBy=%22date_posted%22`;
+    const query = buildSearchQuery(term, 'linkedin');
+    if (!query) continue;
+    const url = `https://www.linkedin.com/search/results/content/?keywords=${encodeURIComponent(query)}&datePosted=%22past-month%22&sortBy=%22date_posted%22`;
     try {
       await page.goto(url, { waitUntil: 'domcontentloaded' });
     } catch (e) {
