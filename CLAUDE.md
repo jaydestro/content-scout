@@ -70,13 +70,23 @@ When reading prompt files, the `${{input:...}}` placeholders are VS Code syntax.
 
 ## Browser-scan tool (X / LinkedIn / Reddit, opt-in)
 
-`tools/browser-scan/` attaches to a real Microsoft Edge window over the
-Chrome DevTools Protocol to scrape the **logged-in** UIs of X, LinkedIn,
-and Reddit. This is the most reliable free way to get coverage from these
-three platforms — anonymous scraping increasingly hits 403s, login walls,
-and rate limits, and X actively flags fresh Playwright profiles.
+`tools/browser-scan/` attaches to a real Chromium-family browser (Edge,
+Chrome, Brave, Vivaldi, Arc, Opera — auto-detects your OS default) over
+the Chrome DevTools Protocol to scrape the **logged-in** UIs of X,
+LinkedIn, and Reddit. This is the most reliable free way to get coverage
+from these three platforms — anonymous scraping increasingly hits 403s,
+login walls, and rate limits, and X actively flags fresh Playwright
+profiles. Firefox and Safari aren't supported (no CDP); the launcher
+falls back to whichever Chromium-family browser is installed.
 
-- One-time setup: `node tools/browser-scan/launch-edge.mjs` (spawns Edge with `--remote-debugging-port=9222` + opens login tabs for all three platforms; sign in once; leave Edge running)
+**From the web UI (recommended):** the Run view has a 🌐 **Browser scan
+(Layer 0)** panel with a browser dropdown, Open browser button, Scan-now
+button, and live sidecar freshness per platform. The Dashboard intel row
+shows a Browser-scan status card. No CLI required after the first launch.
+
+**From the CLI:**
+
+- One-time setup: `node tools/browser-scan/launch-edge.mjs` (auto-detects your default browser; pass `--browser "<Name>"` to override or `--list` to see what's installed; opens login tabs for all three platforms; sign in once; leave the browser running)
 - Run before a scan: `node tools/browser-scan/index.mjs scan --slug {slug}` (default mode = `cdp` attach)
 - Output: `reports/.browser-scan/{slug}/{stamp}-{platform}.json`
 - `scout scan` automatically ingests sidecars dated within the last 6 hours
