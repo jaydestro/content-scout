@@ -23,21 +23,25 @@ You don't need to install Chromium — the tool only attaches to Edge.
 ## One-time setup
 
 ```pwsh
-node tools/browser-scan/index.mjs launch
+node tools/browser-scan/launch-edge.mjs
 ```
 
-This launches Microsoft Edge with `--remote-debugging-port=9222` and a
-**dedicated CDP profile** (under `tools/browser-scan/.cdp-profile/`,
-gitignored), and opens three login tabs:
+This auto-detects your **OS default browser** and launches it with
+`--remote-debugging-port=9222` and a **dedicated CDP profile** (under
+`tools/browser-scan/.cdp-profile/`, gitignored). It opens three login tabs:
 
 - https://x.com/login
 - https://www.linkedin.com/login
 - https://www.reddit.com/login/
 
 Sign in to each one as you normally would (passkeys, 2FA, anything works —
-it's a real Edge browser). **Leave Edge running** between scans; the
-session sticks. You only need to re-sign-in if a platform invalidates the
+it's a real browser). **Leave it running** between scans; the session
+sticks. You only need to re-sign-in if a platform invalidates the
 session (typically every few weeks).
+
+> Override the auto-detected browser with `--browser "Google Chrome"` (or
+> any other Chromium-family name). Run `--list` to see what's installed
+> and supported.
 
 > Why a dedicated CDP profile and not your day-to-day Edge?
 > Edge will not enable remote debugging on a profile that's already in use
@@ -94,8 +98,8 @@ permalink across all terms before the sidecar is written.
 
 | Command | Purpose |
 |---|---|
-| `node index.mjs launch` | Spawn Edge with debug port + login tabs (one-time setup, then leave running). Wraps `launch-edge.mjs`. |
-| `node index.mjs scan --slug <slug>` | Attach to running Edge over CDP (default) and scrape all three platforms. |
+| `node launch-edge.mjs` | Spawn the OS default Chromium-family browser with debug port + login tabs (one-time setup, then leave running). Use `--browser "<Name>"` to override or `--list` to see installed browsers. |
+| `node index.mjs scan --slug <slug>` | Attach to running browser over CDP (default) and scrape all three platforms. |
 | `node index.mjs scan --slug <slug> --platforms x,linkedin` | Restrict to specific platforms. |
 | `node index.mjs scan --slug <slug> --mode launch --headed` | **Legacy.** Make Playwright launch its own Edge with a per-platform profile. X usually refuses to log in here. |
 | `node index.mjs login --platform x\|linkedin\|reddit` | **Legacy.** One-time login for the launch-mode profile (per platform). Not recommended. |
@@ -103,11 +107,21 @@ permalink across all terms before the sidecar is written.
 ### Common flags
 
 - `--port 9222` — CDP port (default 9222). Must match what `launch` started.
+- `--browser "<Name>"` — (`launch-edge.mjs` only) override the auto-detected default browser. Examples: `"Microsoft Edge"`, `"Google Chrome"`, `"Brave"`.
+- `--list` — (`launch-edge.mjs` only) print which Chromium-family browsers are installed on this machine and exit.
 - `--days 30` — Time window in days (default 30).
 - `--max-per-term 25` — Max items per search term per platform.
 - `--headed` — Force-show the browser when in `--mode launch`.
-- `--use-default-profile` — (`launch` only) Use your real Edge profile
-  instead of the dedicated CDP profile. Close all other Edge windows first.
+- `--use-default-profile` — (`launch` only) Use your real browser profile instead of the dedicated CDP profile. Close all other windows of that browser first.
+
+## Web UI integration
+
+The Content Scout web UI surfaces browser-scan controls automatically:
+
+- **Run view** — a "🌐 Browser scan (Layer 0)" panel at the top with a browser dropdown, **Open browser & sign in** button, **Scan now** button, and live sidecar freshness per platform for the active subject.
+- **Dashboard** — a small "Browser scan" card showing whether the browser is currently running on the CDP port and how many subjects have sidecars on disk.
+
+No CLI required after the first launch.
 
 ## Output schema
 
