@@ -1,7 +1,7 @@
 import express from 'express';
 import { marked } from 'marked';
 import { spawn } from 'node:child_process';
-import { promises as fs } from 'node:fs';
+import { promises as fs, existsSync as fsExistsSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -2551,6 +2551,174 @@ app.get('/api/runs/:id/stream', (req, res) => {
   }
   run.listeners.add(res);
   req.on('close', () => run.listeners.delete(res));
+});
+
+// ===== Browser-scan integration ===================================
+// Surfaces the tools/browser-scan/ tool inside the web UI: list known
+// browsers, check whether the user is logged in (via the CDP debug port),
+// launch the helper to open Edge/Chrome with the debug port, and trigger
+// a scan that writes Layer-0 sidecars under reports/.browser-scan/{slug}/.
+
+const BROWSER_SCAN_DIR = path.join(REPO_ROOT, 'tools', 'browser-scan');
+const BROWSER_SCAN_INSTALLED = fsExistsSync(path.join(BROWSER_SCAN_DIR, 'index.mjs'));
+
+// Reused by /api/browser-scan/status to peek at the CDP port without
+// requiring playwright (the agent server doesn't have it; only the
+// browser-scan tool does).
+async function probeCdpPort(port) {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 3000);
+    const r = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!r.ok) return { up: false, status: r.status };
+    const body = await r.json().catch(() => null);
+    return { up: true, browser: body?.Browser || null };
+  } catch (err) {
+    return { up: false, error: err.message };
+  }
+}
+
+// GET /api/browser-scan/info — capabilities + which Chromium-family
+// browsers are installed on this machine.
+app.get('/api/browser-scan/info', async (_req, res) => {
+  if (!BROWSER_SCAN_INSTALLED) {
+    return res.json({
+      installed: false,
+      reason: 'tools/browser-scan/ is not present in this checkout',
+    });
+  }
+  let browsers = [];
+  let pickResult = null;
+  try {
+    const detect = await import(`file://${path.join(BROWSER_SCAN_DIR, 'lib', 'browser-detect.mjs').replace(/\\/g, '/')}`);
+    browsers = detect.listKnownBrowsers();
+    pickResult = detect.pickBrowser({});
+  } catch (err) {
+    return res.json({ installed: true, error: `Could not load browser-detect: ${err.message}`, browsers: [] });
+  }
+  res.json({
+    installed: true,
+    cdpPort: 9222,
+    browsers,
+    recommended: pickResult?.ok ? { name: pickResult.browser.name, source: pickResult.source, notice: pickResult.notice } : null,
+    error: pickResult?.ok ? null : pickResult?.error || null,
+  });
+});
+
+// GET /api/browser-scan/status — is Edge/Chrome currently running with
+// CDP enabled? Are the three sessions active? Lists sidecars per slug.
+app.get('/api/browser-scan/status', async (req, res) => {
+  if (!BROWSER_SCAN_INSTALLED) return res.json({ installed: false });
+  const port = Number(req.query.port || 9222);
+  const cdp = await probeCdpPort(port);
+  // List sidecars per slug under reports/.browser-scan/{slug}/
+  const sidecarRoot = path.join(REPORTS_DIR, '.browser-scan');
+  const bySlug = {};
+  try {
+    const slugs = await fs.readdir(sidecarRoot);
+    for (const slug of slugs) {
+      if (!isValidSlug(slug)) continue;
+      const slugDir = path.join(sidecarRoot, slug);
+      let files = [];
+      try { files = await fs.readdir(slugDir); } catch { continue; }
+      const platforms = {};
+      for (const f of files) {
+        if (!f.endsWith('.json')) continue;
+        const m = f.match(/^(\d{4}-\d{2}-\d{2}-\d{4})-(x|linkedin|reddit)\.json$/);
+        if (!m) continue;
+        const platform = m[2];
+        const stamp = m[1];
+        let stat = null;
+        try { stat = await fs.stat(path.join(slugDir, f)); } catch { continue; }
+        const existing = platforms[platform];
+        if (!existing || stamp > existing.stamp) {
+          platforms[platform] = { stamp, file: f, mtime: stat.mtimeMs };
+        }
+      }
+      bySlug[slug] = platforms;
+    }
+  } catch { /* no sidecar dir yet */ }
+  res.json({
+    installed: true,
+    port,
+    cdp,
+    sidecarsBySlug: bySlug,
+  });
+});
+
+// POST /api/browser-scan/launch — spawn launch-edge.mjs in the background.
+// Body: { browser?: 'Microsoft Edge'|... , port?: 9222, useDefaultProfile?: false }
+app.post('/api/browser-scan/launch', async (req, res) => {
+  if (!BROWSER_SCAN_INSTALLED) return res.status(404).json({ error: 'browser-scan not installed' });
+  const { browser, port, useDefaultProfile } = req.body || {};
+  // Refuse if CDP is already up — don't accidentally double-launch.
+  const existing = await probeCdpPort(Number(port || 9222));
+  if (existing.up) {
+    return res.json({ ok: true, alreadyRunning: true, browser: existing.browser });
+  }
+  const launcher = path.join(BROWSER_SCAN_DIR, 'launch-edge.mjs');
+  const args = [launcher];
+  if (port) args.push('--port', String(Number(port)));
+  if (browser) args.push('--browser', String(browser));
+  if (useDefaultProfile) args.push('--use-default-profile');
+  // Use the same node binary the server is running on.
+  const child = spawn(process.execPath, args, {
+    cwd: REPO_ROOT,
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
+  res.json({ ok: true, pid: child.pid, alreadyRunning: false });
+});
+
+// POST /api/browser-scan/scan — run `node index.mjs scan --slug {slug}`
+// as a child process and stream output via the same /api/runs/:id/stream
+// surface used by other commands.
+app.post('/api/browser-scan/scan', async (req, res) => {
+  if (!BROWSER_SCAN_INSTALLED) return res.status(404).json({ error: 'browser-scan not installed' });
+  const { slug, platforms, port } = req.body || {};
+  if (!slug || !isValidSlug(slug)) return res.status(400).json({ error: 'valid slug required' });
+  // Make sure CDP is reachable before spawning — friendlier error than the
+  // child failing 8 seconds in.
+  const probe = await probeCdpPort(Number(port || 9222));
+  if (!probe.up) {
+    return res.status(409).json({
+      error: 'No browser is listening on the CDP port. Click "Open browser" first to launch and sign in.',
+      port: Number(port || 9222),
+    });
+  }
+  const args = [path.join(BROWSER_SCAN_DIR, 'index.mjs'), 'scan', '--slug', slug];
+  if (port) { args.push('--port', String(Number(port))); }
+  if (Array.isArray(platforms) && platforms.length) {
+    const valid = platforms.filter((p) => ['x', 'linkedin', 'reddit'].includes(p));
+    if (valid.length) args.push('--platforms', valid.join(','));
+  }
+  // Reuse the existing run plumbing so the operations queue + output
+  // streaming Just Work.
+  const id = randomUUID();
+  const cmdName = 'browser-scan';
+  const command = `${process.execPath} ${args.join(' ')}`;
+  const child = spawn(process.execPath, args, {
+    cwd: REPO_ROOT,
+    env: process.env,
+  });
+  const run = {
+    id,
+    cmdName,
+    command,
+    output: '',
+    listeners: new Set(),
+    status: 'running',
+    startedAt: new Date().toISOString(),
+    child,
+  };
+  runs.set(id, run);
+  child.stdout.on('data', (d) => pushRunOutput(run, d.toString()));
+  child.stderr.on('data', (d) => pushRunOutput(run, d.toString()));
+  child.on('close', (code) => { run.child = null; closeRun(run, code === 0 ? 'success' : `exited ${code}`); });
+  child.on('error', (err) => { pushRunOutput(run, `[browser-scan] ${err.message}\n`); run.child = null; closeRun(run, 'error'); });
+  res.json({ ok: true, id, command });
 });
 
 app.listen(PORT, HOST, async () => {
