@@ -638,11 +638,37 @@ Include content that demonstrates **depth, practical value, or real-world usage*
 - AI-generated content farms that rehash docs
 - Posts where the product is only mentioned in passing
 - Duplicate/syndicated copies (keep original source only)
-- Job postings or certification study guides
+- Certification study guides (DP-420 / AZ-204 / etc. exam dumps and "I just passed" posts where the post is mostly about the cert, not the product)
 - YouTube videos with no description
 
+### No Hiring Content -- Hard Ban (Applies To EVERY Section)
+
+**Hard rule: hiring / recruiting / job-search content NEVER appears in
+any report section.** This includes the numbered tables, the
+Conversations section, Feature Requests & Pain Points, Influence Movers,
+Rising Contributors, Sources Scanned summaries, and social-post
+generation. The agent does not surface this content even when it
+mentions the product, and does not classify it as "community signal".
+
+**Drop any item that matches any of these patterns** (case-insensitive):
+
+- Title or body contains: `hiring`, `[hiring]`, `we're hiring`, `we are hiring`, `now hiring`, `is hiring`, `looking to hire`, `apply now`, `open position`, `open role`, `seeking candidates`, `interested candidates`, `please share resume`, `please share resumes`, `share your resume`, `dm your resume`, `hr@`, `recruiting@`, `talent@`, `careers@`, `position 1:`, `urgent requirement`, `c2c`, `c2h`, `w2 only`, `usc only`, `gc only`
+- Job-title shaped phrases combined with employment qualifiers: `senior * (architect|engineer|developer)` + `(remote|onsite|hybrid|contract|fulltime|full-time|w2)`, `years of experience required`, `\d+\+\s*(yrs|years)\s*(of)?\s*(experience|exp)?`
+- Subreddit / community is hiring-themed regardless of body: `r/Indiajobs`, `r/forhire`, `r/hiring`, `r/cscareerquestions` (the `r/cscareerquestions` exception: keep ONLY if the post is a technical retro / decision write-up and Cosmos DB is non-trivially central; default = drop)
+- LinkedIn `/jobs/view/` URLs
+- Resume-portfolio brag posts where the author is advertising their own availability ("Open to roles", "Available for contract", "Looking for opportunities") even when they list Cosmos DB in a skills wall
+
+**Why so aggressive:** logged-in browser scans of X / LinkedIn / Reddit
+return large volumes of recruiter posts, ATS spam, and skills-wall
+resumes that name-drop Cosmos DB but contribute zero signal about the
+product, ecosystem, or community. They displace real content from the
+report and skew sentiment, engagement, and trajectory math. Drop them
+silently — do NOT log them as "filtered for relevancy" line items in
+the user-facing summary; group them under a single `hiring/recruiting`
+counter in the JSON sidecar's `drop_reasons` block.
+
 ### Known Author Bypass
-Authors listed in the config file's known authors section always pass the relevancy gate (still must pass date gate).
+Authors listed in the config file's known authors section always pass the relevancy gate (still must pass date gate). **The hiring ban above is NOT bypassed by the known-author list** — if a known author posts a job ad, it still drops.
 
 ### Scoring (internal)
 When evaluating borderline content:
