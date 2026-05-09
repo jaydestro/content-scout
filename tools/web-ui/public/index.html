@@ -246,6 +246,14 @@
                   <label class="field-inline"><input type="checkbox" class="cfg-network" value="linkedin" /><span>LinkedIn</span></label>
                   <label class="field-inline"><input type="checkbox" class="cfg-network" value="youtube" /><span>YouTube (requires key)</span></label>
                 </div>
+                <p class="hint" style="margin-top:0.75rem;background:var(--bg-soft, rgba(255,255,255,0.04));padding:0.6rem 0.75rem;border-radius:6px;border-left:3px solid var(--accent, #2ea043);">
+                  <strong>How X / LinkedIn / Reddit are scanned:</strong> the agent uses a layered cascade per platform.
+                  <strong>Layer&nbsp;0 (recommended)</strong> = logged-in browser scan via the
+                  <code>tools/browser-scan/</code> tool, opt-in. Falls back through Brave Search, RSSHub, and the public-API
+                  layers when no fresh sidecar exists. You don't have to choose a method here — just check the network and
+                  the agent will use whatever Layer it can. To enable Layer&nbsp;0, open the
+                  <a href="#run">Run view</a> and click <strong>"Open browser &amp; sign in"</strong> at the top once.
+                </p>
               </fieldset>
               <fieldset class="cfg-group">
                 <legend>Output <button type="button" class="link-btn bulk-select" data-target=".cfg-output" data-action="all">Select all</button> <span class="sep">·</span> <button type="button" class="link-btn bulk-select" data-target=".cfg-output" data-action="none">Clear</button></legend>
@@ -1039,5 +1047,6 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
     <script src="command-palette.js"></script>
     <script src="theme.js"></script>
     <script src="intel.js"></script>
+    <script src="browser-scan-ui.js"></script>
   </body>
 </html>
