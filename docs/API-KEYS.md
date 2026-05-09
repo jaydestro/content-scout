@@ -18,7 +18,7 @@ All API keys are optional. Without them, the agent skips those sources and scans
 | [X/Twitter](#xtwitter) | $200/mo (Basic) or free tier (limited) | X Layer 1 (authenticated API) skipped. Layer 0 (browser-scan) still works for free if you've signed in to X via [tools/browser-scan/](../tools/browser-scan); Brave Search Layer 2 still works if `BRAVE_SEARCH_API_KEY` is set. |
 | [GitHub Token](#github-token) | Free | GitHub still works, but unauthenticated requests are capped at 60/hr (vs 5000/hr authenticated) |
 
-> **Best free coverage for X / LinkedIn / Reddit:** sign in once via [tools/browser-scan/](../tools/browser-scan) (Microsoft Edge over CDP — no Playwright fingerprint, works with passkeys + 2FA). Each `scout scan` then auto-ingests the resulting JSON sidecar as **Layer 0**. See `tools/browser-scan/README.md` for the full setup.
+> **Best free coverage for X / LinkedIn / Reddit:** sign in once via [tools/browser-scan/](../tools/browser-scan) — attaches to your real browser (Edge / Chrome / Brave / Vivaldi / Arc / Opera — auto-detects your OS default) over CDP, no Playwright fingerprint, works with passkeys + 2FA. Either click **🌐 Browser scan (Layer 0)** in the web UI's Run view, or use the CLI in `tools/browser-scan/README.md`. Each `scout scan` then auto-ingests the resulting JSON sidecar as **Layer 0**.
 
 ---
 

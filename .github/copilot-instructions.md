@@ -52,10 +52,10 @@ Read the corresponding prompt file for each command's detailed flow. Ignore VS C
 
 ## Browser-scan tool (X / LinkedIn / Reddit, opt-in)
 
-`tools/browser-scan/` attaches to a real Microsoft Edge window over the Chrome DevTools Protocol to scrape the **logged-in** UIs of X, LinkedIn, and Reddit. This is the most reliable free way to cover these three platforms — X actively flags fresh Playwright profiles.
+`tools/browser-scan/` attaches to a real Chromium-family browser (Edge / Chrome / Brave / Vivaldi / Arc / Opera — auto-detects your OS default) over the Chrome DevTools Protocol to scrape the **logged-in** UIs of X, LinkedIn, and Reddit. This is the most reliable free way to cover these three platforms — X actively flags fresh Playwright profiles. Firefox and Safari aren't supported (no CDP); the launcher falls back to whichever Chromium-family browser is installed.
 
-- One-time setup: `node tools/browser-scan/launch-edge.mjs` (spawns Edge on port 9222 + opens login tabs; sign in once; leave Edge running)
-- Refresh sidecars before a scan: `node tools/browser-scan/index.mjs scan --slug {slug}` (default mode = `cdp` attach)
+- **From the web UI (recommended):** Run view has a 🌐 Browser scan (Layer 0) panel with a browser dropdown, Open browser button, Scan-now button, and live sidecar freshness. Dashboard has a status card.
+- **From the CLI:** `node tools/browser-scan/launch-edge.mjs` (one-time; pass `--browser "<Name>"` to override the OS default, or `--list` to see installed browsers) → `node tools/browser-scan/index.mjs scan --slug {slug}` (default mode = `cdp` attach)
 - Multi-word search terms get phrase-quoted automatically (`Azure Cosmos DB` → `"Azure Cosmos DB"`); hashtags lose the `#` on Reddit
 - `scout scan` auto-ingests sidecars in `reports/.browser-scan/{slug}/` (dated within the last 6 hours) as **Layer 0** for each platform — they take priority over Brave / RSS / old.reddit cascade results and dedupe by permalink.
 - See `tools/browser-scan/README.md` for setup and the output schema. The `.cdp-profile/` and legacy `.profile/` cookie jars are gitignored.
