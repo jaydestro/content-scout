@@ -1366,7 +1366,7 @@ const WIZ_STEPS = [
   { id: 'search', label: 'Search', tiers: ['standard', 'full'] },
   { id: 'networks', label: 'Networks', tiers: ['standard', 'full'] },
   { id: 'advanced', label: 'Advanced', tiers: ['full'] },
-  { id: 'keys', label: 'API keys' },
+  { id: 'keys', label: 'Services & keys' },
   { id: 'review', label: 'Review' },
 ];
 let wizIndex = 0;
@@ -3545,6 +3545,7 @@ async function mountVisionPanel(containerId) {
 
 // Mount on Setup view (always visible) and Configs view (lazy when details opens)
 mountVisionPanel('vision-config-panel');
+mountServicesDetect('services-detect');
 const configsVisionCard = document.getElementById('configs-vision-card');
 if (configsVisionCard) {
   let mounted = false;
@@ -3552,6 +3553,86 @@ if (configsVisionCard) {
     if (configsVisionCard.open && !mounted) {
       mounted = true;
       mountVisionPanel('configs-vision-panel');
+      mountServicesDetect('configs-services-detect');
     }
+  });
+}
+
+// --- Local services auto-detect (Ollama, LM Studio, ...) ----------
+// Probes /api/services/detect and renders a banner above the vision panel.
+// "Use Ollama" button switches the vision panel to provider=ollama and
+// prefills host/model fields without saving — the user still hits "Save".
+async function mountServicesDetect(containerId) {
+  const root = document.getElementById(containerId);
+  if (!root) return;
+  const targetId = root.dataset.target || 'vision-config-panel';
+  root.innerHTML = '<p class="hint">Looking for local AI services on your machine…</p>';
+  let data;
+  try {
+    data = await api('/api/services/detect');
+  } catch (err) {
+    root.innerHTML = `<p class="hint warn-text">Couldn't probe local services: ${escape(err.message)}</p>`;
+    return;
+  }
+  const services = data.services || [];
+  const running = services.filter((s) => s.running);
+  if (!running.length) {
+    root.innerHTML = `
+      <p class="hint">
+        No local AI services detected. Install <a href="https://ollama.com" target="_blank" rel="noreferrer noopener">Ollama</a>
+        (or <a href="https://lmstudio.ai" target="_blank" rel="noreferrer noopener">LM Studio</a>) and click Re-scan.
+        Or pick OpenAI / a custom endpoint below.
+      </p>
+      <button type="button" class="secondary" data-action="rescan">Re-scan</button>
+    `;
+  } else {
+    const chips = running.map((s) => {
+      const count = (s.models || []).length;
+      const modelLabel = count ? `${count} model${count === 1 ? '' : 's'}` : 'no models pulled yet';
+      const action = s.id === 'ollama'
+        ? `<button type="button" data-action="use-ollama" data-host="${escape(s.host)}" data-model="${escape((s.models || [])[0] || '')}">Use Ollama</button>`
+        : '';
+      return `
+        <div class="service-chip">
+          <strong>✓ ${escape(s.name)}</strong>
+          <span class="hint">${escape(s.host)} — ${escape(modelLabel)}</span>
+          ${action}
+        </div>
+      `;
+    }).join('');
+    root.innerHTML = `
+      <div class="services-banner">
+        <p class="hint" style="margin:0 0 0.5rem">Detected on this machine:</p>
+        ${chips}
+        <button type="button" class="secondary" data-action="rescan" style="margin-top:0.5rem">Re-scan</button>
+      </div>
+    `;
+  }
+  root.querySelectorAll('button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.action === 'rescan') {
+        mountServicesDetect(containerId);
+        return;
+      }
+      if (btn.dataset.action === 'use-ollama') {
+        const target = document.getElementById(targetId);
+        if (!target) return;
+        const provSel = target.querySelector('[data-vc="provider"]');
+        const hostInp = target.querySelector('[data-vc="ollamaHost"]');
+        const modelInp = target.querySelector('[data-vc="ollamaModel"]');
+        if (provSel) {
+          provSel.value = 'ollama';
+          provSel.dispatchEvent(new Event('change'));
+        }
+        if (hostInp && btn.dataset.host) hostInp.value = btn.dataset.host;
+        if (modelInp && btn.dataset.model) modelInp.value = btn.dataset.model;
+        const status = target.querySelector('[data-vc-status]');
+        if (status) {
+          status.textContent = 'Ollama prefilled — click Save vision config to apply.';
+          status.dataset.tone = 'ok';
+        }
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    });
   });
 }

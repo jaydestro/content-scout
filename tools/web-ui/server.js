@@ -2055,6 +2055,48 @@ app.get('/api/vision/ollama-models', (_req, res) => {
   res.json({ models: OLLAMA_VISION_MODELS });
 });
 
+// Probe localhost for known local AI services so onboarding / the vision panel
+// can offer auto-detect instead of forcing users to paste localhost URLs.
+// Currently checks Ollama (default 11434) and LM Studio (default 1234).
+// Honors OLLAMA_HOST override from .env. Returns shape:
+//   { services: [{ id, name, running, host, models?: string[], message }] }
+app.get('/api/services/detect', async (_req, res) => {
+  let envMap = {};
+  try {
+    const { raw } = await readEnvRaw();
+    envMap = Object.fromEntries(parseEnv(raw).map((e) => [e.key, e.value]));
+  } catch { /* fall back to {} */ }
+
+  const probe = async (name, url, parseModels) => {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 1500);
+      const r = await fetch(url, { signal: ctrl.signal });
+      clearTimeout(t);
+      if (!r.ok) return { running: false, message: `${name} returned ${r.status}` };
+      const data = await r.json().catch(() => ({}));
+      return { running: true, models: parseModels(data), message: `${name} reachable` };
+    } catch (err) {
+      return { running: false, message: `${name} unreachable: ${err.message}` };
+    }
+  };
+
+  const ollamaHost = (envMap.OLLAMA_HOST || 'http://localhost:11434').replace(/\/+$/, '');
+  const lmStudioHost = 'http://localhost:1234';
+
+  const [ollama, lmStudio] = await Promise.all([
+    probe('Ollama', `${ollamaHost}/api/tags`, (d) => (d.models || []).map((m) => m.name)),
+    probe('LM Studio', `${lmStudioHost}/v1/models`, (d) => (d.data || []).map((m) => m.id)),
+  ]);
+
+  res.json({
+    services: [
+      { id: 'ollama', name: 'Ollama', host: ollamaHost, ...ollama },
+      { id: 'lm-studio', name: 'LM Studio', host: lmStudioHost, ...lmStudio },
+    ],
+  });
+});
+
 // Ollama pull progress: start a pull and stream JSONL via SSE.
 const ollamaPulls = new Map(); // model -> { lines: string[], done: boolean, error?: string, startedAt }
 

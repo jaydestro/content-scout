@@ -469,14 +469,16 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             </div>
           </div>
 
-          <!-- STEP 8: API keys -->
+          <!-- STEP 8: Local services (vision) + API keys -->
           <div class="wiz-step" data-step="keys">
             <div class="card">
-              <h3>Vision provider for <code>/scout-alt</code></h3>
+              <h3>Local services <span class="hint" style="font-weight:normal">— vision provider for <code>/scout-alt</code></span></h3>
               <p class="hint">
                 Lets Content Scout actually <em>look at</em> images you drop into the alt-text card.
                 Without a provider, the agent only works from your typed description.
+                We auto-detect <strong>Ollama</strong> and <strong>LM Studio</strong> running on your machine.
               </p>
+              <div id="services-detect" class="services-detect" data-target="vision-config-panel"></div>
               <div id="vision-config-panel" class="vision-config"></div>
             </div>
             <div class="card">
@@ -665,6 +667,12 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
 
             <textarea id="config-editor" spellcheck="false" disabled style="display:none"></textarea>
 
+            <details class="card configs-env-card" id="configs-vision-card" style="margin-top:1rem">
+              <summary><strong>Local services</strong> <span class="hint">— vision provider for <code>/scout-alt</code> (Ollama / LM Studio / OpenAI / custom — stored in <code>.env</code>)</span></summary>
+              <div id="configs-services-detect" class="services-detect" data-target="configs-vision-panel" style="margin-top:0.5rem"></div>
+              <div id="configs-vision-panel" class="vision-config" style="margin-top:0.5rem"></div>
+            </details>
+
             <details class="card configs-env-card" id="configs-env-card" style="margin-top:1rem">
               <summary><strong>API keys</strong> <span class="hint">— shared across all configs (stored in <code>.env</code>)</span></summary>
               <p class="hint" style="margin-top:0.5rem">
@@ -677,11 +685,6 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
                 <button id="configs-env-reload" class="secondary" type="button">Reload</button>
                 <span id="configs-env-status" class="hint"></span>
               </div>
-            </details>
-
-            <details class="card configs-env-card" id="configs-vision-card" style="margin-top:1rem">
-              <summary><strong>Vision provider</strong> <span class="hint">— for <code>/scout-alt</code> image inspection (stored in <code>.env</code>)</span></summary>
-              <div id="configs-vision-panel" class="vision-config" style="margin-top:0.5rem"></div>
             </details>
           </div>
         </div>
