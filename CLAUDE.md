@@ -70,19 +70,20 @@ When reading prompt files, the `${{input:...}}` placeholders are VS Code syntax.
 
 ## Browser-scan tool (X / LinkedIn / Reddit, opt-in)
 
-`tools/browser-scan/` drives Microsoft Edge via Playwright with a persistent
-login profile to scrape the **logged-in** UIs of X, LinkedIn, and Reddit.
-This is the most reliable free way to get coverage from these three
-platforms — anonymous scraping increasingly hits 403s, login walls, and
-rate limits.
+`tools/browser-scan/` attaches to a real Microsoft Edge window over the
+Chrome DevTools Protocol to scrape the **logged-in** UIs of X, LinkedIn,
+and Reddit. This is the most reliable free way to get coverage from these
+three platforms — anonymous scraping increasingly hits 403s, login walls,
+and rate limits, and X actively flags fresh Playwright profiles.
 
-- One-time setup per platform: `node tools/browser-scan/index.mjs login --platform x|linkedin|reddit`
-- Run before a scan: `node tools/browser-scan/index.mjs scan --slug {slug}`
+- One-time setup: `node tools/browser-scan/launch-edge.mjs` (spawns Edge with `--remote-debugging-port=9222` + opens login tabs for all three platforms; sign in once; leave Edge running)
+- Run before a scan: `node tools/browser-scan/index.mjs scan --slug {slug}` (default mode = `cdp` attach)
 - Output: `reports/.browser-scan/{slug}/{stamp}-{platform}.json`
 - `scout scan` automatically ingests sidecars dated within the last 6 hours
   as **Layer 0** for each platform (top priority over Brave/RSS/old.reddit
   cascade results), then dedupes by permalink. See
-  `tools/browser-scan/README.md` for full details.
+  `tools/browser-scan/README.md` for full details, query-shaping rules
+  (multi-word terms get phrase-quoted), and the output schema.
 
-The `tools/browser-scan/.profile/` directory is gitignored — session
-cookies never leave your machine.
+The `tools/browser-scan/.cdp-profile/` and legacy `.profile/` directories
+are gitignored — session cookies never leave your machine.
