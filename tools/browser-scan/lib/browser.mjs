@@ -33,7 +33,7 @@ export async function attachEdge({ port = 9222 } = {}) {
   const endpoint = `http://127.0.0.1:${port}`;
   let browser;
   try {
-    browser = await chromium.connectOverCDP(endpoint, { timeout: 5000 });
+    browser = await chromium.connectOverCDP(endpoint, { timeout: 30000 });
   } catch (e) {
     throw new Error(
       `Could not connect to Edge over CDP at ${endpoint} — is Edge running with --remote-debugging-port=${port}? ` +
