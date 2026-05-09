@@ -143,6 +143,44 @@ Reports are organized by month/year and product:
 - For last-30-day scans, use the current month/year.
 - If a report for that month/product already exists, **update it** -- merge new findings, avoid duplicates, re-number items sequentially.
 
+## One Scan = One Report (no supplemental files, no addenda)
+
+**Hard rule:** every `scout scan` run produces exactly **one** report file
+and **one** JSON sidecar. Never write a second "supplemental", "addendum",
+"sidecar report", or "follow-up" report alongside the primary one. The
+single report MUST contain every item from every source the agent
+touched in that run — Layer 0 browser-scan sidecars (X / LinkedIn /
+Reddit), every cascade fallback layer below them, every other enabled
+source (YouTube, GitHub, Stack Overflow, Hacker News, Bluesky, Dev.to,
+Medium, Hashnode, InfoQ, official blogs, custom RSS, MS Learn MCP),
+and every item from manual imports run inside the same scan. All of
+those go into the **one** report.
+
+If a re-scan happens for the same window (e.g., to pick up a fresh
+sidecar), **edit the existing report file in place** instead of writing
+a new "supplemental" file:
+- Re-run the relevant sources
+- Merge the new items into the existing tables (re-number sequentially)
+- Update the front-matter `Generated:` timestamp and add a brief
+  `Last updated:` note
+- Update the JSON sidecar in place
+- Append a single line to `reports/.scout-state/{slug}/runs.jsonl`
+  noting that this was a re-scan of an existing report
+
+**Forbidden patterns:**
+- Writing `reports/{stamp}-{slug}-supplemental.md`
+- Writing `reports/{stamp}-{slug}-addendum.md`
+- Writing `reports/{stamp}-{slug}-content.md` whose Summary says "this
+  is a supplemental scan; see [other report] for primary coverage"
+- Splitting Layer 0 sidecar items into a separate file from the
+  cascade-fallback or other-source items
+- Writing a "browser-scan sidecar report" that is a separate `.md`
+  from the main content report
+
+If the user explicitly asks for a "delta-only" or "what's new since the
+last scan" view, generate it as a **section inside the single report**
+(e.g., `## Delta vs. Previous Scan`), not as a separate file.
+
 ## Content Sources
 
 The config file specifies which networks are enabled. For each enabled source, use the approach described below. Use the search terms from the config file for all queries.
