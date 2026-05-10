@@ -67,9 +67,11 @@ The web UI and CLI may append a tuner block to the input in this exact form (all
 [mention-authors: yes|no]
 [link-in-comments: yes|no]
 [variants: 2..5]
+[thumbnails: auto|minimal|branded|editorial|generic|off]
+[thumbnail-notes: <freeform style notes>]
 ```
 
-Apply each tuner literally. Defaults if a tuner is absent: tone=conversational, platforms=linkedin,x, length=tease, emoji=light, hashtags=no, mention-authors=no, link-in-comments=no, variants=3.
+Apply each tuner literally. Defaults if a tuner is absent: tone=conversational, platforms=linkedin,x, length=tease, emoji=light, hashtags=no, mention-authors=no, link-in-comments=no, variants=3, thumbnails=auto.
 
 ### Length guidance
 
@@ -106,11 +108,36 @@ When `link-in-comments: yes` (LinkedIn convention):
 
 ### Thumbnail spec (auto-rendered, placed inline with each variant)
 
-For every item, include exactly **one** `**Thumbnail spec:**` block. The
-renderer at `tools/render-thumbnails/` automatically produces **both** a
-LinkedIn (1200×1200) and an X (1600×900) PNG from that single spec — you
-do not need to repeat the block per platform. The web UI runs the renderer
-automatically after `/scout-post` finishes; it can also be invoked manually
+Thumbnails are **opt-in per item**. Only emit a `**Thumbnail spec:**` block
+when a custom rendered card actually adds value. Skip the spec entirely when:
+
+- The link already has a strong native image (YouTube videos, GitHub repos
+  with custom og:image, Microsoft Learn pages with hero images, blog posts
+  whose featured image will preview well in LinkedIn/X cards).
+- The post uses an inline link inside a casual sentence (no thumbnail needed).
+- You're drafting from copy with no live URL yet AND the user gave no visual
+  direction.
+
+DO emit a spec when:
+
+- The post uses **link-in-comments** or **link-first** treatment and would
+  otherwise render as a wall of plain text on LinkedIn/X.
+- The link target is text-heavy (PDFs, release notes, long blog posts
+  without a strong hero image).
+- The user explicitly asked for a thumbnail in the input or tuners.
+
+If the user passed `[thumbnails: off]`, DO NOT emit any thumbnail spec
+blocks at all. If the user passed `[thumbnails: <preset>]` with a value
+other than `auto`, use that preset for every spec you do emit. If
+`[thumbnail-notes: <text>]` is supplied, copy the text verbatim into the
+`Style notes:` line of every spec.
+
+For every item that does need a thumbnail, include exactly **one**
+`**Thumbnail spec:**` block. The renderer at `tools/render-thumbnails/`
+automatically produces **both** a LinkedIn (1200×1200) and an X (1600×900)
+PNG from that single spec — you do not need to repeat the block per
+platform. The web UI runs the renderer automatically after `/scout-post`
+finishes (unless the user toggled it off); it can also be invoked manually
 with `node tools/render-thumbnails/index.js`.
 
 After the PNGs are rendered, the renderer **places each image inline with
@@ -129,6 +156,8 @@ also accepts `·`-separated combos like `Platform: LinkedIn · Size: 1200x1200`)
 ```markdown
 **Thumbnail spec:**
 - Platform: LinkedIn · Size: 1200x1200
+- Style: minimal
+- Style notes: warm tones, conference vibe (optional, freeform — drives palette/treatment hints)
 - Background: Dark navy (`#0F2540`)
 - Accent: `#38B2AC`
 - Headline: "Identity-Aware MCP Servers"
@@ -137,6 +166,12 @@ also accepts `·`-separated combos like `Platform: LinkedIn · Size: 1200x1200`)
 - Alt text: "Dark navy thumbnail with the headline 'Identity-Aware MCP Servers' over a small Azure Cosmos DB logo, accent teal bar."
 - Save to: `social-posts/images/{YYYY-MM-DD-HHmm}/{N}-linkedin-{slug}.png`
 ```
+
+`Style:` accepts one of `minimal` (default — clean text on solid bg with
+accent bar), `branded` (logo + gradient + brand rail), `editorial` (large
+quote-style headline, no logo), or `generic` (light neutral background, no
+logo, no accent). `Style notes:` is freeform and surfaces in the alt text;
+the renderer may use keywords to subtly shift the palette.
 
 After the renderer runs, the item will look like this in the markdown
 file (LinkedIn variant + LinkedIn thumbnail, then X variant + X thumbnail,
@@ -165,8 +200,9 @@ then the spec block stays at the bottom for traceability):
 - … (as above) …
 ```
 
-Recognized keys: `Platform`, `Size`, `Background`, `Accent`, `Headline`,
-`Subtext`, `Logo`, `Alt text`, `Save to` (alias `Save path`). The companion
+Recognized keys: `Platform`, `Size`, `Style`, `Style notes`, `Background`,
+`Accent`, `Headline`, `Subtext`, `Logo`, `Alt text`, `Save to` (alias
+`Save path`). The companion
 file path is derived by swapping the `linkedin`/`x` token in the `Save to:`
 filename, so the X PNG above lands at `…/{N}-x-{slug}.png` automatically.
 

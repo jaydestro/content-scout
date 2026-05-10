@@ -46,7 +46,7 @@ const PLATFORM_SIZES = {
 
 // Keys whose values may legitimately contain `·`/`•`/`|` separators or
 // surrounding quotes, so they must be absorbed whole rather than split.
-const FREE_TEXT_KEYS = new Set(['headline', 'subtext', 'alt text', 'alt']);
+const FREE_TEXT_KEYS = new Set(['headline', 'subtext', 'alt text', 'alt', 'style notes']);
 
 const DEFAULTS = {
   background: '#0b1020',
@@ -54,6 +54,65 @@ const DEFAULTS = {
   textColor: '#f9f9f9',
   font: 'Segoe UI Semibold, Segoe UI, Arial, sans-serif',
 };
+
+// Style presets unlock different visual treatments. Each preset returns a
+// partial config that buildSvg merges with the props. The agent picks one
+// in the spec block via `Style: <preset>`; default is `minimal` so existing
+// specs render exactly as before.
+const STYLE_PRESETS = {
+  minimal: {
+    // Current default look: solid background, centered headline, accent bar
+    // along the bottom. Logo placement is honored if a brand asset exists.
+    layout: 'centered',
+    accentBarPosition: 'bottom',
+    accentBarWeight: 0.04,
+    headlineScale: 0.085,
+    backgroundStyle: 'solid',
+    showLogo: true,
+  },
+  branded: {
+    // Bigger logo presence, subtle vertical gradient, brand accent rail on
+    // the left edge instead of the bottom bar. Use when the brand identity
+    // matters more than typography.
+    layout: 'centered',
+    accentBarPosition: 'left',
+    accentBarWeight: 0.025,
+    headlineScale: 0.078,
+    backgroundStyle: 'gradient',
+    showLogo: true,
+    gradientShift: 0.12,
+  },
+  editorial: {
+    // Quote-style: outsized headline, no logo, no accent bar. Lets the
+    // headline carry the visual weight (good for talks, opinion pieces).
+    layout: 'left',
+    accentBarPosition: 'none',
+    accentBarWeight: 0,
+    headlineScale: 0.105,
+    backgroundStyle: 'solid',
+    showLogo: false,
+  },
+  generic: {
+    // Light neutral background, dark text, no logo, no accent. Use when the
+    // user wants something plain and topic-agnostic (defaults override the
+    // dark palette). Background/accent supplied in the spec still win.
+    layout: 'centered',
+    accentBarPosition: 'none',
+    accentBarWeight: 0,
+    headlineScale: 0.08,
+    backgroundStyle: 'solid',
+    showLogo: false,
+    defaultBackground: '#f4f5f7',
+    defaultText: '#0f172a',
+    defaultAccent: '#94a3b8',
+  },
+};
+
+function resolveStyle(rawStyle) {
+  const key = String(rawStyle || '').trim().toLowerCase();
+  if (key && STYLE_PRESETS[key]) return { name: key, ...STYLE_PRESETS[key] };
+  return { name: 'minimal', ...STYLE_PRESETS.minimal };
+}
 
 function escapeXml(value) {
   return String(value)
@@ -261,36 +320,79 @@ async function fileExists(p) {
   }
 }
 
-function buildSvg({ width, height, background, accent, textColor, headline, subtext, hasLogo }) {
-  // Reserve a left gutter for the logo if we have one (top-left placement).
-  const logoArea = hasLogo ? Math.round(Math.min(width, height) * 0.18) + 80 : 60;
-  const headlineSize = Math.round(Math.min(width, height) * 0.085);
-  const subSize = Math.round(headlineSize * 0.42);
-  const accentBar = Math.round(height * 0.04);
+// Lighten or darken a hex color by a fractional amount in [-1, 1].
+function shiftColor(hex, amount) {
+  const m = String(hex || '').match(/^#?([0-9a-fA-F]{6})$/);
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 0xff;
+  const g = (n >> 8) & 0xff;
+  const b = n & 0xff;
+  const adj = (c) => {
+    const target = amount >= 0 ? 255 : 0;
+    const v = Math.round(c + (target - c) * Math.abs(amount));
+    return Math.max(0, Math.min(255, v));
+  };
+  return `#${[adj(r), adj(g), adj(b)].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
 
-  // Wrap headline at ~18 chars per line.
-  const headlineLines = wrapText(headline, 22);
+function buildSvg({ width, height, background, accent, textColor, headline, subtext, hasLogo, style }) {
+  const s = style || resolveStyle('minimal');
+  // Reserve a left gutter for the logo if we have one (top-left placement).
+  const headlineSize = Math.round(Math.min(width, height) * (s.headlineScale || 0.085));
+  const subSize = Math.round(headlineSize * 0.42);
+  const accentBarPx = Math.round(
+    (s.accentBarPosition === 'left' ? width : height) * (s.accentBarWeight || 0)
+  );
+
+  const headlineLines = wrapText(headline, s.layout === 'left' ? 18 : 22);
   const lineHeight = Math.round(headlineSize * 1.1);
   const totalTextHeight = headlineLines.length * lineHeight + (subtext ? subSize * 1.6 : 0);
   const startY = Math.round((height - totalTextHeight) / 2 + headlineSize);
+  const isLeft = s.layout === 'left';
+  const xAnchor = isLeft ? Math.round(width * 0.07) : Math.round(width / 2);
+  const textAnchor = isLeft ? 'start' : 'middle';
 
   const headlineSvg = headlineLines
     .map(
       (line, idx) =>
-        `<text x="${width / 2}" y="${startY + idx * lineHeight}" text-anchor="middle" fill="${textColor}" font-family="${DEFAULTS.font}" font-size="${headlineSize}" font-weight="700">${escapeXml(line)}</text>`,
+        `<text x="${xAnchor}" y="${startY + idx * lineHeight}" text-anchor="${textAnchor}" fill="${textColor}" font-family="${DEFAULTS.font}" font-size="${headlineSize}" font-weight="700">${escapeXml(line)}</text>`,
     )
     .join('\n');
 
   const subSvg = subtext
-    ? `<text x="${width / 2}" y="${startY + headlineLines.length * lineHeight + subSize * 1.4}" text-anchor="middle" fill="${textColor}" opacity="0.78" font-family="${DEFAULTS.font}" font-size="${subSize}" font-weight="400">${escapeXml(subtext)}</text>`
+    ? `<text x="${xAnchor}" y="${startY + headlineLines.length * lineHeight + subSize * 1.4}" text-anchor="${textAnchor}" fill="${textColor}" opacity="0.78" font-family="${DEFAULTS.font}" font-size="${subSize}" font-weight="400">${escapeXml(subtext)}</text>`
     : '';
+
+  // Background: solid or vertical gradient (lighter at top, darker at bottom).
+  let bgSvg;
+  if (s.backgroundStyle === 'gradient') {
+    const top = shiftColor(background, s.gradientShift || 0.1);
+    const bot = shiftColor(background, -(s.gradientShift || 0.1));
+    bgSvg =
+      `<defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">` +
+      `<stop offset="0%" stop-color="${top}"/>` +
+      `<stop offset="100%" stop-color="${bot}"/>` +
+      `</linearGradient></defs>` +
+      `<rect width="100%" height="100%" fill="url(#bg)"/>`;
+  } else {
+    bgSvg = `<rect width="100%" height="100%" fill="${background}"/>`;
+  }
+
+  // Accent bar: bottom (default), left edge (branded), or none (editorial/generic).
+  let accentSvg = '';
+  if (s.accentBarPosition === 'bottom' && accentBarPx > 0) {
+    accentSvg = `<rect x="0" y="${height - accentBarPx}" width="${width}" height="${accentBarPx}" fill="${accent}"/>`;
+  } else if (s.accentBarPosition === 'left' && accentBarPx > 0) {
+    accentSvg = `<rect x="0" y="0" width="${accentBarPx}" height="${height}" fill="${accent}"/>`;
+  }
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-  <rect width="100%" height="100%" fill="${background}"/>
+  ${bgSvg}
+  ${accentSvg}
   ${headlineSvg}
   ${subSvg}
-  <rect x="0" y="${height - accentBar}" width="${width}" height="${accentBar}" fill="${accent}"/>
 </svg>`;
 }
 
@@ -343,22 +445,33 @@ async function resolveLogoPath(props) {
 
 async function renderOne(props, sourceFile, index, dryRun = false) {
   const platform = parsePlatform(props['platform'], props['size']);
-  const background = parseColor(props['background']) || DEFAULTS.background;
-  const accent = parseColor(props['accent']) || DEFAULTS.accent;
+  const style = resolveStyle(props['style']);
+  const background =
+    parseColor(props['background']) ||
+    style.defaultBackground ||
+    DEFAULTS.background;
+  const accent =
+    parseColor(props['accent']) ||
+    style.defaultAccent ||
+    DEFAULTS.accent;
+  const textColor = style.defaultText || DEFAULTS.textColor;
   const headline = unquoteHeadline(props['headline'] || '');
   const subtext = unquoteHeadline(props['subtext'] || '');
   const savePath = deriveSavePath(props, sourceFile);
-  const logoPath = await resolveLogoPath(props);
+  // `Style: editorial` and `Style: generic` opt out of logo composition by
+  // default. `branded` and `minimal` honor whatever brand asset is found.
+  const logoPath = style.showLogo ? await resolveLogoPath(props) : null;
 
   const svg = buildSvg({
     width: platform.size.w,
     height: platform.size.h,
     background,
     accent,
-    textColor: DEFAULTS.textColor,
+    textColor,
     headline,
     subtext,
     hasLogo: Boolean(logoPath),
+    style,
   });
 
   if (dryRun) {
