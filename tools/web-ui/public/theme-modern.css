@@ -2273,3 +2273,99 @@ nav button[aria-current="page"] .icon { opacity: 1; color: var(--accent); }
   font-size: 0.78rem; text-decoration: none;
 }
 .run-image-link:hover { background: rgba(129, 140, 248, 0.2); }
+
+
+/* ============================================================
+   Site-wide style review polish (2026-05-09)
+   - Make form controls + buttons inherit the page font
+     (was falling back to Arial because <button>/<input> reset
+     to UA defaults).
+   - Cap inline images inside rendered markdown (the social
+     view now shows generated thumbnails inline with each
+     post variant — a 1600x900 PNG would otherwise blow out
+     the column).
+   - Style the "Suggested thumbnail" label that the renderer
+     injects next to each platform variant.
+   - Bump small touch targets in the dashboard help dot (was
+     18x18 — below the 24x24 minimum for WCAG 2.5.8).
+   ============================================================ */
+button, input, select, textarea {
+  font-family: inherit;
+}
+
+.markdown img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0.5rem 0 1rem;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  background: var(--panel-2, #f8fafc);
+}
+.markdown img[alt=""] { /* decorative — no special padding */ border: 0; }
+
+/* Tighten the rhythm between a "Suggested thumbnail (Platform W*H):"
+   label and the image immediately below it, so the pair reads as
+   one unit instead of two stacked blocks. */
+.markdown p strong:first-child:only-child { /* no-op selector hook for future tooling */ }
+.markdown p + p > img:only-child,
+.markdown p:has(> strong:only-child) + p > img:only-child {
+  margin-top: 0.25rem;
+}
+
+/* Help dot in the dashboard — bump to a sensible touch target. */
+.help-dot,
+button.help-dot,
+a.help-dot {
+  min-width: 24px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Inline thumbnails (rendered alongside each social post variant) */
+.markdown img.inline-thumb,
+.doc-content img.inline-thumb {
+  max-width: min(100%, 520px);
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(0,0,0,0.18));
+  background: var(--panel-2, #f8fafc);
+  display: block;
+  margin: 0.4rem 0 0.25rem;
+}
+.inline-thumb-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin: 0 0 1.25rem;
+  align-items: center;
+}
+.inline-thumb-actions .thumb-btn {
+  font: inherit;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  padding: 0.3rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--panel-3, transparent);
+  color: var(--text);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.inline-thumb-actions .thumb-btn:hover {
+  background: var(--panel-2);
+  border-color: var(--accent);
+}
+.inline-thumb-actions .thumb-btn.copied {
+  background: rgba(34, 197, 94, 0.18);
+  border-color: rgba(34, 197, 94, 0.55);
+}
+.inline-thumb-actions .thumb-btn-ghost {
+  background: transparent;
+}
