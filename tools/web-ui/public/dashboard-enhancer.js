@@ -59,7 +59,8 @@
     } catch { /* keep defaults */ }
 
     const social = (reports.social || []);
-    renderStats(activity);
+    const subjectCount = (configs.configs || []).length;
+    renderStats(activity, subjectCount);
     renderActivity(activity);
     renderSubjects({ configs: configs.configs || [], reports: reports.reports || [] });
     renderSuggestions({ configs: configs.configs || [], reports: reports.reports || [], social });
@@ -70,19 +71,24 @@
     // node will race and can leave "Loading…" stuck.
   }
 
-  function renderStats(activity) {
+  function renderStats(activity, subjectCount) {
     const totals = (activity && activity.totals) || {};
     const last = (activity && activity.last) || {};
-    const r = $('stat-reports'); if (r) r.textContent = totals.reports ?? '—';
+    // Use real numbers / human strings rather than "—" so the empty state
+    // communicates a value instead of looking like an unfinished load.
+    const subj = $('stat-subjects');
+    if (subj) subj.textContent = subjectCount ?? totals.subjects ?? totals.configs ?? 0;
+    const r = $('stat-reports'); if (r) r.textContent = totals.reports ?? 0;
     const s = $('stat-social');
     if (s) {
       const n = (totals.socialBulk ?? 0) + (totals.socialSolo ?? 0);
       s.textContent = n;
     }
+    // Legacy id kept in case other code still queries it; harmless if absent.
     const t = $('stat-thumbnails');
-    if (t) t.textContent = totals.thumbnailImages ?? '—';
+    if (t) t.textContent = totals.thumbnailImages ?? 0;
     const ls = $('stat-last-scan');
-    if (ls) ls.textContent = last.scan ? relativeDay(last.scan) : '—';
+    if (ls) ls.textContent = last.scan ? relativeDay(last.scan) : 'Never';
   }
 
   // Unified timeline: reports + social posts + calendars + thumbnails + runs.
