@@ -68,6 +68,13 @@
   --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, 'Cascadia Mono', Consolas, monospace;
 
+  /* --- Surface tokens used by inline social-image embeds, alt-text
+     callouts, etc. Earlier code referenced `var(--surface, #14172250)`
+     with hard-coded dark fallbacks that bled into light mode. Define
+     them properly here so the light theme override below can swap them. */
+  --surface:   #14172230;
+  --surface-2: #1a1d2b;
+
   font-family: var(--font-sans);
   font-feature-settings: 'cv11', 'ss01', 'ss03';
 }
@@ -1692,6 +1699,12 @@ html[data-theme="light"] {
   --shadow-md: 0 6px 24px rgba(15,23,42,0.10), 0 1px 3px rgba(15,23,42,0.06);
   --shadow-lg: 0 24px 60px rgba(15,23,42,0.18), 0 8px 24px rgba(15,23,42,0.08);
   --ring:      0 0 0 3px rgba(79,70,229,0.30);
+
+  /* Light-mode surface tokens. Used by inline social-image embeds,
+     thumbnail action rows, callouts. Cool tinted whites that read
+     correctly on the soft warm bg. */
+  --surface:   rgba(15, 23, 42, 0.04);
+  --surface-2: #f1f5f9;
 }
 
 html[data-theme="light"] body {
@@ -2130,3 +2143,242 @@ html[data-theme="light"] .bulk-dialog::backdrop { background: rgba(15, 23, 42, 0
 .bulk-dialog-foot .primary:hover { background: var(--accent-hover); }
 html[data-theme="light"] .bulk-dialog-foot .primary { color: #ffffff; }
 .bulk-dialog-foot .primary[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+
+/* ============================================================
+   UI/UX Pro Max modernization additions (2026-05-09)
+   - Skip-link for keyboard users
+   - SVG-driven theme toggle (replaces emoji)
+   - Heroicons-style inline H3 icons
+   - prefers-reduced-motion for skip-link too
+   ============================================================ */
+
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: var(--space-3);
+  z-index: 1000;
+  padding: 0.6rem 1rem;
+  background: var(--accent-strong);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: var(--shadow-md);
+  transition: top 0.2s ease;
+}
+.skip-link:focus,
+.skip-link:focus-visible {
+  top: var(--space-3);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  color: #fff;
+}
+
+main:focus { outline: none; }
+
+/* Theme toggle: show one icon at a time based on data-theme. */
+.theme-toggle .theme-toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--muted-2);
+  transition: color 0.18s ease, transform 0.25s ease;
+}
+.theme-toggle:hover .theme-toggle-icon { color: var(--accent); transform: rotate(-12deg); }
+.theme-toggle .theme-icon-sun,
+.theme-toggle .theme-icon-moon { display: none; }
+html[data-theme="dark"] .theme-toggle .theme-icon-moon { display: inline; }
+html[data-theme="light"] .theme-toggle .theme-icon-sun { display: inline; }
+
+/* Inline icon next to an h3 title (alt-text card etc.). */
+h3 .h3-icon {
+  display: inline-block;
+  vertical-align: -3px;
+  margin-right: 0.45rem;
+  color: var(--accent);
+}
+
+/* ===== Nav UX polish (icons + responsive scroll) ============== */
+nav { overflow-x: auto; scrollbar-width: thin; max-width: 100%; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
+nav::-webkit-scrollbar { height: 4px; }
+nav::-webkit-scrollbar-thumb { background: var(--border-strong, rgba(255,255,255,0.12)); border-radius: 4px; }
+nav button { white-space: nowrap; flex-shrink: 0; }
+nav button .icon { width: 16px; height: 16px; opacity: 0.7; flex-shrink: 0; }
+nav button[aria-current="page"] .icon { opacity: 1; color: var(--accent); }
+@media (max-width: 900px) {
+  nav button { padding: 0.5rem 0.75rem; }
+  nav button .nav-label { font-size: var(--text-sm, 0.875rem); }
+}
+@media (max-width: 640px) {
+  .header-bar { grid-template-columns: 1fr; gap: 0.5rem; }
+  nav { width: 100%; justify-content: flex-start; }
+  nav button .nav-label { display: none; }
+  nav button { padding: 0.5rem 0.65rem; }
+  nav button[aria-current="page"] .nav-label { display: inline; }
+  .banner-tagline { display: none; }
+}
+
+/* ===== Social-post image gallery ============================ */
+.social-image-gallery {
+  margin: 0 0 1.25rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border, rgba(255,255,255,0.08));
+  border-radius: 10px;
+  background: var(--panel-2, rgba(255,255,255,0.02));
+}
+.social-image-gallery h4 {
+  margin: 0 0 0.6rem;
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: 600;
+  color: var(--muted, #94a3b8);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.social-image-gallery .gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+.gallery-item {
+  display: flex; flex-direction: column; gap: 0.4rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border, rgba(255,255,255,0.08));
+  border-radius: 8px;
+  background: var(--panel, rgba(255,255,255,0.025));
+  transition: border-color 0.18s ease, transform 0.12s ease;
+}
+.gallery-item:hover { border-color: var(--accent, #818cf8); }
+.gallery-item img {
+  width: 100%; height: 110px; object-fit: contain;
+  border-radius: 4px; background: rgba(0,0,0,0.25);
+  display: block;
+}
+.gallery-item .gallery-name {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem; color: var(--muted-2, #cbd5e1);
+  word-break: break-all; line-height: 1.3;
+}
+.gallery-item .gallery-actions {
+  display: flex; gap: 0.35rem; flex-wrap: wrap;
+}
+.gallery-item .gallery-btn {
+  font-size: 0.72rem; padding: 0.25rem 0.5rem;
+  border-radius: 4px; cursor: pointer;
+  background: var(--panel-3, rgba(255,255,255,0.04));
+  border: 1px solid var(--border, rgba(255,255,255,0.08));
+  color: var(--muted-2, #cbd5e1);
+}
+.gallery-item .gallery-btn:hover { color: var(--text); border-color: var(--accent); }
+.gallery-item .gallery-btn.copied { color: var(--success, #4ade80); }
+
+/* Image links surfaced in run output */
+.run-image-link {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  margin: 0 0.25rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: rgba(129, 140, 248, 0.1);
+  border: 1px solid rgba(129, 140, 248, 0.3);
+  color: var(--accent, #818cf8);
+  font-size: 0.78rem; text-decoration: none;
+}
+.run-image-link:hover { background: rgba(129, 140, 248, 0.2); }
+
+
+/* ============================================================
+   Site-wide style review polish (2026-05-09)
+   - Make form controls + buttons inherit the page font
+     (was falling back to Arial because <button>/<input> reset
+     to UA defaults).
+   - Cap inline images inside rendered markdown (the social
+     view now shows generated thumbnails inline with each
+     post variant — a 1600x900 PNG would otherwise blow out
+     the column).
+   - Style the "Suggested thumbnail" label that the renderer
+     injects next to each platform variant.
+   - Bump small touch targets in the dashboard help dot (was
+     18x18 — below the 24x24 minimum for WCAG 2.5.8).
+   ============================================================ */
+button, input, select, textarea {
+  font-family: inherit;
+}
+
+.markdown img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0.5rem 0 1rem;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  background: var(--panel-2, #f8fafc);
+}
+.markdown img[alt=""] { /* decorative — no special padding */ border: 0; }
+
+/* Tighten the rhythm between a "Suggested thumbnail (Platform W*H):"
+   label and the image immediately below it, so the pair reads as
+   one unit instead of two stacked blocks. */
+.markdown p strong:first-child:only-child { /* no-op selector hook for future tooling */ }
+.markdown p + p > img:only-child,
+.markdown p:has(> strong:only-child) + p > img:only-child {
+  margin-top: 0.25rem;
+}
+
+/* Help dot in the dashboard — bump to a sensible touch target. */
+.help-dot,
+button.help-dot,
+a.help-dot {
+  min-width: 24px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Inline thumbnails (rendered alongside each social post variant) */
+.markdown img.inline-thumb,
+.doc-content img.inline-thumb {
+  max-width: min(100%, 520px);
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(0,0,0,0.18));
+  background: var(--panel-2, #f8fafc);
+  display: block;
+  margin: 0.4rem 0 0.25rem;
+}
+.inline-thumb-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin: 0 0 1.25rem;
+  align-items: center;
+}
+.inline-thumb-actions .thumb-btn {
+  font: inherit;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  padding: 0.3rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--panel-3, transparent);
+  color: var(--text);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.inline-thumb-actions .thumb-btn:hover {
+  background: var(--panel-2);
+  border-color: var(--accent);
+}
+.inline-thumb-actions .thumb-btn.copied {
+  background: rgba(34, 197, 94, 0.18);
+  border-color: rgba(34, 197, 94, 0.55);
+}
+.inline-thumb-actions .thumb-btn-ghost {
+  background: transparent;
+}

@@ -25,33 +25,58 @@
     </script>
   </head>
   <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
     <header class="site-header">
       <a class="banner" href="#" data-goto="dashboard" aria-label="Content Scout home">
         <img class="banner-logo" src="/assets/content-scout-mascot.svg" alt="" />
         <div class="banner-text">
-          <span class="banner-title">Content Scout</span>
+          <h1 class="banner-title">Content Scout</h1>
           <span class="banner-tagline">Your content hunting dog for the developer ecosystem</span>
         </div>
       </a>
       <div class="header-bar">
-        <nav>
-          <button data-view="setup">Setup</button>
-          <button data-view="dashboard" class="active">Dashboard</button>
-          <button data-view="configs">Configs</button>
-          <button data-view="run">Run</button>
-          <button data-view="reports">Reports</button>
-          <button data-view="social">Social posts</button>
-          <button data-view="conversations">Conversations</button>
+        <nav aria-label="Primary">
+          <button data-view="setup" type="button" aria-label="Setup" title="Setup">
+            <svg class="icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <span class="nav-label">Setup</span>
+          </button>
+          <button data-view="dashboard" class="active" type="button" aria-label="Dashboard" title="Dashboard">
+            <svg class="icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+            <span class="nav-label">Dashboard</span>
+          </button>
+          <button data-view="configs" type="button" aria-label="Configs" title="Configs">
+            <svg class="icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+            <span class="nav-label">Configs</span>
+          </button>
+          <button data-view="run" type="button" aria-label="Run" title="Run">
+            <svg class="icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            <span class="nav-label">Run</span>
+          </button>
+          <button data-view="reports" type="button" aria-label="Reports" title="Reports">
+            <svg class="icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
+            <span class="nav-label">Reports</span>
+          </button>
+          <button data-view="social" type="button" aria-label="Social posts" title="Social posts">
+            <svg class="icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+            <span class="nav-label">Social posts</span>
+          </button>
+          <button data-view="conversations" type="button" aria-label="Conversations" title="Conversations">
+            <svg class="icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2v4l-4-4H9a2 2 0 0 1-2-2v-1"/><path d="M14 4H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2v4l4-4h4a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/></svg>
+            <span class="nav-label">Conversations</span>
+          </button>
         </nav>
         <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle light/dark theme">
-          <span class="theme-toggle-icon" aria-hidden="true">🌙</span>
+          <span class="theme-toggle-icon" aria-hidden="true">
+            <svg class="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            <svg class="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+          </span>
           <span class="theme-toggle-label">Dark</span>
         </button>
         <div id="status-pill" class="pill"></div>
       </div>
     </header>
 
-    <main>
+    <main id="main-content" tabindex="-1">
       <!-- Setup -->
       <section id="view-setup" class="view">
         <h2>Setup wizard</h2>
@@ -872,6 +897,21 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
                   <option value="5">5</option>
                 </select>
               </label>
+              <label class="field tuner">
+                <span>Thumbnail style</span>
+                <select id="social-gen-thumb-style">
+                  <option value="auto" selected>Auto — let the agent pick per item</option>
+                  <option value="minimal">Minimal — clean text, accent bar</option>
+                  <option value="branded">Branded — logo + gradient + brand rail</option>
+                  <option value="editorial">Editorial — large quote-style headline, no logo</option>
+                  <option value="generic">Generic — light neutral background</option>
+                  <option value="off">Off — don't generate thumbnails</option>
+                </select>
+              </label>
+              <label class="field tuner">
+                <span>Style notes <span class="hint">(optional, freeform — e.g., "warm tones, conference vibe")</span></span>
+                <input id="social-gen-thumb-notes" type="text" placeholder="leave blank to use the preset as-is" />
+              </label>
             </div>
             <div class="social-generate-toolbar">
               <button type="submit" id="social-gen-start">Generate posts</button>
@@ -893,7 +933,7 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
         </div>
 
         <div class="card social-generate" id="alt-generate-card">
-          <h3>🖼️ Alt text for an image</h3>
+          <h3><svg class="h3-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> Alt text for an image</h3>
           <p class="hint">Drop an image here, paste from clipboard, click to pick a file, or paste a public URL. A description is <em>optional</em> — supply one only if your agent doesn't have vision and you want it to anchor against your words instead of guessing.</p>
           <p class="hint" id="alt-vision-status" data-tone="muted">Vision provider: checking…</p>
           <form id="alt-generate-form" class="social-generate-form">
@@ -968,10 +1008,10 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
           <input id="conv-q" type="search" placeholder="Search full archive (summary, author, platform)…" />
           <select id="conv-sentiment" aria-label="Filter by sentiment" title="Sentiment">
             <option value="">All sentiments</option>
-            <option value="positive">🟢 Positive</option>
-            <option value="neutral">⚪ Neutral</option>
-            <option value="mixed">🟡 Mixed</option>
-            <option value="negative">🔴 Negative</option>
+            <option value="positive">Positive</option>
+            <option value="neutral">Neutral</option>
+            <option value="mixed">Mixed</option>
+            <option value="negative">Negative</option>
           </select>
           <select id="conv-platform" aria-label="Filter by platform" title="Platform"><option value="">All platforms</option></select>
           <label class="conv-needs-reply">
