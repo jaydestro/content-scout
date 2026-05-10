@@ -9,7 +9,12 @@ const api = async (path, opts) => {
 // --- Navigation ----------------------------------------------------
 const KNOWN_VIEWS = ['dashboard', 'setup', 'configs', 'run', 'reports', 'social', 'conversations'];
 function gotoView(view) {
-  document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
+  document.querySelectorAll('nav button').forEach((b) => {
+    const isActive = b.dataset.view === view;
+    b.classList.toggle('active', isActive);
+    if (isActive) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  });
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${view}`));
   if (KNOWN_VIEWS.includes(view) && location.hash !== `#${view}`) {
     history.replaceState(null, '', `#${view}`);
@@ -2536,6 +2541,7 @@ async function loadSocial() {
       li.classList.add('selected');
       const r = await api(`/api/social/${encodeURIComponent(li.dataset.name)}`);
       renderDocBody($('social-body'), { name: li.dataset.name, html: r.html, kind: 'social' });
+      $('social-body').dataset.name = li.dataset.name;
       enhanceSocialBody($('social-body'));
     });
   });
@@ -2618,6 +2624,75 @@ function enhanceSocialBody(root) {
       });
     });
   }
+
+  // 3) Generated images gallery — fetch the per-post image manifest from
+  //    the server and render thumbnails so users can preview, copy paths,
+  //    and grab the assets they need to publish.
+  const fileName = root.dataset.name;
+  if (fileName) renderSocialImageGallery(root, fileName);
+}
+
+async function renderSocialImageGallery(root, fileName) {
+  // Remove any prior gallery (idempotent re-enhancement).
+  const prior = root.querySelector(':scope > .social-image-gallery');
+  if (prior) prior.remove();
+  let images = [];
+  try {
+    const r = await fetch(`/api/social/${encodeURIComponent(fileName)}/images`);
+    if (!r.ok) return;
+    const data = await r.json();
+    images = Array.isArray(data.images) ? data.images : [];
+  } catch { return; }
+  if (!images.length) return;
+
+  const fmtBytes = (n) => {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / 1024 / 1024).toFixed(2)} MB`;
+  };
+  const safeAttr = (s) => String(s).replace(/"/g, '&quot;');
+
+  const section = document.createElement('section');
+  section.className = 'social-image-gallery';
+  section.innerHTML =
+    `<h4>Generated images <span class="hint" style="text-transform:none;font-weight:400;letter-spacing:0;color:var(--muted-2);margin-left:0.4rem;">(${images.length})</span></h4>` +
+    `<div class="gallery-grid">` +
+    images.map((img) => {
+      const repoPath = `social-posts/images/${img.batch ? img.batch + '/' : ''}${img.name}`;
+      return `
+        <figure class="gallery-item">
+          <a href="${safeAttr(img.url)}" target="_blank" rel="noopener" title="Open ${safeAttr(img.name)}">
+            <img src="${safeAttr(img.url)}" alt="${safeAttr(img.name)}" loading="lazy" />
+          </a>
+          <figcaption class="gallery-name" title="${safeAttr(repoPath)}">${escape(img.name)}</figcaption>
+          <div class="gallery-actions">
+            <button type="button" class="gallery-btn" data-copy-path="${safeAttr(repoPath)}" title="Copy repo path">Copy path</button>
+            <a class="gallery-btn" href="${safeAttr(img.url)}" download="${safeAttr(img.name)}">Download</a>
+            <span class="gallery-btn" style="cursor:default;border-style:dashed;">${fmtBytes(img.bytes)}</span>
+          </div>
+        </figure>`;
+    }).join('') +
+    `</div>`;
+
+  // Insert just after the URL strip if present, otherwise at the top.
+  const urlStrip = root.querySelector(':scope > .post-url-strip');
+  if (urlStrip) urlStrip.after(section);
+  else root.prepend(section);
+
+  section.querySelectorAll('button[data-copy-path]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const p = btn.dataset.copyPath || '';
+      try {
+        await navigator.clipboard.writeText(p);
+        btn.textContent = 'Copied ✓';
+        btn.classList.add('copied');
+        window.toast?.success?.({ title: 'Path copied', description: p, duration: 2200 });
+        setTimeout(() => { btn.textContent = 'Copy path'; btn.classList.remove('copied'); }, 1800);
+      } catch {
+        window.toast?.error?.({ title: 'Could not copy path' });
+      }
+    });
+  });
 }
 
 // --- "Create posts for me" — /scout-post runner ---------------------
