@@ -71,6 +71,19 @@
     // so bulk runs inherit tone, platforms, length, emoji, hashtags,
     // link-in-comments, mention-authors, and variants. Returns '' when no
     // controls are present (defensive against partial DOMs).
+    // Strip characters that would break the bracketed tuner contract or
+    // smuggle additional directives into the prompt. Mirrors the sanitizer
+    // applied to bulk-run notes server-side.
+    function sanitizeFreeformTuner(raw) {
+      if (typeof raw !== 'string') return '';
+      return raw
+        .replace(/[\x00-\x1f\x7f]+/g, ' ')
+        .replace(/[\[\]]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 200);
+    }
+
     function buildSocialTuners() {
       if (!$('social-gen-tone')) return '';
       const tone = ($('social-gen-tone')?.value || 'conversational').trim();
@@ -80,6 +93,8 @@
       const lic = $('social-gen-lic')?.checked ? 'yes' : 'no';
       const hashtags = $('social-gen-hashtags')?.checked ? 'yes' : 'no';
       const mention = $('social-gen-mention')?.checked ? 'yes' : 'no';
+      const thumbStyle = ($('social-gen-thumb-style')?.value || 'auto').trim();
+      const thumbNotes = sanitizeFreeformTuner($('social-gen-thumb-notes')?.value || '');
       const platforms = ['li', 'x', 'bsky', 'rd']
         .filter((k) => $(`social-gen-pf-${k}`)?.checked)
         .map((k) => ({ li: 'linkedin', x: 'x', bsky: 'bluesky', rd: 'reddit' }[k]))
@@ -92,8 +107,16 @@
         ` [hashtags: ${hashtags}]` +
         ` [mention-authors: ${mention}]` +
         ` [link-in-comments: ${lic}]` +
-        ` [variants: ${variants}]`
+        ` [variants: ${variants}]` +
+        ` [thumbnails: ${thumbStyle}]` +
+        (thumbNotes ? ` [thumbnail-notes: ${thumbNotes}]` : '')
       );
+    }
+
+    // Expose so the bulk submit handler can also forward the skip flag.
+    function bulkThumbnailsOff() {
+      const v = ($('social-gen-thumb-style')?.value || 'auto').trim();
+      return v === 'off';
     }
 
     // Populate the "Options inherited from the form above" panel so users
@@ -307,6 +330,12 @@
             // Send { url, notes } objects so the server can append each
             // note to that URL's prompt as guidance for the generated post.
             urls: parsedUrls,
+            // Forward the same skipThumbnails flag the single-post form sets,
+            // so the post-run renderer is short-circuited for bulk batches
+            // when the user picked "Thumbnail style: Off".
+            options: chosenCommand() === 'scout-post'
+              ? { skipThumbnails: bulkThumbnailsOff() }
+              : {},
           }),
         });
         const data = await res.json();

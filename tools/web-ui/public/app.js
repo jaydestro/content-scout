@@ -2841,7 +2841,14 @@ async function renderSocialImageGallery(root, fileName) {
     const hashtags = $('social-gen-hashtags')?.checked ? 'yes' : 'no';
     const mention = $('social-gen-mention')?.checked ? 'yes' : 'no';
     const thumbStyle = ($('social-gen-thumb-style')?.value || 'auto').trim();
-    const thumbNotes = ($('social-gen-thumb-notes')?.value || '').trim();
+    // Strip brackets / control chars so freeform notes can't break the
+    // bracketed-tuner contract or smuggle additional directives.
+    const thumbNotes = ($('social-gen-thumb-notes')?.value || '')
+      .replace(/[\x00-\x1f\x7f]+/g, ' ')
+      .replace(/[\[\]]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 200);
     const platforms = ['li', 'x', 'bsky', 'rd']
       .filter((k) => $(`social-gen-pf-${k}`)?.checked)
       .map((k) => ({ li: 'linkedin', x: 'x', bsky: 'bluesky', rd: 'reddit' }[k]))
