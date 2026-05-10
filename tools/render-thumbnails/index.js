@@ -44,12 +44,75 @@ const PLATFORM_SIZES = {
   'youtube-community': { w: 1200, h: 675 },
 };
 
+// Keys whose values may legitimately contain `·`/`•`/`|` separators or
+// surrounding quotes, so they must be absorbed whole rather than split.
+const FREE_TEXT_KEYS = new Set(['headline', 'subtext', 'alt text', 'alt', 'style notes']);
+
 const DEFAULTS = {
   background: '#0b1020',
   accent: '#3b75cf',
   textColor: '#f9f9f9',
   font: 'Segoe UI Semibold, Segoe UI, Arial, sans-serif',
 };
+
+// Style presets unlock different visual treatments. Each preset returns a
+// partial config that buildSvg merges with the props. The agent picks one
+// in the spec block via `Style: <preset>`; default is `minimal` so existing
+// specs render exactly as before.
+const STYLE_PRESETS = {
+  minimal: {
+    // Current default look: solid background, centered headline, accent bar
+    // along the bottom. Logo placement is honored if a brand asset exists.
+    layout: 'centered',
+    accentBarPosition: 'bottom',
+    accentBarWeight: 0.04,
+    headlineScale: 0.085,
+    backgroundStyle: 'solid',
+    showLogo: true,
+  },
+  branded: {
+    // Bigger logo presence, subtle vertical gradient, brand accent rail on
+    // the left edge instead of the bottom bar. Use when the brand identity
+    // matters more than typography.
+    layout: 'centered',
+    accentBarPosition: 'left',
+    accentBarWeight: 0.025,
+    headlineScale: 0.078,
+    backgroundStyle: 'gradient',
+    showLogo: true,
+    gradientShift: 0.12,
+  },
+  editorial: {
+    // Quote-style: outsized headline, no logo, no accent bar. Lets the
+    // headline carry the visual weight (good for talks, opinion pieces).
+    layout: 'left',
+    accentBarPosition: 'none',
+    accentBarWeight: 0,
+    headlineScale: 0.105,
+    backgroundStyle: 'solid',
+    showLogo: false,
+  },
+  generic: {
+    // Light neutral background, dark text, no logo, no accent. Use when the
+    // user wants something plain and topic-agnostic (defaults override the
+    // dark palette). Background/accent supplied in the spec still win.
+    layout: 'centered',
+    accentBarPosition: 'none',
+    accentBarWeight: 0,
+    headlineScale: 0.08,
+    backgroundStyle: 'solid',
+    showLogo: false,
+    defaultBackground: '#f4f5f7',
+    defaultText: '#0f172a',
+    defaultAccent: '#94a3b8',
+  },
+};
+
+function resolveStyle(rawStyle) {
+  const key = String(rawStyle || '').trim().toLowerCase();
+  if (key && STYLE_PRESETS[key]) return { name: key, ...STYLE_PRESETS[key] };
+  return { name: 'minimal', ...STYLE_PRESETS.minimal };
+}
 
 function escapeXml(value) {
   return String(value)
@@ -171,8 +234,14 @@ function parseThumbnails(markdown) {
       if (bullet) {
         const rawKey = bullet[1].trim().toLowerCase();
         const value = bullet[2].trim();
-        // A single bullet can pack "Platform: LinkedIn · Size: 1200×628".
-        absorbProseLine(props, `${rawKey}: ${value}`);
+        // Free-text keys can legitimately contain `·`/`•`/`|` as content,
+        // so absorb them whole instead of letting absorbProseLine split.
+        if (FREE_TEXT_KEYS.has(rawKey)) {
+          if (!props[rawKey]) props[rawKey] = stripQuotes(value);
+        } else {
+          // A single bullet can pack "Platform: LinkedIn · Size: 1200×628".
+          absorbProseLine(props, `${rawKey}: ${value}`);
+        }
         saw = true;
         continue;
       }
@@ -206,6 +275,12 @@ function absorbProseLine(props, line) {
       const value = m[2].trim();
       if (key === 'save to') {
         if (!props['save path']) props['save path'] = value;
+      } else if (FREE_TEXT_KEYS.has(key)) {
+        // Don't accept a split fragment for free-text keys — the value was
+        // truncated at a `·`. Only accept when there was no split.
+        if (segments.length === 1 && !props[key]) {
+          props[key] = stripQuotes(value);
+        }
       } else if (!props[key]) {
         props[key] = value;
       }
@@ -245,36 +320,95 @@ async function fileExists(p) {
   }
 }
 
-function buildSvg({ width, height, background, accent, textColor, headline, subtext, hasLogo }) {
-  // Reserve a left gutter for the logo if we have one (top-left placement).
-  const logoArea = hasLogo ? Math.round(Math.min(width, height) * 0.18) + 80 : 60;
-  const headlineSize = Math.round(Math.min(width, height) * 0.085);
-  const subSize = Math.round(headlineSize * 0.42);
-  const accentBar = Math.round(height * 0.04);
+// Lighten or darken a hex color by a fractional amount in [-1, 1].
+// Accepts 3-, 4-, 6- and 8-digit hex (alpha is ignored when present); other
+// inputs are returned unchanged so callers can fall back gracefully.
+function shiftColor(hex, amount) {
+  const raw = String(hex || '').trim().replace(/^#/, '');
+  let m;
+  if (/^[0-9a-fA-F]{3}$/.test(raw)) {
+    // Expand short form (#abc -> #aabbcc).
+    m = raw.split('').map((c) => c + c).join('');
+  } else if (/^[0-9a-fA-F]{4}$/.test(raw)) {
+    // Short form with alpha (#abcd) — drop the alpha nibble, expand RGB.
+    m = raw.slice(0, 3).split('').map((c) => c + c).join('');
+  } else if (/^[0-9a-fA-F]{6}$/.test(raw)) {
+    m = raw;
+  } else if (/^[0-9a-fA-F]{8}$/.test(raw)) {
+    // 8-digit form with alpha — drop trailing alpha byte.
+    m = raw.slice(0, 6);
+  } else {
+    return hex;
+  }
+  const n = parseInt(m, 16);
+  const r = (n >> 16) & 0xff;
+  const g = (n >> 8) & 0xff;
+  const b = n & 0xff;
+  const adj = (c) => {
+    const target = amount >= 0 ? 255 : 0;
+    const v = Math.round(c + (target - c) * Math.abs(amount));
+    return Math.max(0, Math.min(255, v));
+  };
+  return `#${[adj(r), adj(g), adj(b)].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
 
-  // Wrap headline at ~18 chars per line.
-  const headlineLines = wrapText(headline, 22);
+function buildSvg({ width, height, background, accent, textColor, headline, subtext, hasLogo, style }) {
+  const s = style || resolveStyle('minimal');
+  // Reserve a left gutter for the logo if we have one (top-left placement).
+  const headlineSize = Math.round(Math.min(width, height) * (s.headlineScale || 0.085));
+  const subSize = Math.round(headlineSize * 0.42);
+  const accentBarPx = Math.round(
+    (s.accentBarPosition === 'left' ? width : height) * (s.accentBarWeight || 0)
+  );
+
+  const headlineLines = wrapText(headline, s.layout === 'left' ? 18 : 22);
   const lineHeight = Math.round(headlineSize * 1.1);
   const totalTextHeight = headlineLines.length * lineHeight + (subtext ? subSize * 1.6 : 0);
   const startY = Math.round((height - totalTextHeight) / 2 + headlineSize);
+  const isLeft = s.layout === 'left';
+  const xAnchor = isLeft ? Math.round(width * 0.07) : Math.round(width / 2);
+  const textAnchor = isLeft ? 'start' : 'middle';
 
   const headlineSvg = headlineLines
     .map(
       (line, idx) =>
-        `<text x="${width / 2}" y="${startY + idx * lineHeight}" text-anchor="middle" fill="${textColor}" font-family="${DEFAULTS.font}" font-size="${headlineSize}" font-weight="700">${escapeXml(line)}</text>`,
+        `<text x="${xAnchor}" y="${startY + idx * lineHeight}" text-anchor="${textAnchor}" fill="${textColor}" font-family="${DEFAULTS.font}" font-size="${headlineSize}" font-weight="700">${escapeXml(line)}</text>`,
     )
     .join('\n');
 
   const subSvg = subtext
-    ? `<text x="${width / 2}" y="${startY + headlineLines.length * lineHeight + subSize * 1.4}" text-anchor="middle" fill="${textColor}" opacity="0.78" font-family="${DEFAULTS.font}" font-size="${subSize}" font-weight="400">${escapeXml(subtext)}</text>`
+    ? `<text x="${xAnchor}" y="${startY + headlineLines.length * lineHeight + subSize * 1.4}" text-anchor="${textAnchor}" fill="${textColor}" opacity="0.78" font-family="${DEFAULTS.font}" font-size="${subSize}" font-weight="400">${escapeXml(subtext)}</text>`
     : '';
+
+  // Background: solid or vertical gradient (lighter at top, darker at bottom).
+  let bgSvg;
+  if (s.backgroundStyle === 'gradient') {
+    const top = shiftColor(background, s.gradientShift || 0.1);
+    const bot = shiftColor(background, -(s.gradientShift || 0.1));
+    bgSvg =
+      `<defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">` +
+      `<stop offset="0%" stop-color="${top}"/>` +
+      `<stop offset="100%" stop-color="${bot}"/>` +
+      `</linearGradient></defs>` +
+      `<rect width="100%" height="100%" fill="url(#bg)"/>`;
+  } else {
+    bgSvg = `<rect width="100%" height="100%" fill="${background}"/>`;
+  }
+
+  // Accent bar: bottom (default), left edge (branded), or none (editorial/generic).
+  let accentSvg = '';
+  if (s.accentBarPosition === 'bottom' && accentBarPx > 0) {
+    accentSvg = `<rect x="0" y="${height - accentBarPx}" width="${width}" height="${accentBarPx}" fill="${accent}"/>`;
+  } else if (s.accentBarPosition === 'left' && accentBarPx > 0) {
+    accentSvg = `<rect x="0" y="0" width="${accentBarPx}" height="${height}" fill="${accent}"/>`;
+  }
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-  <rect width="100%" height="100%" fill="${background}"/>
+  ${bgSvg}
+  ${accentSvg}
   ${headlineSvg}
   ${subSvg}
-  <rect x="0" y="${height - accentBar}" width="${width}" height="${accentBar}" fill="${accent}"/>
 </svg>`;
 }
 
@@ -327,22 +461,33 @@ async function resolveLogoPath(props) {
 
 async function renderOne(props, sourceFile, index, dryRun = false) {
   const platform = parsePlatform(props['platform'], props['size']);
-  const background = parseColor(props['background']) || DEFAULTS.background;
-  const accent = parseColor(props['accent']) || DEFAULTS.accent;
+  const style = resolveStyle(props['style']);
+  const background =
+    parseColor(props['background']) ||
+    style.defaultBackground ||
+    DEFAULTS.background;
+  const accent =
+    parseColor(props['accent']) ||
+    style.defaultAccent ||
+    DEFAULTS.accent;
+  const textColor = style.defaultText || DEFAULTS.textColor;
   const headline = unquoteHeadline(props['headline'] || '');
   const subtext = unquoteHeadline(props['subtext'] || '');
   const savePath = deriveSavePath(props, sourceFile);
-  const logoPath = await resolveLogoPath(props);
+  // `Style: editorial` and `Style: generic` opt out of logo composition by
+  // default. `branded` and `minimal` honor whatever brand asset is found.
+  const logoPath = style.showLogo ? await resolveLogoPath(props) : null;
 
   const svg = buildSvg({
     width: platform.size.w,
     height: platform.size.h,
     background,
     accent,
-    textColor: DEFAULTS.textColor,
+    textColor,
     headline,
     subtext,
     hasLogo: Boolean(logoPath),
+    style,
   });
 
   if (dryRun) {
@@ -447,18 +592,190 @@ export async function renderFile(sourceFile, { dryRun = false } = {}) {
   const markdown = await fs.readFile(sourceFile, 'utf8');
   const blocks = parseThumbnails(markdown);
   const results = [];
+  // Group results per source spec block so we can inject embeds underneath
+  // the matching Thumbnail spec.
+  const perBlockResults = [];
   for (let i = 0; i < blocks.length; i++) {
     try {
       const rs = await renderBlock(blocks[i], sourceFile, i, dryRun);
       results.push(...rs);
+      perBlockResults.push(rs.filter((r) => r.ok && r.savePath));
     } catch (err) {
       results.push({ ok: false, error: String(err.message || err) });
+      perBlockResults.push([]);
+    }
+  }
+  if (!dryRun && perBlockResults.some((r) => r.length)) {
+    try {
+      const updated = injectImageEmbeds(markdown, blocks, perBlockResults, sourceFile);
+      if (updated !== markdown) {
+        await fs.writeFile(sourceFile, updated, 'utf8');
+      }
+    } catch (err) {
+      results.push({ ok: false, kind: 'embed-injection', error: String(err.message || err) });
     }
   }
   return results;
 }
 
-export { parseThumbnails, deriveSavePath };
+/**
+ * After rendering, place each generated PNG as a `![alt](...)` embed
+ * immediately under the social-post variant it illustrates — the LinkedIn
+ * PNG goes under the first `**LinkedIn (...):**` fenced block in the same
+ * item, the X PNG under the first `**X (...):**` block, and so on. Each
+ * embed is preceded by a small `**Suggested thumbnail (Platform WxH):**`
+ * label so the variant + image read as one unit when previewed in GitHub
+ * or the web UI Social view.
+ *
+ * The Thumbnail spec block stays where the agent put it (usually at the
+ * end of the item) for regenerability and traceability — it just no longer
+ * carries a separate "Generated images" block underneath. Any pre-existing
+ * legacy `**Generated images:**` block right after the spec is removed so
+ * re-running the renderer cleans up older files.
+ *
+ * Idempotent — if a `**Suggested thumbnail (...):**` label already sits
+ * immediately under a variant's fence, that variant is left alone.
+ *
+ * Paths are written relative to the source markdown's directory (so they
+ * start with `images/...` not `social-posts/images/...`) which is how
+ * GitHub resolves them when rendering the markdown in-tree.
+ */
+function injectImageEmbeds(markdown, blocks, perBlockResults, sourceFile) {
+  const lines = markdown.split(/\r?\n/);
+  const sourceDir = path.dirname(path.resolve(sourceFile));
+  const HEADER_RE = /^\*\*Thumbnail(?:\s+spec)?:\*\*/i;
+  const ITEM_RE = /^###\s/;
+  const VARIANT_RE = /^\*\*(LinkedIn|X|Bluesky|Reddit|YouTube)\b[^*]*:\*\*\s*$/i;
+  const SUGGESTED_RE = /^\*\*Suggested thumbnail/i;
+  const LEGACY_EMBED_RE = /^\*\*Generated images:\*\*/i;
+
+  const platformLabel = (p) => {
+    const k = String(p || '').toLowerCase();
+    if (k === 'x') return 'X';
+    if (k === 'linkedin') return 'LinkedIn';
+    if (k === 'youtube') return 'YouTube';
+    return k.charAt(0).toUpperCase() + k.slice(1);
+  };
+
+  // Find each Thumbnail header line index in source order.
+  const headerLineIdx = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (HEADER_RE.test(lines[i].trim())) headerLineIdx.push(i);
+  }
+  if (!headerLineIdx.length) return markdown;
+
+  // Walk in reverse so insertions/removals don't shift earlier indices.
+  for (let b = headerLineIdx.length - 1; b >= 0; b--) {
+    const headerIdx = headerLineIdx[b];
+    const results = perBlockResults[b];
+    if (!results || !results.length) continue;
+    const block = blocks[b] || {};
+    const altText =
+      block['alt text'] ||
+      block['alt'] ||
+      block['headline'] ||
+      'Generated social thumbnail.';
+
+    // 1. Locate the start of the item this spec belongs to (previous `### ` heading).
+    let itemStart = 0;
+    for (let j = headerIdx - 1; j >= 0; j--) {
+      if (ITEM_RE.test(lines[j])) { itemStart = j; break; }
+    }
+
+    // 2. Remove any legacy `**Generated images:**` block that sits right
+    //    after the Thumbnail spec (older format).
+    for (let j = headerIdx + 1; j < Math.min(headerIdx + 30, lines.length); j++) {
+      const t = lines[j].trim();
+      if (ITEM_RE.test(lines[j]) || t === '---') break;
+      if (!LEGACY_EMBED_RE.test(t)) continue;
+      // Find end of the legacy block: stop at blank-line + ---, or next heading/bold header.
+      let end = j;
+      for (let k = j + 1; k < lines.length; k++) {
+        const tk = lines[k].trim();
+        if (tk === '---' || ITEM_RE.test(lines[k])) { end = k - 1; break; }
+        if (/^\*\*[^*]+:\*\*/.test(tk)) { end = k - 1; break; }
+        end = k;
+      }
+      // Trim trailing blank lines inside the removal range.
+      while (end > j && lines[end].trim() === '') end--;
+      // Also swallow a single blank line immediately above the legacy header.
+      let startCut = j;
+      if (startCut > 0 && lines[startCut - 1].trim() === '') startCut--;
+      lines.splice(startCut, end - startCut + 1);
+      break;
+    }
+
+    // 3. Recompute item end after legacy removal.
+    let itemEnd = lines.length - 1;
+    for (let j = itemStart + 1; j < lines.length; j++) {
+      if (ITEM_RE.test(lines[j])) { itemEnd = j - 1; break; }
+    }
+
+    // 4. Group results by platform; one image per platform per variant.
+    const byPlatform = new Map();
+    for (const r of results) {
+      const key = String(r.platform || '').toLowerCase();
+      if (!byPlatform.has(key)) byPlatform.set(key, []);
+      byPlatform.get(key).push(r);
+    }
+
+    // 5. For each platform, find the FIRST matching variant header in the
+    //    item and inject the embed immediately after its fenced code block.
+    for (const [platform, rs] of byPlatform.entries()) {
+      const r = rs[0];
+      if (!r || !r.savePath) continue;
+      const rel = path.relative(sourceDir, r.savePath).split(path.sep).join('/');
+      const sizeLabel = `${r.width}×${r.height}`;
+      const headerText = `**Suggested thumbnail (${platformLabel(platform)} ${sizeLabel}):**`;
+
+      // Find the first matching variant within the item.
+      let variantIdx = -1;
+      for (let j = itemStart + 1; j <= itemEnd && j < lines.length; j++) {
+        const m = lines[j].trim().match(VARIANT_RE);
+        if (m && m[1].toLowerCase() === platform) {
+          variantIdx = j;
+          break;
+        }
+      }
+      if (variantIdx === -1) continue; // no matching variant — skip silently
+
+      // Find the fence start within the next ~6 lines.
+      let fenceStart = -1;
+      for (let j = variantIdx + 1; j < Math.min(variantIdx + 8, lines.length); j++) {
+        if (/^```/.test(lines[j].trim())) { fenceStart = j; break; }
+        // a non-blank, non-fence line means the variant has no code block.
+        if (lines[j].trim() !== '' && !/^```/.test(lines[j].trim())) break;
+      }
+      if (fenceStart === -1) continue;
+      let fenceEnd = -1;
+      for (let j = fenceStart + 1; j < lines.length; j++) {
+        if (/^```\s*$/.test(lines[j].trim())) { fenceEnd = j; break; }
+      }
+      if (fenceEnd === -1) continue;
+
+      // Idempotency: skip if a Suggested thumbnail label already follows.
+      let already = false;
+      for (let j = fenceEnd + 1; j < Math.min(fenceEnd + 5, lines.length); j++) {
+        const t = lines[j].trim();
+        if (t === '') continue;
+        if (SUGGESTED_RE.test(t)) { already = true; }
+        break;
+      }
+      if (already) continue;
+
+      const insert = ['', headerText, `![${escapeMarkdownAlt(altText)}](${rel})`];
+      lines.splice(fenceEnd + 1, 0, ...insert);
+      itemEnd += insert.length;
+    }
+  }
+  return lines.join('\n');
+}
+
+function escapeMarkdownAlt(s) {
+  return String(s).replace(/[\[\]]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+export { parseThumbnails, deriveSavePath, injectImageEmbeds, shiftColor, resolveStyle, STYLE_PRESETS };
 
 async function findLatestSocialPostsFile() {
   const dir = path.resolve(REPO_ROOT, 'social-posts');
@@ -497,9 +814,11 @@ async function main() {
 
   let ok = 0;
   let total = 0;
+  const perBlockResults = [];
   for (let i = 0; i < blocks.length; i++) {
     try {
       const rs = await renderBlock(blocks[i], sourceFile, i, DRY_RUN_CLI);
+      perBlockResults.push(rs.filter((r) => r.ok && r.savePath));
       for (const result of rs) {
         total++;
         if (!result.ok) {
@@ -516,6 +835,18 @@ async function main() {
       }
     } catch (err) {
       console.error(`  [${i + 1}/${blocks.length}] FAILED:`, err.message);
+      perBlockResults.push([]);
+    }
+  }
+  if (!DRY_RUN_CLI && perBlockResults.some((r) => r.length)) {
+    try {
+      const updated = injectImageEmbeds(markdown, blocks, perBlockResults, sourceFile);
+      if (updated !== markdown) {
+        await fs.writeFile(sourceFile, updated, 'utf8');
+        console.log(`Placed thumbnail embeds inline with each platform variant in ${path.relative(REPO_ROOT, sourceFile)}.`);
+      }
+    } catch (err) {
+      console.error('Embed injection failed:', err.message);
     }
   }
   console.log(`Done. ${ok}/${total} PNG(s) succeeded across ${blocks.length} spec block(s).`);

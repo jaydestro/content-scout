@@ -351,9 +351,15 @@ function closeRun(run, status) {
   run.listeners.clear();
   // Auto-render thumbnails for any run that produces a social-posts/*.md
   // (scout-post bulk + solo, plus scout-scan when posts are auto-generated).
-  // Fire-and-forget so the SSE close above isn't delayed.
+  // Fire-and-forget so the SSE close above isn't delayed. Honor the
+  // per-run `options.skipThumbnails` flag set when the user chose
+  // "Thumbnail style: Off" in the Run form.
   if (status === 'success' && (run.cmdName === 'scout-post' || run.cmdName === 'scout-scan')) {
-    autoRenderThumbnails(run).catch(() => {});
+    if (run.options && run.options.skipThumbnails) {
+      pushRunOutput(run, `\n[scout-web] Skipping auto-thumbnail render (Thumbnail style: Off).\n`);
+    } else {
+      autoRenderThumbnails(run).catch(() => {});
+    }
   }
 }
 
@@ -1288,6 +1294,78 @@ app.get('/api/social/:name', async (req, res) => {
   }
 });
 
+// List PNG/JPG images associated with a given social-posts markdown file.
+// Combines two sources:
+//   1) "Save to:" / "social-posts/images/..." paths inside the markdown
+//   2) Files on disk inside social-posts/images/<batch>/, where <batch> is
+//      derived from the file's date-stamp prefix (YYYY-MM-DD-HHmm) or basename.
+// Returns { images: [{ name, url, batch, source, bytes, mtime }] }.
+app.get('/api/social/:name/images', async (req, res) => {
+  const name = req.params.name;
+  if (!isValidFilename(name) || !name.endsWith('.md')) {
+    return res.status(400).json({ error: 'Invalid filename' });
+  }
+  const filePath = path.join(SOCIAL_DIR, name);
+  const imagesRoot = path.join(SOCIAL_DIR, 'images');
+  const seen = new Map(); // url -> entry
+  // 1) Parse markdown for explicit image paths.
+  let md = '';
+  try { md = await fs.readFile(filePath, 'utf8'); } catch {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  const re = /social-posts[\\/]images[\\/]([\w.\-/\\]+\.(?:png|jpe?g|webp|gif))/gi;
+  for (const m of md.matchAll(re)) {
+    const rel = m[1].replace(/\\/g, '/');
+    const abs = path.join(imagesRoot, rel);
+    const url = `/brand-assets/${rel}`;
+    if (seen.has(url)) continue;
+    let stat = null;
+    try { stat = await fs.stat(abs); } catch {}
+    if (!stat) continue;
+    seen.set(url, {
+      name: path.basename(rel),
+      url,
+      batch: rel.split('/')[0] || '',
+      source: 'spec',
+      bytes: stat.size,
+      mtime: stat.mtime.toISOString(),
+    });
+  }
+  // 2) Scan likely batch directories (date prefix or full basename).
+  const base = name.replace(/\.md$/i, '');
+  const stamp = (base.match(/^\d{4}-\d{2}-\d{2}-\d{4}/) || [null])[0];
+  const candidates = new Set();
+  if (stamp) {
+    candidates.add(stamp);
+    candidates.add(stamp.slice(0, 10)); // date-only batch
+  }
+  candidates.add(base);
+  for (const dir of candidates) {
+    const abs = path.join(imagesRoot, dir);
+    let entries = [];
+    try { entries = await fs.readdir(abs, { withFileTypes: true }); } catch { continue; }
+    for (const e of entries) {
+      if (!e.isFile()) continue;
+      if (!/\.(png|jpe?g|webp|gif)$/i.test(e.name)) continue;
+      const url = `/brand-assets/${dir}/${e.name}`;
+      if (seen.has(url)) continue;
+      let stat = null;
+      try { stat = await fs.stat(path.join(abs, e.name)); } catch {}
+      if (!stat) continue;
+      seen.set(url, {
+        name: e.name,
+        url,
+        batch: dir,
+        source: 'batch',
+        bytes: stat.size,
+        mtime: stat.mtime.toISOString(),
+      });
+    }
+  }
+  const images = [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
+  res.json({ images });
+});
+
 // Standalone, printable view of any report or social-posts file. Lets the
 // dashboard's "Recent activity" links and the per-list "Open ↗" buttons pop
 // the rendered output in its own window/tab, independent of the SPA.
@@ -2196,11 +2274,11 @@ app.post('/api/alt/describe', express.json({ limit: '256kb' }), async (req, res)
 });
 
 app.post('/api/runs', async (req, res) => {
-  const { command, args } = req.body || {};
+  const { command, args, options } = req.body || {};
   if (!command || typeof command !== 'string') {
     return res.status(400).json({ error: 'command required' });
   }
-  const result = await startRunInternal(command, args || {});
+  const result = await startRunInternal(command, args || {}, { options: options || {} });
   if (result.error) return res.status(result.status || 400).json(result.error);
   res.json({ id: result.id, command: result.commandLine, prompt: result.prompt });
 });
@@ -2244,6 +2322,7 @@ async function startRunInternal(command, args, opts = {}) {
     promptFile: null,
     bulkId: opts.bulkId || null,
     bulkLabel: opts.bulkLabel || null,
+    options: opts.options || {},
   };
   runs.set(id, run);
   if (usedStdin) {
@@ -2306,7 +2385,12 @@ const BULK_COMMANDS = new Set(['scout-post', 'scout-seo', 'scout-reddit-import',
 // the list of accepted URLs immediately; clients track progress via the
 // existing /api/runs queue UI.
 app.post('/api/runs/bulk', express.json({ limit: '512kb' }), async (req, res) => {
-  const { command, slug, urls, extra, range, concurrency } = req.body || {};
+  const { command, slug, urls, extra, range, concurrency, options } = req.body || {};
+  // Defensive: only accept a known options shape so a malformed payload
+  // can't smuggle arbitrary fields onto the per-run record.
+  const safeOptions = options && typeof options === 'object'
+    ? { skipThumbnails: !!options.skipThumbnails }
+    : {};
   if (!command || typeof command !== 'string' || !BULK_COMMANDS.has(command)) {
     return res.status(400).json({
       error: `bulk runs supported only for: ${[...BULK_COMMANDS].join(', ')}`,
@@ -2439,6 +2523,7 @@ app.post('/api/runs/bulk', express.json({ limit: '512kb' }), async (req, res) =>
     const r = await startRunInternal(command, args, {
       bulkId,
       bulkLabel: item.url,
+      options: safeOptions,
       onClose: (run) => {
         finalizeItem(item, run);
         startNext().catch(() => {});

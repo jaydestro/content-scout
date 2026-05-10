@@ -9,7 +9,12 @@ const api = async (path, opts) => {
 // --- Navigation ----------------------------------------------------
 const KNOWN_VIEWS = ['dashboard', 'setup', 'configs', 'run', 'reports', 'social', 'conversations'];
 function gotoView(view) {
-  document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
+  document.querySelectorAll('nav button').forEach((b) => {
+    const isActive = b.dataset.view === view;
+    b.classList.toggle('active', isActive);
+    if (isActive) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  });
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${view}`));
   if (KNOWN_VIEWS.includes(view) && location.hash !== `#${view}`) {
     history.replaceState(null, '', `#${view}`);
@@ -2536,6 +2541,7 @@ async function loadSocial() {
       li.classList.add('selected');
       const r = await api(`/api/social/${encodeURIComponent(li.dataset.name)}`);
       renderDocBody($('social-body'), { name: li.dataset.name, html: r.html, kind: 'social' });
+      $('social-body').dataset.name = li.dataset.name;
       enhanceSocialBody($('social-body'));
     });
   });
@@ -2618,6 +2624,152 @@ function enhanceSocialBody(root) {
       });
     });
   }
+
+  // 3) Inline thumbnails — the renderer now embeds each generated PNG
+  //    directly under its matching platform variant code block, but the
+  //    markdown uses repo-relative paths like `images/<batch>/<file>`.
+  //    Rewrite those to the server-served `/brand-assets/...` URL and
+  //    decorate each with download / copy-path controls (replacing the
+  //    old separate gallery section, which duplicated the same images).
+  const fileName = root.dataset.name;
+  if (fileName) decorateInlineSocialImages(root, fileName);
+}
+
+function decorateInlineSocialImages(root, fileName) {
+  // Idempotent: clear any previously injected actions and remove any
+  // legacy top-of-page gallery (older renderings of this file).
+  root.querySelectorAll(':scope .inline-thumb-actions').forEach((n) => n.remove());
+  const legacyGallery = root.querySelector(':scope > .social-image-gallery');
+  if (legacyGallery) legacyGallery.remove();
+
+  const imgs = [...root.querySelectorAll('.markdown img, .doc-content img')]
+    .filter((i) => !i.closest('.gallery-item'));
+  if (!imgs.length) return;
+
+  const fmtBytes = (n) => {
+    if (!Number.isFinite(n)) return '';
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / 1024 / 1024).toFixed(2)} MB`;
+  };
+  const safeAttr = (s) => String(s).replace(/"/g, '&quot;');
+
+  imgs.forEach((img) => {
+    // Rewrite repo-relative `images/<batch>/<name>` → `/brand-assets/<batch>/<name>`.
+    const raw = img.getAttribute('src') || '';
+    const m = raw.match(/^(?:\.?\/?)?images\/(.+)$/);
+    if (m) {
+      const newUrl = `/brand-assets/${m[1]}`;
+      img.src = newUrl;
+      // Wrap in a click-through anchor if not already.
+      if (!img.parentElement || img.parentElement.tagName !== 'A') {
+        const a = document.createElement('a');
+        a.href = newUrl;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.title = `Open ${m[1].split('/').pop()}`;
+        img.parentNode.insertBefore(a, img);
+        a.appendChild(img);
+      }
+    }
+    img.classList.add('inline-thumb');
+    img.loading = 'lazy';
+
+    // Append a small actions row right after the image's containing block
+    // (typically a <p>) — copy repo path + download.
+    const finalUrl = img.getAttribute('src');
+    const fileBase = decodeURIComponent(finalUrl.split('/').pop());
+    const batch = (finalUrl.match(/^\/brand-assets\/(.+)\/[^/]+$/) || [, ''])[1];
+    const repoPath = `social-posts/images/${batch ? batch + '/' : ''}${fileBase}`;
+    const wrap = img.closest('p, figure, li, div') || img.parentElement;
+    const row = document.createElement('div');
+    row.className = 'inline-thumb-actions';
+    row.innerHTML =
+      `<button type="button" class="thumb-btn" data-copy-path="${safeAttr(repoPath)}" title="Copy repo path">Copy path</button>` +
+      `<a class="thumb-btn" href="${safeAttr(finalUrl)}" download="${safeAttr(fileBase)}">Download</a>` +
+      `<a class="thumb-btn thumb-btn-ghost" href="${safeAttr(finalUrl)}" target="_blank" rel="noopener">Open full size</a>`;
+    wrap.after(row);
+  });
+
+  // Wire the copy-path buttons.
+  root.querySelectorAll('.inline-thumb-actions [data-copy-path]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const p = btn.dataset.copyPath || '';
+      try {
+        await navigator.clipboard.writeText(p);
+        const label = btn.textContent;
+        btn.textContent = 'Copied ✓';
+        btn.classList.add('copied');
+        window.toast?.success?.({ title: 'Path copied', description: p, duration: 2000 });
+        setTimeout(() => { btn.textContent = label; btn.classList.remove('copied'); }, 1600);
+      } catch {
+        window.toast?.error?.({ title: 'Could not copy path' });
+      }
+    });
+  });
+}
+
+async function renderSocialImageGallery(root, fileName) {
+  // Remove any prior gallery (idempotent re-enhancement).
+  const prior = root.querySelector(':scope > .social-image-gallery');
+  if (prior) prior.remove();
+  let images = [];
+  try {
+    const r = await fetch(`/api/social/${encodeURIComponent(fileName)}/images`);
+    if (!r.ok) return;
+    const data = await r.json();
+    images = Array.isArray(data.images) ? data.images : [];
+  } catch { return; }
+  if (!images.length) return;
+
+  const fmtBytes = (n) => {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / 1024 / 1024).toFixed(2)} MB`;
+  };
+  const safeAttr = (s) => String(s).replace(/"/g, '&quot;');
+
+  const section = document.createElement('section');
+  section.className = 'social-image-gallery';
+  section.innerHTML =
+    `<h4>Generated images <span class="hint" style="text-transform:none;font-weight:400;letter-spacing:0;color:var(--muted-2);margin-left:0.4rem;">(${images.length})</span></h4>` +
+    `<div class="gallery-grid">` +
+    images.map((img) => {
+      const repoPath = `social-posts/images/${img.batch ? img.batch + '/' : ''}${img.name}`;
+      return `
+        <figure class="gallery-item">
+          <a href="${safeAttr(img.url)}" target="_blank" rel="noopener" title="Open ${safeAttr(img.name)}">
+            <img src="${safeAttr(img.url)}" alt="${safeAttr(img.name)}" loading="lazy" />
+          </a>
+          <figcaption class="gallery-name" title="${safeAttr(repoPath)}">${escape(img.name)}</figcaption>
+          <div class="gallery-actions">
+            <button type="button" class="gallery-btn" data-copy-path="${safeAttr(repoPath)}" title="Copy repo path">Copy path</button>
+            <a class="gallery-btn" href="${safeAttr(img.url)}" download="${safeAttr(img.name)}">Download</a>
+            <span class="gallery-btn" style="cursor:default;border-style:dashed;">${fmtBytes(img.bytes)}</span>
+          </div>
+        </figure>`;
+    }).join('') +
+    `</div>`;
+
+  // Insert just after the URL strip if present, otherwise at the top.
+  const urlStrip = root.querySelector(':scope > .post-url-strip');
+  if (urlStrip) urlStrip.after(section);
+  else root.prepend(section);
+
+  section.querySelectorAll('button[data-copy-path]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const p = btn.dataset.copyPath || '';
+      try {
+        await navigator.clipboard.writeText(p);
+        btn.textContent = 'Copied ✓';
+        btn.classList.add('copied');
+        window.toast?.success?.({ title: 'Path copied', description: p, duration: 2200 });
+        setTimeout(() => { btn.textContent = 'Copy path'; btn.classList.remove('copied'); }, 1800);
+      } catch {
+        window.toast?.error?.({ title: 'Could not copy path' });
+      }
+    });
+  });
 }
 
 // --- "Create posts for me" — /scout-post runner ---------------------
@@ -2688,6 +2840,15 @@ function enhanceSocialBody(root) {
     const lic = $('social-gen-lic')?.checked ? 'yes' : 'no';
     const hashtags = $('social-gen-hashtags')?.checked ? 'yes' : 'no';
     const mention = $('social-gen-mention')?.checked ? 'yes' : 'no';
+    const thumbStyle = ($('social-gen-thumb-style')?.value || 'auto').trim();
+    // Strip brackets / control chars so freeform notes can't break the
+    // bracketed-tuner contract or smuggle additional directives.
+    const thumbNotes = ($('social-gen-thumb-notes')?.value || '')
+      .replace(/[\x00-\x1f\x7f]+/g, ' ')
+      .replace(/[\[\]]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 200);
     const platforms = ['li', 'x', 'bsky', 'rd']
       .filter((k) => $(`social-gen-pf-${k}`)?.checked)
       .map((k) => ({ li: 'linkedin', x: 'x', bsky: 'bluesky', rd: 'reddit' }[k]))
@@ -2707,7 +2868,9 @@ function enhanceSocialBody(root) {
       ` [hashtags: ${hashtags}]` +
       ` [mention-authors: ${mention}]` +
       ` [link-in-comments: ${lic}]` +
-      ` [variants: ${variants}]`;
+      ` [variants: ${variants}]` +
+      ` [thumbnails: ${thumbStyle}]` +
+      (thumbNotes ? ` [thumbnail-notes: ${thumbNotes}]` : '');
     let extra;
     if (url && !notLive) {
       extra = ctx ? `${url} — ${ctx}${tuners}` : `${url}${tuners}`;
@@ -2727,7 +2890,11 @@ function enhanceSocialBody(root) {
       const res = await fetch('/api/runs', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ command: 'scout-post', args: { extra } }),
+        body: JSON.stringify({
+          command: 'scout-post',
+          args: { extra },
+          options: { skipThumbnails: thumbStyle === 'off' },
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
