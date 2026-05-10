@@ -44,6 +44,10 @@ const PLATFORM_SIZES = {
   'youtube-community': { w: 1200, h: 675 },
 };
 
+// Keys whose values may legitimately contain `·`/`•`/`|` separators or
+// surrounding quotes, so they must be absorbed whole rather than split.
+const FREE_TEXT_KEYS = new Set(['headline', 'subtext', 'alt text', 'alt']);
+
 const DEFAULTS = {
   background: '#0b1020',
   accent: '#3b75cf',
@@ -171,8 +175,14 @@ function parseThumbnails(markdown) {
       if (bullet) {
         const rawKey = bullet[1].trim().toLowerCase();
         const value = bullet[2].trim();
-        // A single bullet can pack "Platform: LinkedIn · Size: 1200×628".
-        absorbProseLine(props, `${rawKey}: ${value}`);
+        // Free-text keys can legitimately contain `·`/`•`/`|` as content,
+        // so absorb them whole instead of letting absorbProseLine split.
+        if (FREE_TEXT_KEYS.has(rawKey)) {
+          if (!props[rawKey]) props[rawKey] = stripQuotes(value);
+        } else {
+          // A single bullet can pack "Platform: LinkedIn · Size: 1200×628".
+          absorbProseLine(props, `${rawKey}: ${value}`);
+        }
         saw = true;
         continue;
       }
@@ -206,6 +216,12 @@ function absorbProseLine(props, line) {
       const value = m[2].trim();
       if (key === 'save to') {
         if (!props['save path']) props['save path'] = value;
+      } else if (FREE_TEXT_KEYS.has(key)) {
+        // Don't accept a split fragment for free-text keys — the value was
+        // truncated at a `·`. Only accept when there was no split.
+        if (segments.length === 1 && !props[key]) {
+          props[key] = stripQuotes(value);
+        }
       } else if (!props[key]) {
         props[key] = value;
       }
@@ -447,18 +463,113 @@ export async function renderFile(sourceFile, { dryRun = false } = {}) {
   const markdown = await fs.readFile(sourceFile, 'utf8');
   const blocks = parseThumbnails(markdown);
   const results = [];
+  // Group results per source spec block so we can inject embeds underneath
+  // the matching Thumbnail spec.
+  const perBlockResults = [];
   for (let i = 0; i < blocks.length; i++) {
     try {
       const rs = await renderBlock(blocks[i], sourceFile, i, dryRun);
       results.push(...rs);
+      perBlockResults.push(rs.filter((r) => r.ok && r.savePath));
     } catch (err) {
       results.push({ ok: false, error: String(err.message || err) });
+      perBlockResults.push([]);
+    }
+  }
+  if (!dryRun && perBlockResults.some((r) => r.length)) {
+    try {
+      const updated = injectImageEmbeds(markdown, blocks, perBlockResults, sourceFile);
+      if (updated !== markdown) {
+        await fs.writeFile(sourceFile, updated, 'utf8');
+      }
+    } catch (err) {
+      results.push({ ok: false, kind: 'embed-injection', error: String(err.message || err) });
     }
   }
   return results;
 }
 
-export { parseThumbnails, deriveSavePath };
+/**
+ * After rendering, ensure each `**Thumbnail spec:**` block in the source
+ * markdown is followed by a `**Generated images:**` block listing the PNGs
+ * we just produced as `![alt](relative-path)` markdown image embeds. This
+ * makes the social-posts file self-displaying when previewed in GitHub or
+ * the web UI. Idempotent — if a `**Generated images:**` block already
+ * exists in the next ~12 lines after the spec, leave it alone.
+ *
+ * Paths are written relative to the social-posts directory (so they start
+ * with `images/...` not `social-posts/images/...`) which is how GitHub
+ * resolves them when rendering the markdown file in-tree.
+ */
+function injectImageEmbeds(markdown, blocks, perBlockResults, sourceFile) {
+  const lines = markdown.split(/\r?\n/);
+  const HEADER_RE = /^\*\*Thumbnail(?:\s+spec)?:\*\*/i;
+  const EMBED_HEADER_RE = /^\*\*Generated images:\*\*/i;
+  const sourceDir = path.dirname(path.resolve(sourceFile));
+  // Find each Thumbnail header line index in source order.
+  const headerLineIdx = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (HEADER_RE.test(lines[i].trim())) headerLineIdx.push(i);
+  }
+  if (!headerLineIdx.length) return markdown;
+  // Walk in reverse so insertions don't shift earlier indices.
+  for (let b = headerLineIdx.length - 1; b >= 0; b--) {
+    const blockIdx = b;
+    const results = perBlockResults[blockIdx];
+    if (!results || !results.length) continue;
+    const block = blocks[blockIdx] || {};
+    const altText =
+      block['alt text'] ||
+      block['alt'] ||
+      block['headline'] ||
+      'Generated social thumbnail.';
+    const headerIdx = headerLineIdx[b];
+    // Find end of the Thumbnail spec block (re-use parseThumbnails logic
+    // simplified: stop at blank line, next heading, or next bold header).
+    let endIdx = headerIdx;
+    let blankRun = 0;
+    for (let j = headerIdx + 1; j < Math.min(headerIdx + 40, lines.length); j++) {
+      const raw = lines[j];
+      const t = raw.trim();
+      if (/^###?\s/.test(raw) || (/^\*\*[^*]+:\*\*/.test(t) && !HEADER_RE.test(t))) break;
+      if (/^```/.test(t)) break;
+      if (t === '') {
+        blankRun++;
+        if (blankRun >= 1) {
+          endIdx = j;
+          break;
+        }
+      } else {
+        blankRun = 0;
+        endIdx = j;
+      }
+    }
+    // Already has a Generated images block in the next ~12 lines? skip.
+    let already = false;
+    for (let j = endIdx; j < Math.min(endIdx + 12, lines.length); j++) {
+      if (EMBED_HEADER_RE.test(lines[j].trim())) {
+        already = true;
+        break;
+      }
+    }
+    if (already) continue;
+    const embedLines = ['', '**Generated images:**'];
+    for (const r of results) {
+      const rel = path.relative(sourceDir, r.savePath).split(path.sep).join('/');
+      embedLines.push(`![${escapeMarkdownAlt(altText)}](${rel})`);
+    }
+    // Insert just after the spec block (after endIdx).
+    const insertAt = endIdx + 1;
+    lines.splice(insertAt, 0, ...embedLines);
+  }
+  return lines.join('\n');
+}
+
+function escapeMarkdownAlt(s) {
+  return String(s).replace(/[\[\]]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+export { parseThumbnails, deriveSavePath, injectImageEmbeds };
 
 async function findLatestSocialPostsFile() {
   const dir = path.resolve(REPO_ROOT, 'social-posts');
@@ -497,9 +608,11 @@ async function main() {
 
   let ok = 0;
   let total = 0;
+  const perBlockResults = [];
   for (let i = 0; i < blocks.length; i++) {
     try {
       const rs = await renderBlock(blocks[i], sourceFile, i, DRY_RUN_CLI);
+      perBlockResults.push(rs.filter((r) => r.ok && r.savePath));
       for (const result of rs) {
         total++;
         if (!result.ok) {
@@ -516,6 +629,18 @@ async function main() {
       }
     } catch (err) {
       console.error(`  [${i + 1}/${blocks.length}] FAILED:`, err.message);
+      perBlockResults.push([]);
+    }
+  }
+  if (!DRY_RUN_CLI && perBlockResults.some((r) => r.length)) {
+    try {
+      const updated = injectImageEmbeds(markdown, blocks, perBlockResults, sourceFile);
+      if (updated !== markdown) {
+        await fs.writeFile(sourceFile, updated, 'utf8');
+        console.log(`Injected **Generated images:** embeds (with alt text) into ${path.relative(REPO_ROOT, sourceFile)}.`);
+      }
+    } catch (err) {
+      console.error('Embed injection failed:', err.message);
     }
   }
   console.log(`Done. ${ok}/${total} PNG(s) succeeded across ${blocks.length} spec block(s).`);
