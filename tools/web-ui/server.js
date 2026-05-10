@@ -1288,6 +1288,78 @@ app.get('/api/social/:name', async (req, res) => {
   }
 });
 
+// List PNG/JPG images associated with a given social-posts markdown file.
+// Combines two sources:
+//   1) "Save to:" / "social-posts/images/..." paths inside the markdown
+//   2) Files on disk inside social-posts/images/<batch>/, where <batch> is
+//      derived from the file's date-stamp prefix (YYYY-MM-DD-HHmm) or basename.
+// Returns { images: [{ name, url, batch, source, bytes, mtime }] }.
+app.get('/api/social/:name/images', async (req, res) => {
+  const name = req.params.name;
+  if (!isValidFilename(name) || !name.endsWith('.md')) {
+    return res.status(400).json({ error: 'Invalid filename' });
+  }
+  const filePath = path.join(SOCIAL_DIR, name);
+  const imagesRoot = path.join(SOCIAL_DIR, 'images');
+  const seen = new Map(); // url -> entry
+  // 1) Parse markdown for explicit image paths.
+  let md = '';
+  try { md = await fs.readFile(filePath, 'utf8'); } catch {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  const re = /social-posts[\\/]images[\\/]([\w.\-/\\]+\.(?:png|jpe?g|webp|gif))/gi;
+  for (const m of md.matchAll(re)) {
+    const rel = m[1].replace(/\\/g, '/');
+    const abs = path.join(imagesRoot, rel);
+    const url = `/brand-assets/${rel}`;
+    if (seen.has(url)) continue;
+    let stat = null;
+    try { stat = await fs.stat(abs); } catch {}
+    if (!stat) continue;
+    seen.set(url, {
+      name: path.basename(rel),
+      url,
+      batch: rel.split('/')[0] || '',
+      source: 'spec',
+      bytes: stat.size,
+      mtime: stat.mtime.toISOString(),
+    });
+  }
+  // 2) Scan likely batch directories (date prefix or full basename).
+  const base = name.replace(/\.md$/i, '');
+  const stamp = (base.match(/^\d{4}-\d{2}-\d{2}-\d{4}/) || [null])[0];
+  const candidates = new Set();
+  if (stamp) {
+    candidates.add(stamp);
+    candidates.add(stamp.slice(0, 10)); // date-only batch
+  }
+  candidates.add(base);
+  for (const dir of candidates) {
+    const abs = path.join(imagesRoot, dir);
+    let entries = [];
+    try { entries = await fs.readdir(abs, { withFileTypes: true }); } catch { continue; }
+    for (const e of entries) {
+      if (!e.isFile()) continue;
+      if (!/\.(png|jpe?g|webp|gif)$/i.test(e.name)) continue;
+      const url = `/brand-assets/${dir}/${e.name}`;
+      if (seen.has(url)) continue;
+      let stat = null;
+      try { stat = await fs.stat(path.join(abs, e.name)); } catch {}
+      if (!stat) continue;
+      seen.set(url, {
+        name: e.name,
+        url,
+        batch: dir,
+        source: 'batch',
+        bytes: stat.size,
+        mtime: stat.mtime.toISOString(),
+      });
+    }
+  }
+  const images = [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
+  res.json({ images });
+});
+
 // Standalone, printable view of any report or social-posts file. Lets the
 // dashboard's "Recent activity" links and the per-list "Open ↗" buttons pop
 // the rendered output in its own window/tab, independent of the SPA.
