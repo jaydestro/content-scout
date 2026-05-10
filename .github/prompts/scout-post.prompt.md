@@ -124,13 +124,31 @@ Use this exact bullet shape (case-insensitive keys; the parser also accepts
 - Headline: "Identity-Aware MCP Servers"
 - Subtext: "FastMCP + Entra Auth + Azure Cosmos DB"
 - Logo: Azure Cosmos DB (from `social-posts/images/brand/azure-cosmos-db/`)
+- Alt text: "Dark navy thumbnail with the headline 'Identity-Aware MCP Servers' over a small Azure Cosmos DB logo, accent teal bar."
 - Save to: `social-posts/images/{YYYY-MM-DD-HHmm}/{N}-linkedin-{slug}.png`
+
+**Generated images:**
+![Dark navy thumbnail with the headline 'Identity-Aware MCP Servers' over a small Azure Cosmos DB logo, accent teal bar.](images/{YYYY-MM-DD-HHmm}/{N}-linkedin-{slug}.png)
+![Dark navy thumbnail with the headline 'Identity-Aware MCP Servers' over a small Azure Cosmos DB logo, accent teal bar.](images/{YYYY-MM-DD-HHmm}/{N}-x-{slug}.png)
 ```
 
 Recognized keys: `Platform`, `Size`, `Background`, `Accent`, `Headline`,
-`Subtext`, `Logo`, `Save to` (alias `Save path`). The companion file path
+`Subtext`, `Logo`, `Alt text`, `Save to` (alias `Save path`). The companion file path
 is derived by swapping the `linkedin`/`x` token in the `Save to:` filename,
 so the X PNG above lands at `…/{N}-x-{slug}.png` automatically.
+
+**Alt text is required.** Every Thumbnail spec MUST include an `Alt text:`
+line that describes the rendered image well enough for a screen-reader user
+to understand what's on screen — describe the headline, subtext, color
+palette, and logo presence. Reuse the same alt text in the `**Generated
+images:**` markdown embeds (one for the LinkedIn 1200×1200, one for the X
+1600×900 companion). The image paths are written **relative to the
+`social-posts/` directory** (start with `images/…`, not `social-posts/images/…`)
+so they render correctly when the markdown file is previewed in GitHub or
+the web UI. Always include the `**Generated images:**` block immediately
+after the Thumbnail spec — the renderer creates the PNGs at those paths,
+so the markdown file becomes self-displaying once `node tools/render-thumbnails/index.js`
+has been run.
 
 ### Emoji
 
