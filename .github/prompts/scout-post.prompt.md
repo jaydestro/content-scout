@@ -104,7 +104,7 @@ When `link-in-comments: yes` (LinkedIn convention):
 - End the post with: `Link in the first comment 👇` (or equivalent — respect emoji setting).
 - Add a second fenced block labeled `LinkedIn — first comment:` containing just the URL (and a one-line framing if useful).
 
-### Thumbnail spec (auto-rendered)
+### Thumbnail spec (auto-rendered, placed inline with each variant)
 
 For every item, include exactly **one** `**Thumbnail spec:**` block. The
 renderer at `tools/render-thumbnails/` automatically produces **both** a
@@ -113,8 +113,18 @@ do not need to repeat the block per platform. The web UI runs the renderer
 automatically after `/scout-post` finishes; it can also be invoked manually
 with `node tools/render-thumbnails/index.js`.
 
-Use this exact bullet shape (case-insensitive keys; the parser also accepts
-`·`-separated combos like `Platform: LinkedIn · Size: 1200x1200`):
+After the PNGs are rendered, the renderer **places each image inline with
+the social-post variant it illustrates** — the LinkedIn PNG is inserted
+right under the first `**LinkedIn (...):**` fenced block in that item, the
+X PNG under the first `**X (...):**` block. Each embed is preceded by a
+small label like `**Suggested thumbnail (LinkedIn 1200×1200):**` so the
+post draft and its proposed thumbnail read as a single unit. Do **not**
+hand-author a `**Generated images:**` block at the bottom of the item —
+the renderer owns embed placement and removes any pre-existing legacy
+block on each run.
+
+Use this exact bullet shape for the spec (case-insensitive keys; the parser
+also accepts `·`-separated combos like `Platform: LinkedIn · Size: 1200x1200`):
 
 ```markdown
 **Thumbnail spec:**
@@ -126,29 +136,48 @@ Use this exact bullet shape (case-insensitive keys; the parser also accepts
 - Logo: Azure Cosmos DB (from `social-posts/images/brand/azure-cosmos-db/`)
 - Alt text: "Dark navy thumbnail with the headline 'Identity-Aware MCP Servers' over a small Azure Cosmos DB logo, accent teal bar."
 - Save to: `social-posts/images/{YYYY-MM-DD-HHmm}/{N}-linkedin-{slug}.png`
+```
 
-**Generated images:**
-![Dark navy thumbnail with the headline 'Identity-Aware MCP Servers' over a small Azure Cosmos DB logo, accent teal bar.](images/{YYYY-MM-DD-HHmm}/{N}-linkedin-{slug}.png)
-![Dark navy thumbnail with the headline 'Identity-Aware MCP Servers' over a small Azure Cosmos DB logo, accent teal bar.](images/{YYYY-MM-DD-HHmm}/{N}-x-{slug}.png)
+After the renderer runs, the item will look like this in the markdown
+file (LinkedIn variant + LinkedIn thumbnail, then X variant + X thumbnail,
+then the spec block stays at the bottom for traceability):
+
+```markdown
+**LinkedIn (option 1 — what it is):**
+
+```text
+…post body…
+```
+
+**Suggested thumbnail (LinkedIn 1200×1200):**
+![Dark navy thumbnail … accent teal bar.](images/{YYYY-MM-DD-HHmm}/{N}-linkedin-{slug}.png)
+
+**X (option 1):**
+
+```text
+…post body…
+```
+
+**Suggested thumbnail (X 1600×900):**
+![Dark navy thumbnail … accent teal bar.](images/{YYYY-MM-DD-HHmm}/{N}-x-{slug}.png)
+
+**Thumbnail spec:**
+- … (as above) …
 ```
 
 Recognized keys: `Platform`, `Size`, `Background`, `Accent`, `Headline`,
-`Subtext`, `Logo`, `Alt text`, `Save to` (alias `Save path`). The companion file path
-is derived by swapping the `linkedin`/`x` token in the `Save to:` filename,
-so the X PNG above lands at `…/{N}-x-{slug}.png` automatically.
+`Subtext`, `Logo`, `Alt text`, `Save to` (alias `Save path`). The companion
+file path is derived by swapping the `linkedin`/`x` token in the `Save to:`
+filename, so the X PNG above lands at `…/{N}-x-{slug}.png` automatically.
 
 **Alt text is required.** Every Thumbnail spec MUST include an `Alt text:`
-line that describes the rendered image well enough for a screen-reader user
-to understand what's on screen — describe the headline, subtext, color
-palette, and logo presence. Reuse the same alt text in the `**Generated
-images:**` markdown embeds (one for the LinkedIn 1200×1200, one for the X
-1600×900 companion). The image paths are written **relative to the
-`social-posts/` directory** (start with `images/…`, not `social-posts/images/…`)
-so they render correctly when the markdown file is previewed in GitHub or
-the web UI. Always include the `**Generated images:**` block immediately
-after the Thumbnail spec — the renderer creates the PNGs at those paths,
-so the markdown file becomes self-displaying once `node tools/render-thumbnails/index.js`
-has been run.
+line that describes the rendered image well enough for a screen-reader
+user to understand what's on screen — describe the headline, subtext,
+color palette, and logo presence. The renderer reuses that alt text for
+every inline `![alt](...)` embed it injects. Image paths are written
+**relative to the `social-posts/` directory** (start with `images/…`, not
+`social-posts/images/…`) so they render correctly when the markdown file
+is previewed in GitHub or the web UI.
 
 ### Emoji
 

@@ -2625,11 +2625,88 @@ function enhanceSocialBody(root) {
     });
   }
 
-  // 3) Generated images gallery — fetch the per-post image manifest from
-  //    the server and render thumbnails so users can preview, copy paths,
-  //    and grab the assets they need to publish.
+  // 3) Inline thumbnails — the renderer now embeds each generated PNG
+  //    directly under its matching platform variant code block, but the
+  //    markdown uses repo-relative paths like `images/<batch>/<file>`.
+  //    Rewrite those to the server-served `/brand-assets/...` URL and
+  //    decorate each with download / copy-path controls (replacing the
+  //    old separate gallery section, which duplicated the same images).
   const fileName = root.dataset.name;
-  if (fileName) renderSocialImageGallery(root, fileName);
+  if (fileName) decorateInlineSocialImages(root, fileName);
+}
+
+function decorateInlineSocialImages(root, fileName) {
+  // Idempotent: clear any previously injected actions and remove any
+  // legacy top-of-page gallery (older renderings of this file).
+  root.querySelectorAll(':scope .inline-thumb-actions').forEach((n) => n.remove());
+  const legacyGallery = root.querySelector(':scope > .social-image-gallery');
+  if (legacyGallery) legacyGallery.remove();
+
+  const imgs = [...root.querySelectorAll('.markdown img, .doc-content img')]
+    .filter((i) => !i.closest('.gallery-item'));
+  if (!imgs.length) return;
+
+  const fmtBytes = (n) => {
+    if (!Number.isFinite(n)) return '';
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / 1024 / 1024).toFixed(2)} MB`;
+  };
+  const safeAttr = (s) => String(s).replace(/"/g, '&quot;');
+
+  imgs.forEach((img) => {
+    // Rewrite repo-relative `images/<batch>/<name>` → `/brand-assets/<batch>/<name>`.
+    const raw = img.getAttribute('src') || '';
+    const m = raw.match(/^(?:\.?\/?)?images\/(.+)$/);
+    if (m) {
+      const newUrl = `/brand-assets/${m[1]}`;
+      img.src = newUrl;
+      // Wrap in a click-through anchor if not already.
+      if (!img.parentElement || img.parentElement.tagName !== 'A') {
+        const a = document.createElement('a');
+        a.href = newUrl;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.title = `Open ${m[1].split('/').pop()}`;
+        img.parentNode.insertBefore(a, img);
+        a.appendChild(img);
+      }
+    }
+    img.classList.add('inline-thumb');
+    img.loading = 'lazy';
+
+    // Append a small actions row right after the image's containing block
+    // (typically a <p>) — copy repo path + download.
+    const finalUrl = img.getAttribute('src');
+    const fileBase = decodeURIComponent(finalUrl.split('/').pop());
+    const batch = (finalUrl.match(/^\/brand-assets\/(.+)\/[^/]+$/) || [, ''])[1];
+    const repoPath = `social-posts/images/${batch ? batch + '/' : ''}${fileBase}`;
+    const wrap = img.closest('p, figure, li, div') || img.parentElement;
+    const row = document.createElement('div');
+    row.className = 'inline-thumb-actions';
+    row.innerHTML =
+      `<button type="button" class="thumb-btn" data-copy-path="${safeAttr(repoPath)}" title="Copy repo path">Copy path</button>` +
+      `<a class="thumb-btn" href="${safeAttr(finalUrl)}" download="${safeAttr(fileBase)}">Download</a>` +
+      `<a class="thumb-btn thumb-btn-ghost" href="${safeAttr(finalUrl)}" target="_blank" rel="noopener">Open full size</a>`;
+    wrap.after(row);
+  });
+
+  // Wire the copy-path buttons.
+  root.querySelectorAll('.inline-thumb-actions [data-copy-path]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const p = btn.dataset.copyPath || '';
+      try {
+        await navigator.clipboard.writeText(p);
+        const label = btn.textContent;
+        btn.textContent = 'Copied ✓';
+        btn.classList.add('copied');
+        window.toast?.success?.({ title: 'Path copied', description: p, duration: 2000 });
+        setTimeout(() => { btn.textContent = label; btn.classList.remove('copied'); }, 1600);
+      } catch {
+        window.toast?.error?.({ title: 'Could not copy path' });
+      }
+    });
+  });
 }
 
 async function renderSocialImageGallery(root, fileName) {

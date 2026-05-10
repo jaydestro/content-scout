@@ -490,77 +490,154 @@ export async function renderFile(sourceFile, { dryRun = false } = {}) {
 }
 
 /**
- * After rendering, ensure each `**Thumbnail spec:**` block in the source
- * markdown is followed by a `**Generated images:**` block listing the PNGs
- * we just produced as `![alt](relative-path)` markdown image embeds. This
- * makes the social-posts file self-displaying when previewed in GitHub or
- * the web UI. Idempotent — if a `**Generated images:**` block already
- * exists in the next ~12 lines after the spec, leave it alone.
+ * After rendering, place each generated PNG as a `![alt](...)` embed
+ * immediately under the social-post variant it illustrates — the LinkedIn
+ * PNG goes under the first `**LinkedIn (...):**` fenced block in the same
+ * item, the X PNG under the first `**X (...):**` block, and so on. Each
+ * embed is preceded by a small `**Suggested thumbnail (Platform WxH):**`
+ * label so the variant + image read as one unit when previewed in GitHub
+ * or the web UI Social view.
  *
- * Paths are written relative to the social-posts directory (so they start
- * with `images/...` not `social-posts/images/...`) which is how GitHub
- * resolves them when rendering the markdown file in-tree.
+ * The Thumbnail spec block stays where the agent put it (usually at the
+ * end of the item) for regenerability and traceability — it just no longer
+ * carries a separate "Generated images" block underneath. Any pre-existing
+ * legacy `**Generated images:**` block right after the spec is removed so
+ * re-running the renderer cleans up older files.
+ *
+ * Idempotent — if a `**Suggested thumbnail (...):**` label already sits
+ * immediately under a variant's fence, that variant is left alone.
+ *
+ * Paths are written relative to the source markdown's directory (so they
+ * start with `images/...` not `social-posts/images/...`) which is how
+ * GitHub resolves them when rendering the markdown in-tree.
  */
 function injectImageEmbeds(markdown, blocks, perBlockResults, sourceFile) {
   const lines = markdown.split(/\r?\n/);
-  const HEADER_RE = /^\*\*Thumbnail(?:\s+spec)?:\*\*/i;
-  const EMBED_HEADER_RE = /^\*\*Generated images:\*\*/i;
   const sourceDir = path.dirname(path.resolve(sourceFile));
+  const HEADER_RE = /^\*\*Thumbnail(?:\s+spec)?:\*\*/i;
+  const ITEM_RE = /^###\s/;
+  const VARIANT_RE = /^\*\*(LinkedIn|X|Bluesky|Reddit|YouTube)\b[^*]*:\*\*\s*$/i;
+  const SUGGESTED_RE = /^\*\*Suggested thumbnail/i;
+  const LEGACY_EMBED_RE = /^\*\*Generated images:\*\*/i;
+
+  const platformLabel = (p) => {
+    const k = String(p || '').toLowerCase();
+    if (k === 'x') return 'X';
+    if (k === 'linkedin') return 'LinkedIn';
+    if (k === 'youtube') return 'YouTube';
+    return k.charAt(0).toUpperCase() + k.slice(1);
+  };
+
   // Find each Thumbnail header line index in source order.
   const headerLineIdx = [];
   for (let i = 0; i < lines.length; i++) {
     if (HEADER_RE.test(lines[i].trim())) headerLineIdx.push(i);
   }
   if (!headerLineIdx.length) return markdown;
-  // Walk in reverse so insertions don't shift earlier indices.
+
+  // Walk in reverse so insertions/removals don't shift earlier indices.
   for (let b = headerLineIdx.length - 1; b >= 0; b--) {
-    const blockIdx = b;
-    const results = perBlockResults[blockIdx];
+    const headerIdx = headerLineIdx[b];
+    const results = perBlockResults[b];
     if (!results || !results.length) continue;
-    const block = blocks[blockIdx] || {};
+    const block = blocks[b] || {};
     const altText =
       block['alt text'] ||
       block['alt'] ||
       block['headline'] ||
       'Generated social thumbnail.';
-    const headerIdx = headerLineIdx[b];
-    // Find end of the Thumbnail spec block (re-use parseThumbnails logic
-    // simplified: stop at blank line, next heading, or next bold header).
-    let endIdx = headerIdx;
-    let blankRun = 0;
-    for (let j = headerIdx + 1; j < Math.min(headerIdx + 40, lines.length); j++) {
-      const raw = lines[j];
-      const t = raw.trim();
-      if (/^###?\s/.test(raw) || (/^\*\*[^*]+:\*\*/.test(t) && !HEADER_RE.test(t))) break;
-      if (/^```/.test(t)) break;
-      if (t === '') {
-        blankRun++;
-        if (blankRun >= 1) {
-          endIdx = j;
+
+    // 1. Locate the start of the item this spec belongs to (previous `### ` heading).
+    let itemStart = 0;
+    for (let j = headerIdx - 1; j >= 0; j--) {
+      if (ITEM_RE.test(lines[j])) { itemStart = j; break; }
+    }
+
+    // 2. Remove any legacy `**Generated images:**` block that sits right
+    //    after the Thumbnail spec (older format).
+    for (let j = headerIdx + 1; j < Math.min(headerIdx + 30, lines.length); j++) {
+      const t = lines[j].trim();
+      if (ITEM_RE.test(lines[j]) || t === '---') break;
+      if (!LEGACY_EMBED_RE.test(t)) continue;
+      // Find end of the legacy block: stop at blank-line + ---, or next heading/bold header.
+      let end = j;
+      for (let k = j + 1; k < lines.length; k++) {
+        const tk = lines[k].trim();
+        if (tk === '---' || ITEM_RE.test(lines[k])) { end = k - 1; break; }
+        if (/^\*\*[^*]+:\*\*/.test(tk)) { end = k - 1; break; }
+        end = k;
+      }
+      // Trim trailing blank lines inside the removal range.
+      while (end > j && lines[end].trim() === '') end--;
+      // Also swallow a single blank line immediately above the legacy header.
+      let startCut = j;
+      if (startCut > 0 && lines[startCut - 1].trim() === '') startCut--;
+      lines.splice(startCut, end - startCut + 1);
+      break;
+    }
+
+    // 3. Recompute item end after legacy removal.
+    let itemEnd = lines.length - 1;
+    for (let j = itemStart + 1; j < lines.length; j++) {
+      if (ITEM_RE.test(lines[j])) { itemEnd = j - 1; break; }
+    }
+
+    // 4. Group results by platform; one image per platform per variant.
+    const byPlatform = new Map();
+    for (const r of results) {
+      const key = String(r.platform || '').toLowerCase();
+      if (!byPlatform.has(key)) byPlatform.set(key, []);
+      byPlatform.get(key).push(r);
+    }
+
+    // 5. For each platform, find the FIRST matching variant header in the
+    //    item and inject the embed immediately after its fenced code block.
+    for (const [platform, rs] of byPlatform.entries()) {
+      const r = rs[0];
+      if (!r || !r.savePath) continue;
+      const rel = path.relative(sourceDir, r.savePath).split(path.sep).join('/');
+      const sizeLabel = `${r.width}×${r.height}`;
+      const headerText = `**Suggested thumbnail (${platformLabel(platform)} ${sizeLabel}):**`;
+
+      // Find the first matching variant within the item.
+      let variantIdx = -1;
+      for (let j = itemStart + 1; j <= itemEnd && j < lines.length; j++) {
+        const m = lines[j].trim().match(VARIANT_RE);
+        if (m && m[1].toLowerCase() === platform) {
+          variantIdx = j;
           break;
         }
-      } else {
-        blankRun = 0;
-        endIdx = j;
       }
-    }
-    // Already has a Generated images block in the next ~12 lines? skip.
-    let already = false;
-    for (let j = endIdx; j < Math.min(endIdx + 12, lines.length); j++) {
-      if (EMBED_HEADER_RE.test(lines[j].trim())) {
-        already = true;
+      if (variantIdx === -1) continue; // no matching variant — skip silently
+
+      // Find the fence start within the next ~6 lines.
+      let fenceStart = -1;
+      for (let j = variantIdx + 1; j < Math.min(variantIdx + 8, lines.length); j++) {
+        if (/^```/.test(lines[j].trim())) { fenceStart = j; break; }
+        // a non-blank, non-fence line means the variant has no code block.
+        if (lines[j].trim() !== '' && !/^```/.test(lines[j].trim())) break;
+      }
+      if (fenceStart === -1) continue;
+      let fenceEnd = -1;
+      for (let j = fenceStart + 1; j < lines.length; j++) {
+        if (/^```\s*$/.test(lines[j].trim())) { fenceEnd = j; break; }
+      }
+      if (fenceEnd === -1) continue;
+
+      // Idempotency: skip if a Suggested thumbnail label already follows.
+      let already = false;
+      for (let j = fenceEnd + 1; j < Math.min(fenceEnd + 5, lines.length); j++) {
+        const t = lines[j].trim();
+        if (t === '') continue;
+        if (SUGGESTED_RE.test(t)) { already = true; }
         break;
       }
+      if (already) continue;
+
+      const insert = ['', headerText, `![${escapeMarkdownAlt(altText)}](${rel})`];
+      lines.splice(fenceEnd + 1, 0, ...insert);
+      itemEnd += insert.length;
     }
-    if (already) continue;
-    const embedLines = ['', '**Generated images:**'];
-    for (const r of results) {
-      const rel = path.relative(sourceDir, r.savePath).split(path.sep).join('/');
-      embedLines.push(`![${escapeMarkdownAlt(altText)}](${rel})`);
-    }
-    // Insert just after the spec block (after endIdx).
-    const insertAt = endIdx + 1;
-    lines.splice(insertAt, 0, ...embedLines);
   }
   return lines.join('\n');
 }
@@ -637,7 +714,7 @@ async function main() {
       const updated = injectImageEmbeds(markdown, blocks, perBlockResults, sourceFile);
       if (updated !== markdown) {
         await fs.writeFile(sourceFile, updated, 'utf8');
-        console.log(`Injected **Generated images:** embeds (with alt text) into ${path.relative(REPO_ROOT, sourceFile)}.`);
+        console.log(`Placed thumbnail embeds inline with each platform variant in ${path.relative(REPO_ROOT, sourceFile)}.`);
       }
     } catch (err) {
       console.error('Embed injection failed:', err.message);
