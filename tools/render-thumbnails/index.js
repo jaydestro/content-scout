@@ -321,10 +321,26 @@ async function fileExists(p) {
 }
 
 // Lighten or darken a hex color by a fractional amount in [-1, 1].
+// Accepts 3-, 4-, 6- and 8-digit hex (alpha is ignored when present); other
+// inputs are returned unchanged so callers can fall back gracefully.
 function shiftColor(hex, amount) {
-  const m = String(hex || '').match(/^#?([0-9a-fA-F]{6})$/);
-  if (!m) return hex;
-  const n = parseInt(m[1], 16);
+  const raw = String(hex || '').trim().replace(/^#/, '');
+  let m;
+  if (/^[0-9a-fA-F]{3}$/.test(raw)) {
+    // Expand short form (#abc -> #aabbcc).
+    m = raw.split('').map((c) => c + c).join('');
+  } else if (/^[0-9a-fA-F]{4}$/.test(raw)) {
+    // Short form with alpha (#abcd) — drop the alpha nibble, expand RGB.
+    m = raw.slice(0, 3).split('').map((c) => c + c).join('');
+  } else if (/^[0-9a-fA-F]{6}$/.test(raw)) {
+    m = raw;
+  } else if (/^[0-9a-fA-F]{8}$/.test(raw)) {
+    // 8-digit form with alpha — drop trailing alpha byte.
+    m = raw.slice(0, 6);
+  } else {
+    return hex;
+  }
+  const n = parseInt(m, 16);
   const r = (n >> 16) & 0xff;
   const g = (n >> 8) & 0xff;
   const b = n & 0xff;
@@ -759,7 +775,7 @@ function escapeMarkdownAlt(s) {
   return String(s).replace(/[\[\]]/g, '').replace(/\s+/g, ' ').trim();
 }
 
-export { parseThumbnails, deriveSavePath, injectImageEmbeds };
+export { parseThumbnails, deriveSavePath, injectImageEmbeds, shiftColor, resolveStyle, STYLE_PRESETS };
 
 async function findLatestSocialPostsFile() {
   const dir = path.resolve(REPO_ROOT, 'social-posts');

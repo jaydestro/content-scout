@@ -2385,7 +2385,12 @@ const BULK_COMMANDS = new Set(['scout-post', 'scout-seo', 'scout-reddit-import',
 // the list of accepted URLs immediately; clients track progress via the
 // existing /api/runs queue UI.
 app.post('/api/runs/bulk', express.json({ limit: '512kb' }), async (req, res) => {
-  const { command, slug, urls, extra, range, concurrency } = req.body || {};
+  const { command, slug, urls, extra, range, concurrency, options } = req.body || {};
+  // Defensive: only accept a known options shape so a malformed payload
+  // can't smuggle arbitrary fields onto the per-run record.
+  const safeOptions = options && typeof options === 'object'
+    ? { skipThumbnails: !!options.skipThumbnails }
+    : {};
   if (!command || typeof command !== 'string' || !BULK_COMMANDS.has(command)) {
     return res.status(400).json({
       error: `bulk runs supported only for: ${[...BULK_COMMANDS].join(', ')}`,
@@ -2518,6 +2523,7 @@ app.post('/api/runs/bulk', express.json({ limit: '512kb' }), async (req, res) =>
     const r = await startRunInternal(command, args, {
       bulkId,
       bulkLabel: item.url,
+      options: safeOptions,
       onClose: (run) => {
         finalizeItem(item, run);
         startNext().catch(() => {});
