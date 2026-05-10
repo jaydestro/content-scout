@@ -351,9 +351,15 @@ function closeRun(run, status) {
   run.listeners.clear();
   // Auto-render thumbnails for any run that produces a social-posts/*.md
   // (scout-post bulk + solo, plus scout-scan when posts are auto-generated).
-  // Fire-and-forget so the SSE close above isn't delayed.
+  // Fire-and-forget so the SSE close above isn't delayed. Honor the
+  // per-run `options.skipThumbnails` flag set when the user chose
+  // "Thumbnail style: Off" in the Run form.
   if (status === 'success' && (run.cmdName === 'scout-post' || run.cmdName === 'scout-scan')) {
-    autoRenderThumbnails(run).catch(() => {});
+    if (run.options && run.options.skipThumbnails) {
+      pushRunOutput(run, `\n[scout-web] Skipping auto-thumbnail render (Thumbnail style: Off).\n`);
+    } else {
+      autoRenderThumbnails(run).catch(() => {});
+    }
   }
 }
 
@@ -2268,11 +2274,11 @@ app.post('/api/alt/describe', express.json({ limit: '256kb' }), async (req, res)
 });
 
 app.post('/api/runs', async (req, res) => {
-  const { command, args } = req.body || {};
+  const { command, args, options } = req.body || {};
   if (!command || typeof command !== 'string') {
     return res.status(400).json({ error: 'command required' });
   }
-  const result = await startRunInternal(command, args || {});
+  const result = await startRunInternal(command, args || {}, { options: options || {} });
   if (result.error) return res.status(result.status || 400).json(result.error);
   res.json({ id: result.id, command: result.commandLine, prompt: result.prompt });
 });
@@ -2316,6 +2322,7 @@ async function startRunInternal(command, args, opts = {}) {
     promptFile: null,
     bulkId: opts.bulkId || null,
     bulkLabel: opts.bulkLabel || null,
+    options: opts.options || {},
   };
   runs.set(id, run);
   if (usedStdin) {
