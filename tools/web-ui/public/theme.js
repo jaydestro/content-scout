@@ -9,7 +9,14 @@
 
   function render(theme) {
     // Icons (sun + moon SVG) live in the DOM; CSS toggles which is visible.
-    if (labelEl) labelEl.textContent = theme === 'light' ? 'Light' : 'Dark';
+    // Label describes the *action* the click will take (the destination
+    // theme), not the current state — clearer than just "Dark"/"Light"
+    // which users read as a status indicator.
+    const next = theme === 'light' ? 'dark' : 'light';
+    const nextLabel = next === 'light' ? 'Light mode' : 'Dark mode';
+    if (labelEl) labelEl.textContent = nextLabel;
+    btn.setAttribute('aria-label', `Switch to ${nextLabel.toLowerCase()}`);
+    btn.setAttribute('title', `Switch to ${nextLabel.toLowerCase()}`);
     btn.setAttribute('aria-pressed', theme === 'light' ? 'true' : 'false');
   }
 

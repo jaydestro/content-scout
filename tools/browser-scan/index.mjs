@@ -26,6 +26,7 @@ import { scanLinkedIn, openLinkedInLogin } from './platforms/linkedin.mjs';
 import { scanReddit, openRedditLogin } from './platforms/reddit.mjs';
 import { loadConfig } from './lib/config.mjs';
 import { ensureProfileDir, launchEdge, attachEdge } from './lib/browser.mjs';
+import { filterHiring } from './lib/hiring-filter.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -140,6 +141,11 @@ if (command === 'launch') {
   const outDir = path.join(ROOT, 'reports', '.browser-scan', slug);
   fs.mkdirSync(outDir, { recursive: true });
 
+  // Per-scan meta sidecar — captures hiring-drop counts so the agent can
+  // surface them in the report as "X hiring posts dropped" without ever
+  // seeing the post bodies. Keyed by platform.
+  const hiringDropped = {};
+
   // In CDP mode, attach ONCE and reuse the same context for all platforms —
   // the user is already logged in to all three in one Edge window.
   let sharedHandle = null;
@@ -179,9 +185,29 @@ if (command === 'launch') {
       if (ownsHandle) await handle.browser.close().catch(() => {});
     }
     const outFile = path.join(outDir, `${stamp}-${platform}.json`);
-    fs.writeFileSync(outFile, JSON.stringify(items, null, 2));
-    console.log(`[browser-scan] ${platform}: ${items.length} items → ${path.relative(ROOT, outFile)}`);
+    // Hard-drop hiring/recruiting/job-search posts before persisting the
+    // sidecar. The agent prompt already says "drop hiring content from every
+    // section", but in practice (especially on LinkedIn) recruiter posts
+    // leak through into reports — enforcing it here means the agent never
+    // even sees them. See lib/hiring-filter.mjs.
+    const { kept, dropped } = filterHiring(items);
+    if (dropped.length) hiringDropped[platform] = dropped.length;
+    fs.writeFileSync(outFile, JSON.stringify(kept, null, 2));
+    const droppedNote = dropped.length ? ` (dropped ${dropped.length} hiring/recruiting)` : '';
+    console.log(`[browser-scan] ${platform}: ${kept.length} items${droppedNote} → ${path.relative(ROOT, outFile)}`);
   }
+
+  // Write the meta sidecar (always, even when zero drops, so absence of the
+  // file means "no scan ran" rather than "scan ran but zeros").
+  const totalDropped = Object.values(hiringDropped).reduce((a, b) => a + b, 0);
+  const metaFile = path.join(outDir, `${stamp}-meta.json`);
+  fs.writeFileSync(metaFile, JSON.stringify({
+    stamp,
+    slug,
+    platforms: requested,
+    hiringDropped,
+    hiringDroppedTotal: totalDropped,
+  }, null, 2));
 
   // In CDP mode we do NOT close the user's Edge — they own it. Just disconnect.
   if (sharedHandle) await sharedHandle.browser.close().catch(() => {});

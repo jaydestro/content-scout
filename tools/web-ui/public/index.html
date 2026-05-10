@@ -65,14 +65,16 @@
             <span class="nav-label">Conversations</span>
           </button>
         </nav>
-        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle light/dark theme">
-          <span class="theme-toggle-icon" aria-hidden="true">
-            <svg class="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-            <svg class="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-          </span>
-          <span class="theme-toggle-label">Dark</span>
-        </button>
-        <div id="status-pill" class="pill"></div>
+        <div class="header-actions">
+          <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch theme" title="Switch theme">
+            <span class="theme-toggle-icon" aria-hidden="true">
+              <svg class="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              <svg class="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+            </span>
+            <span class="theme-toggle-label">Light mode</span>
+          </button>
+          <div id="status-pill" class="pill"></div>
+        </div>
       </div>
     </header>
 
@@ -540,10 +542,10 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
 
           <!-- Wizard nav -->
           <div class="wiz-nav">
+            <button id="wiz-restart" type="button" class="link-btn" title="Clear all wizard inputs and start from the beginning">Start over</button>
             <button id="wiz-prev" type="button" class="secondary">← Previous</button>
             <span id="wiz-pos" class="hint"></span>
             <span id="wiz-saved" class="hint" aria-live="polite"></span>
-            <button id="wiz-restart" type="button" class="link-btn" title="Clear all wizard inputs and start from the beginning">Start over</button>
             <button id="wiz-next" type="button">Next →</button>
           </div>
         </div>
@@ -558,6 +560,7 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
           </div>
         </div>
         <div id="dash-body">
+          <!-- 1. Hero: who you are, what to do next -->
           <div class="dash-hero">
             <div>
               <h2>Welcome back</h2>
@@ -570,38 +573,23 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             </div>
           </div>
 
+          <!-- 2. At a glance: the four numbers that matter -->
+          <h3 class="dash-section-head">At a glance</h3>
           <div class="dash-stats" id="dash-stats">
-            <div class="stat"><div class="stat-num" id="stat-reports">—</div><div class="stat-label">Scan reports</div></div>
-            <div class="stat"><div class="stat-num" id="stat-social">—</div><div class="stat-label">Social posts</div></div>
-            <div class="stat"><div class="stat-num" id="stat-thumbnails">—</div><div class="stat-label">Thumbnail PNGs</div></div>
-            <div class="stat"><div class="stat-num" id="stat-last-scan">—</div><div class="stat-label">Last scan</div></div>
+            <div class="stat"><div class="stat-num" id="stat-subjects"><span class="skeleton" style="width:1.5em;display:inline-block"></span></div><div class="stat-label">Subjects tracked</div></div>
+            <div class="stat"><div class="stat-num" id="stat-reports"><span class="skeleton" style="width:1.5em;display:inline-block"></span></div><div class="stat-label">Scan reports</div></div>
+            <div class="stat"><div class="stat-num" id="stat-social"><span class="skeleton" style="width:1.5em;display:inline-block"></span></div><div class="stat-label">Social posts</div></div>
+            <div class="stat"><div class="stat-num" id="stat-last-scan"><span class="skeleton" style="width:3em;display:inline-block"></span></div><div class="stat-label">Last scan</div></div>
           </div>
 
-          <div class="cards dash-row-2">
-            <div class="card">
-              <h3>Subjects &amp; last scan</h3>
-              <ul id="dash-subjects"><li class="hint">Loading…</li></ul>
-            </div>
-            <div class="card dash-activity-card">
-              <div class="dash-card-head">
-                <h3>Recent activity</h3>
-                <span class="hint" id="dash-activity-meta"></span>
-              </div>
-              <ul id="dash-activity" class="dash-activity"><li class="hint">Loading…</li></ul>
-            </div>
-          </div>
-
-          <div class="card">
-            <h3>Suggestions</h3>
-            <ul id="dash-suggestions"><li class="hint">Loading…</li></ul>
-          </div>
-
+          <!-- 3. Needs your attention: actionable items at the top of the fold -->
+          <h3 class="dash-section-head">Needs your attention</h3>
           <div class="card dash-action-items" id="dash-action-items-card">
             <div class="dash-action-items-head">
               <h3>Action items from latest scans</h3>
               <span class="hint" id="dash-action-items-meta"></span>
             </div>
-            <div id="dash-action-items"><p class="hint">Loading…</p></div>
+            <div id="dash-action-items"><span class="skeleton" style="width:70%"></span><span class="skeleton" style="width:50%"></span></div>
           </div>
 
           <div class="card dash-social-activity" id="dash-social-activity-card">
@@ -610,21 +598,44 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
               <span class="hint" id="dash-social-activity-meta"></span>
             </div>
             <div class="dash-social-summary" id="dash-social-summary"></div>
-            <div id="dash-social-activity"><p class="hint">Loading…</p></div>
+            <div id="dash-social-activity"><span class="skeleton" style="width:65%"></span><span class="skeleton" style="width:45%"></span></div>
           </div>
 
+          <div class="card">
+            <h3>Suggestions</h3>
+            <ul id="dash-suggestions"><li><span class="skeleton" style="width:75%"></span><span class="skeleton" style="width:50%"></span></li></ul>
+          </div>
+
+          <!-- 4. What's been happening: subjects + activity log -->
+          <h3 class="dash-section-head">Recent activity</h3>
+          <div class="cards dash-row-2">
+            <div class="card">
+              <h3>Subjects &amp; last scan</h3>
+              <ul id="dash-subjects"><li><span class="skeleton" style="width:60%"></span><span class="skeleton" style="width:40%"></span></li></ul>
+            </div>
+            <div class="card dash-activity-card">
+              <div class="dash-card-head">
+                <h3>Latest artifacts</h3>
+                <span class="hint" id="dash-activity-meta"></span>
+              </div>
+              <ul id="dash-activity" class="dash-activity"><li><span class="skeleton" style="width:80%"></span><span class="skeleton" style="width:55%"></span><span class="skeleton" style="width:65%"></span></li></ul>
+            </div>
+          </div>
+
+          <!-- 5. Intel: deeper signals from the latest scan -->
+          <h3 class="dash-section-head">Intel</h3>
           <div class="cards" id="dash-intel-cards">
             <div class="card">
               <h3>Sentiment pulse</h3>
-              <div id="dash-sentiment"><p class="hint">Loading…</p></div>
+              <div id="dash-sentiment"><span class="skeleton" style="width:60%"></span><span class="skeleton" style="width:40%"></span></div>
             </div>
             <div class="card">
               <h3>Top creators</h3>
-              <ul id="dash-creators"><li class="hint">Loading…</li></ul>
+              <ul id="dash-creators"><li><span class="skeleton" style="width:70%"></span><span class="skeleton" style="width:45%"></span></li></ul>
             </div>
             <div class="card">
               <h3>Source health</h3>
-              <div id="dash-source-health"><p class="hint">Loading…</p></div>
+              <div id="dash-source-health"><span class="skeleton" style="width:55%"></span><span class="skeleton" style="width:65%"></span></div>
             </div>
           </div>
 
@@ -640,10 +651,14 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
 
       <!-- Configs -->
       <section id="view-configs" class="view">
-        <h2>Configs</h2>
+        <div class="view-header">
+          <h2 style="margin:0;">Configs</h2>
+          <button id="configs-add-btn" type="button" class="primary" data-goto="setup" title="Open the Setup wizard to add a new product/subject">+ Add subject</button>
+        </div>
         <p class="hint">
-          Pick a config to edit its role flags, search terms, and topic tags. New configs are created by
-          running the <code>/scout-onboard</code> command in your editor.
+          Pick a config below to edit its role flags, search terms, and topic tags. To add a new
+          product or subject, use <a href="#" data-goto="setup">+ Add subject</a> (above) or run
+          <code>/scout-onboard</code> in your editor's chat panel.
         </p>
         <div class="split">
           <aside>

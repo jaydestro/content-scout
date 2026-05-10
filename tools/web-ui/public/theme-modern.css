@@ -1036,6 +1036,21 @@ aside li[data-name] .entry-open:hover {
   gap: 0.75rem;
   margin-bottom: 1rem;
 }
+
+/* Section dividers within the dashboard. Subtle, scannable labels that
+   group the page into a clear narrative: At a glance → Needs attention
+   → Recent activity → Intel. */
+.dash-section-head {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin: 1.5rem 0 0.6rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border);
+}
+.dash-section-head:first-of-type { margin-top: 1rem; }
 .dash-stats .stat {
   background: var(--bg-elev);
   border: 1px solid var(--border);
@@ -1281,16 +1296,10 @@ aside li[data-name] .entry-open:hover {
 /* =================================================================
  * Help system: nav button, inline ? icons, drawer
  * ================================================================= */
-.help-nav-btn {
-  margin-left: 0.5rem;
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--muted);
-}
-.help-nav-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
+/* .help-nav-btn now inherits the standard nav button styling
+   (icon + label, hover, responsive label-collapse). Keep a small
+   left margin so it visually separates from the view-switcher cluster. */
+.help-nav-btn { margin-left: 0.25rem; }
 .help-icon {
   display: inline-flex;
   align-items: center;
