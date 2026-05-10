@@ -2840,6 +2840,8 @@ async function renderSocialImageGallery(root, fileName) {
     const lic = $('social-gen-lic')?.checked ? 'yes' : 'no';
     const hashtags = $('social-gen-hashtags')?.checked ? 'yes' : 'no';
     const mention = $('social-gen-mention')?.checked ? 'yes' : 'no';
+    const thumbStyle = ($('social-gen-thumb-style')?.value || 'auto').trim();
+    const thumbNotes = ($('social-gen-thumb-notes')?.value || '').trim();
     const platforms = ['li', 'x', 'bsky', 'rd']
       .filter((k) => $(`social-gen-pf-${k}`)?.checked)
       .map((k) => ({ li: 'linkedin', x: 'x', bsky: 'bluesky', rd: 'reddit' }[k]))
@@ -2859,7 +2861,9 @@ async function renderSocialImageGallery(root, fileName) {
       ` [hashtags: ${hashtags}]` +
       ` [mention-authors: ${mention}]` +
       ` [link-in-comments: ${lic}]` +
-      ` [variants: ${variants}]`;
+      ` [variants: ${variants}]` +
+      ` [thumbnails: ${thumbStyle}]` +
+      (thumbNotes ? ` [thumbnail-notes: ${thumbNotes}]` : '');
     let extra;
     if (url && !notLive) {
       extra = ctx ? `${url} — ${ctx}${tuners}` : `${url}${tuners}`;
@@ -2879,7 +2883,11 @@ async function renderSocialImageGallery(root, fileName) {
       const res = await fetch('/api/runs', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ command: 'scout-post', args: { extra } }),
+        body: JSON.stringify({
+          command: 'scout-post',
+          args: { extra },
+          options: { skipThumbnails: thumbStyle === 'off' },
+        }),
       });
       const data = await res.json();
       if (!res.ok) {

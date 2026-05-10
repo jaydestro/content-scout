@@ -897,6 +897,21 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
                   <option value="5">5</option>
                 </select>
               </label>
+              <label class="field tuner">
+                <span>Thumbnail style</span>
+                <select id="social-gen-thumb-style">
+                  <option value="auto" selected>Auto — let the agent pick per item</option>
+                  <option value="minimal">Minimal — clean text, accent bar</option>
+                  <option value="branded">Branded — logo + gradient + brand rail</option>
+                  <option value="editorial">Editorial — large quote-style headline, no logo</option>
+                  <option value="generic">Generic — light neutral background</option>
+                  <option value="off">Off — don't generate thumbnails</option>
+                </select>
+              </label>
+              <label class="field tuner">
+                <span>Style notes <span class="hint">(optional, freeform — e.g., "warm tones, conference vibe")</span></span>
+                <input id="social-gen-thumb-notes" type="text" placeholder="leave blank to use the preset as-is" />
+              </label>
             </div>
             <div class="social-generate-toolbar">
               <button type="submit" id="social-gen-start">Generate posts</button>
