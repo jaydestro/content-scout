@@ -25,6 +25,7 @@
     </script>
   </head>
   <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
     <header class="site-header">
       <a class="banner" href="#" data-goto="dashboard" aria-label="Content Scout home">
         <img class="banner-logo" src="/assets/content-scout-mascot.svg" alt="" />
@@ -44,14 +45,17 @@
           <button data-view="conversations">Conversations</button>
         </nav>
         <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle light/dark theme">
-          <span class="theme-toggle-icon" aria-hidden="true">🌙</span>
+          <span class="theme-toggle-icon" aria-hidden="true">
+            <svg class="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            <svg class="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+          </span>
           <span class="theme-toggle-label">Dark</span>
         </button>
         <div id="status-pill" class="pill"></div>
       </div>
     </header>
 
-    <main>
+    <main id="main-content" tabindex="-1">
       <!-- Setup -->
       <section id="view-setup" class="view">
         <h2>Setup wizard</h2>
@@ -893,7 +897,7 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
         </div>
 
         <div class="card social-generate" id="alt-generate-card">
-          <h3>🖼️ Alt text for an image</h3>
+          <h3><svg class="h3-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> Alt text for an image</h3>
           <p class="hint">Drop an image here, paste from clipboard, click to pick a file, or paste a public URL. A description is <em>optional</em> — supply one only if your agent doesn't have vision and you want it to anchor against your words instead of guessing.</p>
           <p class="hint" id="alt-vision-status" data-tone="muted">Vision provider: checking…</p>
           <form id="alt-generate-form" class="social-generate-form">
@@ -968,10 +972,10 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
           <input id="conv-q" type="search" placeholder="Search full archive (summary, author, platform)…" />
           <select id="conv-sentiment" aria-label="Filter by sentiment" title="Sentiment">
             <option value="">All sentiments</option>
-            <option value="positive">🟢 Positive</option>
-            <option value="neutral">⚪ Neutral</option>
-            <option value="mixed">🟡 Mixed</option>
-            <option value="negative">🔴 Negative</option>
+            <option value="positive">Positive</option>
+            <option value="neutral">Neutral</option>
+            <option value="mixed">Mixed</option>
+            <option value="negative">Negative</option>
           </select>
           <select id="conv-platform" aria-label="Filter by platform" title="Platform"><option value="">All platforms</option></select>
           <label class="conv-needs-reply">

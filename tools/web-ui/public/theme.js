@@ -5,11 +5,10 @@
   const root = document.documentElement;
   const btn = document.getElementById('theme-toggle');
   if (!btn) return;
-  const iconEl = btn.querySelector('.theme-toggle-icon');
   const labelEl = btn.querySelector('.theme-toggle-label');
 
   function render(theme) {
-    if (iconEl) iconEl.textContent = theme === 'light' ? '☀️' : '🌙';
+    // Icons (sun + moon SVG) live in the DOM; CSS toggles which is visible.
     if (labelEl) labelEl.textContent = theme === 'light' ? 'Light' : 'Dark';
     btn.setAttribute('aria-pressed', theme === 'light' ? 'true' : 'false');
   }
