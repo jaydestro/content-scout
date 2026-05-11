@@ -1060,12 +1060,27 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             <input type="checkbox" id="conv-needs-reply" />
             Needs reply (negative + mixed)
           </label>
-          <select id="conv-show" aria-label="Show closed" title="Show closed / dismissed conversations">
-            <option value="open">Hide closed</option>
-            <option value="all">Show all (incl. closed)</option>
+          <select id="conv-show" aria-label="Show closed / muted" title="Show closed / dismissed / muted conversations">
+            <option value="open">Hide closed &amp; muted</option>
+            <option value="all">Show all (incl. closed &amp; muted)</option>
             <option value="closed">Only closed</option>
+            <option value="muted">Only muted</option>
           </select>
+          <button type="button" id="conv-manage-muted" class="secondary" title="Manage muted accounts">Muted accounts…</button>
           <span class="hint" id="conv-meta"></span>
+        </div>
+        <div id="conv-muted-panel" class="conv-muted-panel" hidden>
+          <div class="conv-muted-head">
+            <strong>Muted accounts</strong>
+            <button type="button" id="conv-muted-close" class="secondary" aria-label="Close panel">×</button>
+          </div>
+          <div class="conv-muted-tools">
+            <label class="hint" for="conv-owned-slug">Mute owned accounts from config:</label>
+            <select id="conv-owned-slug" aria-label="Choose subject config"></select>
+            <button type="button" id="conv-owned-import" class="secondary">Import owned</button>
+            <span id="conv-owned-status" class="hint"></span>
+          </div>
+          <div id="conv-muted-list"><p class="hint">Loading…</p></div>
         </div>
         <div id="conv-bulk-bar" class="conv-bulk-bar" hidden>
           <span id="conv-bulk-count">0 selected</span>

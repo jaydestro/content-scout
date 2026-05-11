@@ -20,6 +20,16 @@ import {
   closeMany,
   reopenMany,
 } from './lib/closed-conversations.js';
+import {
+  loadMuted,
+  muteAccount,
+  unmuteMany,
+  isMutedConv,
+  muteKey,
+  normHandle,
+  normPlatform,
+  parseOwnedAccountsFromConfig,
+} from './lib/muted-accounts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1864,12 +1874,23 @@ app.get('/api/conversations', async (req, res) => {
     // `include`: 'open' (default — hide closed), 'closed' (only closed),
     // 'all' (everything with isClosed flag).
     const include = String(req.query.include || 'open').toLowerCase();
+    // `includeMuted`: when true (or include === 'muted'), do NOT filter out
+    // conversations from muted accounts. Default is to hide them entirely.
+    const includeMutedFlag = String(req.query.includeMuted || '').toLowerCase();
+    const includeMuted = includeMutedFlag === '1' || includeMutedFlag === 'true' || include === 'muted';
+    const onlyMuted = include === 'muted';
     const closed = await loadClosed(REPORTS_DIR);
+    const muted = await loadMuted(REPORTS_DIR);
     let convs = idx.conversations.map((c) => {
       const key = convoKey(c);
       const closedInfo = key && closed.items[key] ? closed.items[key] : null;
-      return closedInfo ? { ...c, key, isClosed: true, closedInfo } : { ...c, key, isClosed: false };
+      const isMuted = isMutedConv(muted, c);
+      const base = { ...c, key, isClosed: !!closedInfo, isMuted };
+      if (closedInfo) base.closedInfo = closedInfo;
+      return base;
     });
+    if (onlyMuted) convs = convs.filter((c) => c.isMuted);
+    else if (!includeMuted) convs = convs.filter((c) => !c.isMuted);
     if (include === 'open') convs = convs.filter((c) => !c.isClosed);
     else if (include === 'closed') convs = convs.filter((c) => c.isClosed);
     if (slug)
@@ -1888,11 +1909,130 @@ app.get('/api/conversations', async (req, res) => {
     convs = convs
       .slice()
       .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    // Dedupe by key — the same conversation often appears in multiple
+    // report files. Keep the newest occurrence (already first after sort)
+    // and collect the other report names in `dupReports` for context.
+    const seen = new Map();
+    for (const c of convs) {
+      const k = c.key || c.url || `${c.platform}::${c.author}::${c.summary}`;
+      if (!seen.has(k)) {
+        seen.set(k, { ...c, dupReports: [] });
+      } else {
+        const first = seen.get(k);
+        if (c.report && c.report !== first.report && !first.dupReports.includes(c.report)) {
+          first.dupReports.push(c.report);
+        }
+      }
+    }
+    const dedupedConvs = Array.from(seen.values());
+    const dupesRemoved = convs.length - dedupedConvs.length;
     res.json({
-      conversations: convs,
-      total: convs.length,
+      conversations: dedupedConvs,
+      total: dedupedConvs.length,
+      dupesRemoved,
       closedCount: Object.keys(closed.items).length,
+      mutedCount: Object.keys(muted.items).length,
       builtAt: idx.builtAt,
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+// --- Muted accounts --------------------------------------------
+// Persistent block list — hides every conversation from a given
+// platform+handle (or cross-platform when platform = '*'). State at
+// reports/.muted-accounts.json, shared with tools/conversations-cli.mjs.
+
+app.get('/api/muted-accounts', async (_req, res) => {
+  try {
+    const muted = await loadMuted(REPORTS_DIR);
+    const items = Object.entries(muted.items).map(([key, info]) => ({ key, ...info }));
+    items.sort((a, b) => (b.mutedAt || '').localeCompare(a.mutedAt || ''));
+    res.json({ items, total: items.length });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+app.post('/api/muted-accounts', express.json({ limit: '64kb' }), async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const { state, key } = await muteAccount(REPORTS_DIR, {
+      platform: body.platform,
+      handle: body.handle,
+      reason: body.reason,
+      note: body.note,
+      owned: !!body.owned,
+    });
+    res.json({
+      ok: true,
+      key,
+      item: state.items[key],
+      total: Object.keys(state.items).length,
+    });
+  } catch (err) {
+    const status = err && err.code === 'HANDLE_REQUIRED' ? 400 : 500;
+    res.status(status).json({ error: String(err.message || err), code: err && err.code });
+  }
+});
+
+app.delete('/api/muted-accounts', express.json({ limit: '64kb' }), async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    let keys = Array.isArray(body.keys) ? body.keys.filter((k) => typeof k === 'string' && k) : [];
+    // Convenience: accept { platform, handle } in addition to { keys: [...] }.
+    if (!keys.length && body.handle) {
+      keys = [muteKey(body.platform, body.handle)];
+    }
+    if (!keys.length) return res.status(400).json({ error: 'keys or {platform, handle}: required' });
+    const { state, removed } = await unmuteMany(REPORTS_DIR, keys);
+    res.json({ ok: true, unmuted: removed, total: Object.keys(state.items).length });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+// Import "owned" accounts (the product's own social handles) from a
+// scout-config-*.prompt.md and mute every one with reason=owned-account.
+// Body: { slug: string }.
+app.post('/api/muted-accounts/import-owned', express.json({ limit: '32kb' }), async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const slug = String(body.slug || '').trim();
+    if (!slug) return res.status(400).json({ error: 'slug: required' });
+    let cfg;
+    try {
+      cfg = await readConfig(slug);
+    } catch (err) {
+      return res.status(404).json({ error: `config not found for slug "${slug}"` });
+    }
+    const owned = parseOwnedAccountsFromConfig(cfg.raw || '');
+    const added = [];
+    const skipped = [];
+    for (const acct of owned) {
+      try {
+        const { key } = await muteAccount(REPORTS_DIR, {
+          platform: acct.platform,
+          handle: acct.handle,
+          reason: 'owned-account',
+          note: `Imported from ${cfg.file}`,
+          owned: true,
+        });
+        added.push({ key, platform: acct.platform, handle: acct.handle });
+      } catch (err) {
+        skipped.push({ platform: acct.platform, handle: acct.handle, error: String(err.message || err) });
+      }
+    }
+    const state = await loadMuted(REPORTS_DIR);
+    res.json({
+      ok: true,
+      slug,
+      file: cfg.file,
+      parsed: owned.length,
+      added,
+      skipped,
+      total: Object.keys(state.items).length,
     });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
