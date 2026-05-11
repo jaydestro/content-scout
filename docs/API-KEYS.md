@@ -20,6 +20,8 @@ All API keys are optional. Without them, the agent skips those sources and scans
 
 > **Best free coverage for X / LinkedIn / Reddit:** sign in once via [tools/browser-scan/](../tools/browser-scan) — attaches to your real browser (Edge / Chrome / Brave / Vivaldi / Arc / Opera — auto-detects your OS default) over CDP, no Playwright fingerprint, works with passkeys + 2FA. Either click **🌐 Browser scan (Layer 0)** in the web UI's Run view, or use the CLI in `tools/browser-scan/README.md`. Each `scout scan` then auto-ingests the resulting JSON sidecar as **Layer 0**.
 
+> **Vision provider keys (`VISION_PROVIDER`, `OLLAMA_HOST`, `OLLAMA_VISION_MODEL`, `OPENAI_VISION_MODEL`, `CUSTOM_VISION_*`)** are *not* edited from the API Keys page — they have a dedicated **Vision** card on the Configs page (or run `/scout-vision`). They still live in `.env`, but the API Keys editor filters them out so the two surfaces never overwrite each other.
+
 ---
 
 ## YouTube Data API v3

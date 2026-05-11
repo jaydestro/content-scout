@@ -42,7 +42,7 @@ Open the repo in your AI tool and run `/scout-onboard` (VS Code) or say "scout o
 | `/scout-gaps` | Show topics with no recent coverage |
 | `/scout-trends` | Compare trends across months |
 
-Plus `/scout-creators`, `/scout-doctor`, `/scout-keys`, `/scout-replay`, `/scout-seo` — see [docs/EDITORS.md](docs/EDITORS.md).
+Plus `/scout-creators`, `/scout-doctor`, `/scout-keys`, `/scout-replay`, `/scout-seo`, `/scout-reddit-import`, `/scout-alt`, `/scout-vision` — see [docs/EDITORS.md](docs/EDITORS.md).
 
 ## What it scans
 

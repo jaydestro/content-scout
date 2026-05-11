@@ -29,6 +29,38 @@ Contributions are welcome. Content Scout is a prompt-based agent — the "code" 
 - Follow the existing file structure and naming conventions.
 - PR descriptions should explain the *why*, not just the *what*.
 
+## Don't commit personal info
+
+Content Scout is designed so each user's customization stays on their own machine. Before opening a PR, double-check that none of the following has been added to a tracked file:
+
+- Real names, email addresses, internal handles, or tenant / subscription IDs
+- Per-product team-member lists (use `.github/team-members.md` — gitignored — and ship only the `.example` template)
+- Anything from `.env` (gitignored), `reports/`, `social-posts/`, `tools/_scratch/`, `tools/one-shot-scan/`, `tools/mindshare-feed/`, `tools/browser-scan/.profile/`, or `tools/browser-scan/.cdp-profile/` — these paths are gitignored on purpose
+- Per-product brand assets under `social-posts/images/brand/<slug>/` (also gitignored)
+
+If you see a `.example` file in the repo, that's the shareable template — the un-suffixed version of the same file is local-only by design. Run `git status` and `git check-ignore -v <path>` before any commit that touches `tools/`, `.github/`, or `reports/`.
+
+### Local config survives branch switches and merges
+
+Git only tracks files it knows about. Anything covered by `.gitignore` (your `.env`, `.github/team-members.md`, `.github/prompts/scout-config-<your-slug>.prompt.md`, `reports/*.md`, `social-posts/*.md`, `tools/one-shot-scan/`, `tools/mindshare-feed/`, browser-scan profile dirs, etc.) lives in your working tree but never in any branch. That means:
+
+- `git checkout <other-branch>` leaves your local config files exactly where they are.
+- `git merge` / `git rebase` / `git pull` operate only on tracked files — your local files can't be overwritten or removed by them.
+- You can freely work on a feature branch, merge it into `main`, and your `.env` + per-product config stay put on every branch.
+
+Two things to avoid so the safety net holds:
+
+- **Don't run `git clean -fX` or `git clean -fx`.** `-X` deletes ignored files; `-x` deletes everything untracked. Plain `git clean -fd` is safe (it only removes untracked, non-ignored files).
+- **Don't run `git stash -a`.** It stashes ignored files too. `git stash` and `git stash -u` are fine; neither touches ignored paths.
+
+Sanity check anytime with:
+
+```
+git check-ignore -v .env .github/team-members.md tools/one-shot-scan/scan.mjs
+```
+
+Every line should print the `.gitignore` rule that excludes it. A blank result means that file is *not* ignored and is at risk of being committed.
+
 ## Reporting Issues
 
 Open an issue if:

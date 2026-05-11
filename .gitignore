@@ -59,6 +59,9 @@ diag-*
 
 # Seen-links tracker (local state, not shared)
 reports/.seen-links.json
+reports/.closed-conversations.json
+reports/.closed-conversations.json.tmp
+reports/.closed-conversations.json.corrupt-*
 reports/.seen-urls-cache.txt
 
 # Persistent ecosystem state (creators.json etc — local state, not shared)
@@ -108,6 +111,24 @@ social-posts/images/*
 
 # Per-product brand assets are local customizations — never commit
 social-posts/images/brand/azure-cosmos-db/
+
+# ---------------------------------------------------------------------------
+# Personal info — keep local, never push
+# ---------------------------------------------------------------------------
+# Real team-members file (the .example is the shareable template). Contains
+# people's display names / handles — local-only.
+.github/team-members.md
+
+# Local one-off scan tools that frequently contain hardcoded team-member
+# lists, internal handles, or product-specific allowlists. Keep these on
+# disk for personal use but never commit. The shareable equivalents live
+# under tools/web-ui/ and tools/browser-scan/.
+tools/one-shot-scan/
+tools/mindshare-feed/
+
+# Stray repo-root log captures (e.g. `node server.js > o.log`). Anything
+# matching *.log is already ignored, but pin the common one explicitly.
+/o.log
 
 # ---------------------------------------------------------------------------
 # Node.js / npm (covers all tools/* packages)
