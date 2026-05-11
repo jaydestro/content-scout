@@ -16,6 +16,7 @@ Ignore VS Code frontmatter (`tools:`, `${{input:...}}`) — that's editor-specif
    - At least one `.github/prompts/scout-config-*.prompt.md` (other than `scout-config-example.prompt.md`)
    - `reports/` and `social-posts/` directories
    - `reports/.seen-links.json` (created if missing — that's fine, just note it)
+   - `reports/.closed-conversations.json` (optional; created on first dismissal — just note presence)
    - `.gitignore` includes `reports/.scout-state/` and `reports/.seen-links.json`
 
 2. **Config completeness** — for each config file checked. Use exact-line regex `^##\s+<heading>` (not substring) so subsections like `### Product Team Members` don't false-match top-level headings.
@@ -58,6 +59,7 @@ Ignore VS Code frontmatter (`tools:`, `${{input:...}}`) — that's editor-specif
    - Schema spot-check: top-level `creators` array, each entry has `handle`, `platform`, `first_seen`
    - `reports/.scout-state/{slug}/runs.jsonl` parses line-by-line
    - `reports/.seen-links.json` parses as JSON
+   - `reports/.closed-conversations.json` parses as JSON if present (schema: `{ version: 1, items: { "<key>": { reason, note, closedAt, ... } } }`)
 
 6. **Free-tier viability** — if zero keys are present, confirm a free-tier scan would succeed (Dev.to, Medium, HN, SO, GitHub unauth, MS Learn). Print: "Free-tier mode is viable — `scout scan` will work without keys."
 

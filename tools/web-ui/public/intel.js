@@ -22,14 +22,32 @@
   // ============================================================
   let _allConvs = [];
   let _platforms = new Set();
+  // Keys of conversations the user has checkbox-selected. Cleared on each
+  // re-render so it tracks the currently visible set.
+  let _selectedKeys = new Set();
+  // Currently chosen `include` mode for /api/conversations.
+  function _currentInclude() {
+    return document.getElementById('conv-show')?.value || 'open';
+  }
+
+  const REASON_LABELS = {
+    'not-relevant': 'Not relevant',
+    'contacted': 'Contacted',
+    'follow-up-pm': 'Follow up with PM',
+    'spam': 'Spam / job post',
+    'duplicate': 'Duplicate',
+    'other': 'Other',
+  };
 
   async function loadConversations() {
     const list = document.getElementById('conv-list');
     if (!list) return;
     try {
-      const data = await fetch('/api/conversations').then((r) => r.json());
+      const include = _currentInclude();
+      const data = await fetch('/api/conversations?include=' + encodeURIComponent(include)).then((r) => r.json());
       _allConvs = Array.isArray(data.conversations) ? data.conversations : [];
       _platforms = new Set(_allConvs.map((c) => c.platform).filter(Boolean));
+      _selectedKeys = new Set();
       const sel = document.getElementById('conv-platform');
       if (sel) {
         const cur = sel.value;
@@ -91,12 +109,30 @@
   // Stylized Unicode letters (e.g. 𝗮𝗿𝗮𝗧) are folded via NFKD before matching.
   const _HIRING_PHRASES = [
     'hiring', '[hiring]', "we're hiring", 'we are hiring', 'now hiring',
-    'is hiring', 'looking to hire', 'apply now', 'open position', 'open role',
+    'is hiring', 'looking to hire', 'apply now', 'open position', 'open positions',
+    'open role', 'open roles', 'open opportunity', 'open opportunities',
+    'open to work', 'opentowork', '#opentowork',
+    'open to new opportunities', 'open for new opportunities',
+    'open to opportunities', 'open for opportunities', 'open to remote',
+    'available for remote', 'available for global', 'available for new',
+    'seeking new opportunities', 'seeking opportunities', 'seeking a new',
+    'seeking new role', 'seeking new opportunity',
+    'looking for new opportunities', 'looking for opportunities',
+    'looking for a new role', 'looking for my next', 'looking for new role',
+    'on the job market', 'actively looking', 'actively seeking',
     'seeking candidates', 'interested candidates', 'please share resume',
-    'please share resumes', 'share your resume', 'dm your resume',
-    'hr@', 'recruiting@', 'talent@', 'careers@', 'position 1:',
-    'urgent requirement', 'urgent hiring', 'c2c', 'c2h', 'w2 only',
-    'usc only', 'gc only', 'job opportunity', 'job opening', 'recruiter',
+    'please share resumes', 'share your resume', 'send your resume',
+    'send me your resume', 'send your cv', 'dm your resume',
+    'dm me your resume', 'dm for details',
+    'hr@', 'recruiting@', 'talent@', 'careers@', 'recruitment@', 'jobs@',
+    'position 1:', 'urgent requirement', 'urgent hiring', 'urgent opening',
+    'immediate joiner', 'immediate joiners', 'immediate hiring',
+    'c2c', 'c2h', 'w2 only', 'usc only', 'gc only',
+    'job opportunity', 'job opportunities', 'job opening', 'job openings', 'recruiter',
+    'looking to take on', 'critical role in a high-impact', 'are you an experienced',
+    'oportunidade:', 'oportunidade de', 'estamos em busca', 'em busca de uma referência',
+    'vaga:', 'vaga de', 'vagas de',
+    'búsqueda de', 'búsqueda laboral', 'busco trabajo', 'busco empleo',
   ];
   const _HIRING_SUBS = [
     'r/forhire', 'r/hiring', 'r/jobs', 'r/jobsearch', 'r/indiajobs',
@@ -123,13 +159,33 @@
       ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">Open ↗</a>`
       : '';
     const replyBtn =
-      c.url && (c.sentiment === 'negative' || c.sentiment === 'mixed')
+      c.url && (c.sentiment === 'negative' || c.sentiment === 'mixed') && !c.isClosed
         ? `<button type="button" class="conv-reply-btn" data-url="${esc(
             c.url
           )}" data-author="${esc(c.author || '')}">Draft reply post</button>`
         : '';
-    return `<div class="conv-row sent-${esc(c.sentiment)}">
+    const key = c.key || '';
+    const checked = _selectedKeys.has(key) ? ' checked' : '';
+    const checkbox = key
+      ? `<label class="conv-select"><input type="checkbox" class="conv-cb" data-key="${esc(key)}"${checked} aria-label="Select conversation"></label>`
+      : '';
+    const closedClass = c.isClosed ? ' conv-closed' : '';
+    let closedBanner = '';
+    let actionBtn = '';
+    if (c.isClosed && c.closedInfo) {
+      const reasonLabel = REASON_LABELS[c.closedInfo.reason] || c.closedInfo.reason || 'Closed';
+      const note = c.closedInfo.note ? ` — ${esc(c.closedInfo.note)}` : '';
+      const when = c.closedInfo.closedAt ? ` · ${esc(c.closedInfo.closedAt.slice(0, 10))}` : '';
+      closedBanner = `<div class="conv-closed-banner">Closed: <strong>${esc(reasonLabel)}</strong>${note}${when}</div>`;
+      actionBtn = key
+        ? `<button type="button" class="conv-reopen-btn" data-key="${esc(key)}">Reopen</button>`
+        : '';
+    } else if (key) {
+      actionBtn = `<button type="button" class="conv-close-btn" data-key="${esc(key)}">Close…</button>`;
+    }
+    return `<div class="conv-row sent-${esc(c.sentiment)}${closedClass}" data-key="${esc(key)}">
       <div class="conv-row-head">
+        ${checkbox}
         <span class="conv-dot" title="${esc(c.sentiment)}">${dot}</span>
         <strong>${esc(c.author || '(unknown)')}</strong>
         <span class="conv-platform">${esc(c.platform || '')}</span>
@@ -138,7 +194,8 @@
         ${link}
       </div>
       <div class="conv-summary">${esc(c.summary || '')}</div>
-      <div class="conv-actions">${replyBtn}</div>
+      ${closedBanner}
+      <div class="conv-actions">${replyBtn}${actionBtn}</div>
     </div>`;
   }
 
@@ -269,6 +326,112 @@
         if (navBtn) navBtn.click();
       });
     });
+
+    list.querySelectorAll('.conv-cb').forEach((cb) => {
+      cb.addEventListener('change', () => {
+        const key = cb.dataset.key;
+        if (!key) return;
+        if (cb.checked) _selectedKeys.add(key);
+        else _selectedKeys.delete(key);
+        _updateBulkBar();
+      });
+    });
+    list.querySelectorAll('.conv-close-btn').forEach((btn) => {
+      btn.addEventListener('click', () => _promptCloseSingle(btn.dataset.key));
+    });
+    list.querySelectorAll('.conv-reopen-btn').forEach((btn) => {
+      btn.addEventListener('click', () => _reopen([btn.dataset.key]));
+    });
+    _updateBulkBar();
+  }
+
+  // ----- Close / reopen plumbing ---------------------------------
+
+  function _findConvByKey(key) {
+    return _allConvs.find((c) => c.key === key) || null;
+  }
+
+  function _updateBulkBar() {
+    const bar = document.getElementById('conv-bulk-bar');
+    if (!bar) return;
+    const count = _selectedKeys.size;
+    bar.hidden = count === 0;
+    const lbl = document.getElementById('conv-bulk-count');
+    if (lbl) lbl.textContent = count === 1 ? '1 selected' : `${count} selected`;
+  }
+
+  function _promptCloseSingle(key) {
+    if (!key) return;
+    const conv = _findConvByKey(key);
+    if (!conv) return;
+    const reasons = Object.entries(REASON_LABELS)
+      .map(([id, label], i) => `${i + 1}. ${label}`)
+      .join('\n');
+    const pick = window.prompt(
+      `Close this conversation. Choose a reason (1-${Object.keys(REASON_LABELS).length}):\n\n${reasons}\n\nEnter number:`,
+      '1'
+    );
+    if (pick == null) return;
+    const idx = parseInt(String(pick).trim(), 10) - 1;
+    const ids = Object.keys(REASON_LABELS);
+    if (!(idx >= 0 && idx < ids.length)) {
+      alert('Invalid choice.');
+      return;
+    }
+    const reason = ids[idx];
+    let note = '';
+    if (reason === 'other') {
+      note = window.prompt('Note (required for "Other"):', '') || '';
+      if (!note.trim()) return;
+    } else {
+      note = window.prompt('Optional note (leave blank to skip):', '') || '';
+    }
+    _close([{ key, conv }], reason, note);
+  }
+
+  function _bulkClose() {
+    if (!_selectedKeys.size) return;
+    const reason = document.getElementById('conv-bulk-reason')?.value || 'not-relevant';
+    const note = (document.getElementById('conv-bulk-note')?.value || '').trim();
+    if (reason === 'other' && !note) {
+      alert('"Other" requires a note.');
+      return;
+    }
+    const entries = [...(_selectedKeys)].map((key) => ({ key, conv: _findConvByKey(key) || { key } }));
+    _close(entries, reason, note);
+  }
+
+  async function _close(entries, reason, note) {
+    try {
+      const res = await fetch('/api/conversations/close', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ items: entries, reason, note }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      _selectedKeys.clear();
+      const noteEl = document.getElementById('conv-bulk-note');
+      if (noteEl) noteEl.value = '';
+      await loadConversations();
+    } catch (err) {
+      alert('Close failed: ' + (err.message || err));
+    }
+  }
+
+  async function _reopen(keys) {
+    try {
+      const res = await fetch('/api/conversations/reopen', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ keys }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      await loadConversations();
+    } catch (err) {
+      alert('Reopen failed: ' + (err.message || err));
+    }
   }
 
   function wireConversationsUI() {
@@ -295,6 +458,33 @@
         el.addEventListener('change', persist);
       }
     });
+    // conv-show changes `include` mode and requires a refetch.
+    const showSel = document.getElementById('conv-show');
+    if (showSel && !showSel.dataset.wired) {
+      showSel.dataset.wired = '1';
+      try {
+        const saved = localStorage.getItem('cs.conv.conv-show');
+        if (saved) showSel.value = saved;
+      } catch {}
+      showSel.addEventListener('change', () => {
+        try { localStorage.setItem('cs.conv.conv-show', showSel.value); } catch {}
+        loadConversations();
+      });
+    }
+    // Bulk bar buttons
+    const closeBtn = document.getElementById('conv-bulk-close');
+    if (closeBtn && !closeBtn.dataset.wired) {
+      closeBtn.dataset.wired = '1';
+      closeBtn.addEventListener('click', _bulkClose);
+    }
+    const clearBtn = document.getElementById('conv-bulk-clear');
+    if (clearBtn && !clearBtn.dataset.wired) {
+      clearBtn.dataset.wired = '1';
+      clearBtn.addEventListener('click', () => {
+        _selectedKeys.clear();
+        renderConversations();
+      });
+    }
   }
 
   // ============================================================

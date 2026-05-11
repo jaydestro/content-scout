@@ -39,7 +39,7 @@ If the user chooses quick setup, ask these three questions **one at a time** (wa
    - **Slug** from the name (lowercase, hyphenated)
    - **Role defaults** for all feature toggles
    - **Content filters**, **topic tags**, and **social post standards** using sensible defaults
-   - Skip: exclusions (none), people to watch (none), brand assets (text-only thumbnails), competitors (none), conferences (none), posting preferences (defaults)
+   - Skip: exclusions (none), people to watch (none), brand assets (text-only thumbnails + auto-generated master thumbnail prompt using developer-first defaults), competitors (none), conferences (none), posting preferences (defaults)
 5. Save the config file and `.env` (if keys were provided).
 6. Tell the user: "Quick setup complete! You can customize further anytime by editing the config file or running onboarding again."
 
@@ -51,7 +51,7 @@ Standard setup covers the essentials and uses Smart Suggestions for the rest. Th
 2. **Product identity** — Group 2 fields asked one at a time: (a) full name, (b) type, (c) slug. Then present combined Smart Suggestions for search terms, hashtags, and topic tags as a **single confirm/edit** step.
 3. **Exclusions** — Group 3, streamlined into a single confirm step: "I found these official channels for {product}. Should I exclude them?" Show suggestions. User confirms, adds, or says "none."
 4. **Networks** — Group 4. Show the source table, default to "all". Then, if any selected source requires a key, ask about each key one at a time.
-5. **Social posts** — If the role has social posts enabled, ask once: "Want to configure your brand and post standards now, or use defaults?" If "defaults", auto-generate. If "configure", walk through Group 6 one question at a time.
+5. **Social posts** — If the role has social posts enabled, ask once: "Want to configure your brand and post standards now, or use defaults?" If "defaults", auto-generate (including a master thumbnail prompt synthesized from the product name + developer-first defaults). If "configure", walk through Group 6 one question at a time — including the **Master thumbnail prompt** field, which the user can paste in or accept an auto-synthesized version of.
 6. **Review** — Show a summary of the complete config with all Smart Suggestions applied. Ask one question: "Anything you want to change or add?" Handle adjustments, then save.
 
 #### Full Setup Flow
@@ -76,6 +76,7 @@ After the user provides the product name and type (Group 2), the agent should **
 | SDK packages | Language-specific package names | Search package registries (NuGet, npm, PyPI, Maven) for official SDKs |
 | Conferences | Relevant conferences and event series | Infer from the product domain (e.g., cloud product → KubeCon, re:Invent, Build) |
 | Custom sources | Vendor blog, update feed, docs site | Search for the product's official documentation and blog |
+| Master thumbnail prompt | Reusable creative brief covering design style, colors, typography, visual elements, composition, platform sizes, tone, guardrails, and campaign overlays | Synthesize from the product name, type, brand colors, style, font, composition, and guardrails the user already provided; default audience = developers + technical decision makers unless the user said otherwise |
 
 ### How to Present Suggestions
 
@@ -408,6 +409,7 @@ Collect brand identity details so thumbnails accurately represent the product. S
 - **Font preferences:** Any specific fonts for headlines or body text? (e.g., "Segoe UI Semibold for headings", "Use brand typeface only")
 - **Thumbnail composition:** Any preferences for layout? (e.g., "Logo top-left, headline centered", "Always include a subtle pattern overlay", "Text should never overlap the logo")
 - **Things to NEVER do on thumbnails:** List any brand guardrails. (e.g., "Never stretch or recolor the logo", "Never use gradients on the logo", "Never use competitor colors", "Never add drop shadows to the logo")
+- **Master thumbnail prompt (reusable creative brief):** A single multi-line prompt that captures the full creative brief for any social graphic — design style, color palette, typography rules, visual elements to pull from, composition rules, platform variant sizes, content tone, things to avoid, and optional campaign overlays. This becomes the baseline that every topic-specific prompt layers on top of (e.g. *"Use the {Product} social template. Topic: {topic}. Overlay: '{phrase}'. Include {visuals}."*). Say **"use defaults"** to have the agent auto-generate one from the brand colors, style, font, composition, and guardrails you already gave; or paste your own. If you already have a marketing-approved creative brief, paste it verbatim.
 - **Other brand concerns:** Anything a marketing team would flag? (e.g., "All thumbnails must match our brand kit at {URL}", "Follow accessibility contrast ratios", "Include legal disclaimer for preview features")
 
 #### Social Post Standards
@@ -635,6 +637,11 @@ description: "Content Scout configuration for {Product Name}"
 - **Font:** {e.g., "Segoe UI Semibold for headings" or "none"}
 - **Thumbnail composition:** {layout preferences, e.g., "Logo top-left, headline centered" or "none"}
 - **Brand guardrails (never do):** {list of things to never do, e.g., "Never stretch logo, never use competitor colors" or "none"}
+- **Master thumbnail prompt:** |
+  <!-- Reusable creative brief for any social graphic. Topic-specific prompts (e.g. /scout-post) layer on top of this. -->
+  <!-- If the user said "use defaults", auto-generate this block from the brand colors, style, font, composition, and guardrails above. -->
+  <!-- Structure: design style, color palette (with hex codes), typography, visual elements to pull from, composition rules, platform variants with sizes, content tone, things to avoid, optional campaign overlays. -->
+  {multi-line creative brief — see Brand Assets section of `scout-config-azure-cosmos-db.prompt.md` for a reference example}
 - **Additional brand concerns:** {marketing team requirements or "none"}
 - **Thumbnail sizes:**
   - LinkedIn: 1200x1200 (square) or 1200x628 (landscape)

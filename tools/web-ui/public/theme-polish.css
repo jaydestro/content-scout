@@ -516,6 +516,11 @@ button.btn-primary:hover:not(:disabled) {
               0 12px 28px rgba(2,6,18,0.45),
               0 0 0 1px rgba(129,140,248,0.20);
 }
+.dash-stats .stat.is-clickable { cursor: pointer; }
+.dash-stats .stat.is-clickable:focus-visible {
+  outline: 2px solid var(--brand, #818cf8);
+  outline-offset: 2px;
+}
 .dash-stats .stat:hover::before {
   opacity: 1;
   background: var(--brand-gradient);

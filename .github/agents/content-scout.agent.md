@@ -71,6 +71,7 @@ Content Scout supports tracking multiple topics simultaneously — whether they'
 - Calendars: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-posting-calendar.md`
 - When only one product is configured, the slug is optional in filenames for backward compatibility.
 - The dedup tracker `reports/.seen-links.json` is shared across all products.
+- The closed-conversations tracker `reports/.closed-conversations.json` records Conversations & mentions rows the user has dismissed (with a reason: not-relevant, contacted, follow-up-pm, spam, duplicate, other). The web UI and `tools/conversations-cli.mjs` read/write this file. When summarizing or proposing replies for Conversations, skip rows whose URL (or composite key) appears in `items` — these have been explicitly dismissed.
 
 **Adding products later:** Users can run `/scout-onboard` at any time to add a new product. The onboarding wizard detects existing configs and offers to add a new product without re-asking shared settings (role, networks, brand).
 

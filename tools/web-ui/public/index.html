@@ -7,7 +7,19 @@
     <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <!-- Load Google Fonts CSS without blocking first paint. The `media=print`
+         trick lets the browser fetch the stylesheet at low priority and apply
+         it once loaded; `display=swap` in the URL prevents FOIT. The <noscript>
+         fallback covers users with JS disabled. -->
+    <link
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      onload="this.onload=null;this.rel='stylesheet'"
+    />
+    <noscript>
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    </noscript>
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="theme-modern.css" />
     <link rel="stylesheet" href="theme-polish.css" />
@@ -1048,7 +1060,26 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             <input type="checkbox" id="conv-needs-reply" />
             Needs reply (negative + mixed)
           </label>
+          <select id="conv-show" aria-label="Show closed" title="Show closed / dismissed conversations">
+            <option value="open">Hide closed</option>
+            <option value="all">Show all (incl. closed)</option>
+            <option value="closed">Only closed</option>
+          </select>
           <span class="hint" id="conv-meta"></span>
+        </div>
+        <div id="conv-bulk-bar" class="conv-bulk-bar" hidden>
+          <span id="conv-bulk-count">0 selected</span>
+          <select id="conv-bulk-reason" aria-label="Close reason">
+            <option value="not-relevant">Not relevant</option>
+            <option value="contacted">Contacted</option>
+            <option value="follow-up-pm">Follow up with PM</option>
+            <option value="spam">Spam / job post</option>
+            <option value="duplicate">Duplicate</option>
+            <option value="other">Other…</option>
+          </select>
+          <input id="conv-bulk-note" type="text" placeholder="Optional note (required for Other)" maxlength="500" />
+          <button type="button" id="conv-bulk-close">Close selected</button>
+          <button type="button" id="conv-bulk-clear" class="secondary">Clear</button>
         </div>
         <div id="conv-list"><p class="hint">Loading…</p></div>
       </section>
@@ -1111,15 +1142,15 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
     </dialog>
 
     <script src="app.js" type="module"></script>
-    <script src="toasts.js"></script>
-    <script src="runs-queue.js"></script>
-    <script src="run-enhancer.js"></script>
-    <script src="bulk-urls.js"></script>
-    <script src="dashboard-enhancer.js"></script>
-    <script src="help.js"></script>
-    <script src="command-palette.js"></script>
-    <script src="theme.js"></script>
-    <script src="intel.js"></script>
-    <script src="browser-scan-ui.js"></script>
+    <script src="toasts.js" defer></script>
+    <script src="runs-queue.js" defer></script>
+    <script src="run-enhancer.js" defer></script>
+    <script src="bulk-urls.js" defer></script>
+    <script src="dashboard-enhancer.js" defer></script>
+    <script src="help.js" defer></script>
+    <script src="command-palette.js" defer></script>
+    <script src="theme.js" defer></script>
+    <script src="intel.js" defer></script>
+    <script src="browser-scan-ui.js" defer></script>
   </body>
 </html>

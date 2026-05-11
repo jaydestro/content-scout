@@ -40,6 +40,7 @@ Read the corresponding prompt file for each command's detailed flow. Ignore VS C
 - Alt text: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-alt-{image-slug}.md`
 - Trends: `reports/{YYYY-MM-DD-HHmm}-{slug}-trends.md`
 - Dedup: `reports/.seen-links.json`
+- Closed conversations: `reports/.closed-conversations.json` (dismissed Conversations & mentions rows; shared by web UI and `tools/conversations-cli.mjs`)
 
 ## Key Rules
 

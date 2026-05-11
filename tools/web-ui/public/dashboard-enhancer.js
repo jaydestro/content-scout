@@ -89,6 +89,53 @@
     if (t) t.textContent = totals.thumbnailImages ?? 0;
     const ls = $('stat-last-scan');
     if (ls) ls.textContent = last.scan ? relativeDay(last.scan) : 'Never';
+    wireStatLinks();
+  }
+
+  // The At-a-glance tiles look interactive (hover lift, gradient outline) but
+  // didn't actually go anywhere. Wire each tile to the matching view so the
+  // affordance pays off: Subjects → Configs, Reports → Reports, Social → Social,
+  // Last scan → opens the latest report. Idempotent via dataset.wired.
+  function wireStatLinks() {
+    const targets = [
+      { id: 'stat-subjects', view: 'configs', label: 'Open configs' },
+      { id: 'stat-reports', view: 'reports', label: 'Open reports' },
+      { id: 'stat-social', view: 'social', label: 'Open social posts' },
+      { id: 'stat-last-scan', view: null, label: 'Open latest report' },
+    ];
+    for (const t of targets) {
+      const num = $(t.id);
+      if (!num) continue;
+      const tile = num.closest('.stat');
+      if (!tile || tile.dataset.wired) continue;
+      tile.dataset.wired = '1';
+      tile.classList.add('is-clickable');
+      tile.setAttribute('role', 'button');
+      tile.setAttribute('tabindex', '0');
+      tile.setAttribute('aria-label', t.label);
+      const activate = () => {
+        if (t.view) {
+          const navBtn = document.querySelector(`nav button[data-view="${t.view}"]`);
+          if (navBtn) navBtn.click();
+          return;
+        }
+        // Last scan tile: reuse the existing "Open latest report" flow.
+        if (typeof window.contentScoutOpenLatestReport === 'function') {
+          window.contentScoutOpenLatestReport();
+        } else {
+          const navBtn = document.querySelector('nav button[data-view="reports"]');
+          if (navBtn) navBtn.click();
+          setTimeout(() => document.querySelector('#reports-list li')?.click(), 200);
+        }
+      };
+      tile.addEventListener('click', activate);
+      tile.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          activate();
+        }
+      });
+    }
   }
 
   // Unified timeline: reports + social posts + calendars + thumbnails + runs.

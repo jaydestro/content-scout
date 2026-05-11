@@ -83,10 +83,24 @@ CLAUDE.md                                  # Claude Code adapter
 .cursor/rules/content-scout.mdc            # Cursor adapter
 docs/                                      # WORKFLOW, SOURCES, API-KEYS, EDITORS, ARCHITECTURE
 examples/                                  # Sample outputs
-reports/                                   # Generated content & trends reports
-social-posts/                              # Generated posts, calendars, thumbnails
-tools/web-ui/                              # Local browser dashboard
+reports/                                   # Generated content & trends reports (.md/.json gitignored)
+reports/.closed-conversations.json         # Dismissed Conversations & mentions rows (shared by web UI + CLI)
+social-posts/                              # Generated posts, calendars, thumbnails (.md/.json gitignored)
+tools/web-ui/                              # Local browser dashboard (Express server on :4477)
+tools/web-ui/lib/closed-conversations.js   # Storage layer for dismissed conversation rows
+tools/conversations-cli.mjs                # CLI for closing/listing conversations from the terminal
 tools/browser-scan/                        # Logged-in browser scraper (Edge/Chrome/Brave/etc. via CDP) for X / LinkedIn / Reddit Layer 0
+.github/team-members.md.example            # Template for team-member exclusion list (copy to team-members.md, gitignored)
 .env.example                               # API key template (copy to .env)
 ```
+
+## Web UI surface
+
+`tools/web-ui/server.js` (Express, default `http://127.0.0.1:4477`) exposes:
+
+- `/api/env` (GET / POST) — read/write `.env`. The GET handler **filters out vision provider keys** (`VISION_PROVIDER`, `OLLAMA_HOST`, `OLLAMA_VISION_MODEL`, `OPENAI_VISION_MODEL`, `CUSTOM_VISION_*`) so the API Keys editor never shows or overwrites them.
+- `/api/vision-config` — read/write the same vision keys; backs the dedicated **Vision** card on the Configs page (and `/scout-vision`).
+- `/api/closed-conversations` — list/add/remove dismissed Conversations & mentions rows. State lives in `reports/.closed-conversations.json` and is shared with `tools/conversations-cli.mjs`.
+- `/api/runs/scan` — Step 0 runs `node tools/browser-scan/index.mjs scan --slug {slug}` (Auto / Force / Skip modes from the Run-view "Browser scan (Layer 0)" fieldset) before invoking the agent.
+- The dashboard's **At-a-glance** tiles are click-through and route to the relevant detail view.
 
