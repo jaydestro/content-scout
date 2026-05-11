@@ -658,8 +658,19 @@ code, pre { overflow-wrap: anywhere; }
   display: flex; justify-content: space-between; align-items: center; gap: 1rem;
   padding-top: 0.5rem; border-top: 1px solid var(--border);
 }
+/* Push the destructive "Start over" link well away from the primary
+   "Next →" button so it can't be hit by accident. */
+.wiz-nav #wiz-restart { margin-right: auto; }
 .wiz-nav button[disabled] { opacity: 0.45; cursor: not-allowed; }
 .wiz-summary { margin: 0.5rem 0 0; display: grid; grid-template-columns: max-content 1fr; gap: 0.35rem 1rem; }
+
+/* View header — title on the left, primary action on the right.
+   Used on the Configs view to surface "+ Add subject" without forcing
+   the user to read the hint paragraph below. */
+.view-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; margin-bottom: 0.5rem; flex-wrap: wrap;
+}
 .wiz-summary dt { font-weight: 600; color: var(--muted-2); margin: 0; }
 .wiz-summary dd { margin: 0; color: var(--text); }
 /* Role picker */

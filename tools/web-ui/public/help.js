@@ -206,8 +206,14 @@
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'help-nav-btn';
-    btn.textContent = 'Help';
+    btn.setAttribute('aria-label', 'Help');
     btn.title = 'What is this app? (Shift+?)';
+    // Match the icon+label structure of the other nav buttons so it
+    // inherits the same active/hover/responsive collapse behavior.
+    btn.innerHTML = `
+      <svg class="icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span class="nav-label">Help</span>
+    `;
     btn.addEventListener('click', () => openDrawer());
     nav.appendChild(btn);
   }
