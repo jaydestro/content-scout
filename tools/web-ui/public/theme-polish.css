@@ -1,0 +1,776 @@
+/* ============================================================
+   Content Scout — Visual polish layer
+   Loaded AFTER theme-modern.css. Refines typography, hero,
+   stats, section headers, cards, and buttons for a more modern,
+   premium feel inspired by Linear / Vercel / Stripe dashboards.
+   Adds nothing structural — purely cosmetic refinement.
+   ============================================================ */
+
+/* ---------------------------------------------------------------
+   1. Page rhythm & background
+   --------------------------------------------------------------- */
+
+:root {
+  /* Polished radii — slightly larger for a more modern feel. */
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+
+  /* A unified "brand" gradient used by the hero, primary CTA,
+     and decorative accents. */
+  --brand-gradient: linear-gradient(135deg,
+    #818cf8 0%, #a78bfa 35%, #f472b6 70%, #fb923c 100%);
+  --brand-gradient-soft: linear-gradient(135deg,
+    rgba(129,140,248,0.18) 0%, rgba(167,139,250,0.14) 50%, rgba(244,114,182,0.10) 100%);
+}
+
+html, body {
+  /* Richer multi-blob background. The original radial gradients are
+     kept; we add a slow drift so the page never feels static. */
+  background:
+    radial-gradient(ellipse 60% 38% at 18% -8%, rgba(129,140,248,0.18), transparent 65%),
+    radial-gradient(ellipse 50% 32% at 88% -4%, rgba(244,114,182,0.13), transparent 65%),
+    radial-gradient(ellipse 55% 30% at 50% 110%, rgba(52,211,153,0.08), transparent 65%),
+    var(--bg);
+  background-attachment: fixed;
+}
+
+/* ---------------------------------------------------------------
+   2. Top banner (with the dog) + left sidebar nav
+   Layout: top row spans full width with the brand banner;
+   below it, a left rail holds the nav + actions, and main fills
+   the rest. Inspired by PM-Agents / Linear / Notion sidebars.
+   --------------------------------------------------------------- */
+
+:root {
+  --sidebar-w: 248px;
+  --sidebar-w-sm: 220px;
+  --topbar-h: 64px;
+}
+
+/* Body becomes the layout grid. .site-header is `display: contents`
+   so its children (.banner + .header-bar) place themselves as direct
+   grid items. */
+body {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  grid-template-rows: var(--topbar-h) minmax(0, 1fr);
+  grid-template-areas:
+    "topbar topbar"
+    "side   main";
+  min-height: 100vh;
+}
+@media (max-width: 1100px) {
+  body { grid-template-columns: var(--sidebar-w-sm) minmax(0, 1fr); }
+}
+
+main {
+  grid-area: main;
+  padding-top: var(--space-6);
+  padding-bottom: var(--space-10);
+  min-width: 0;
+}
+
+.site-header { display: contents; }
+
+/* --- Top banner row (the dog) -------------------------------- */
+.site-header .banner {
+  grid-area: topbar;
+  position: sticky;
+  top: 0;
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0 var(--space-5);
+  text-decoration: none;
+  background: linear-gradient(180deg, rgba(15,18,25,0.95), rgba(11,13,19,0.88));
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.03), 0 8px 24px rgba(0,0,0,0.35);
+  transition: opacity 0.18s ease;
+}
+html[data-theme="light"] .site-header .banner {
+  background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,250,252,0.9));
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 0 rgba(15,23,42,0.04), 0 8px 24px rgba(15,23,42,0.06);
+}
+/* Brand-gradient hairline under the top banner. */
+.site-header .banner::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent, rgba(129,140,248,0.55) 25%,
+    rgba(244,114,182,0.55) 75%, transparent);
+  pointer-events: none;
+}
+html[data-theme="light"] .site-header .banner::after {
+  background: linear-gradient(90deg,
+    transparent, rgba(99,102,241,0.45) 25%,
+    rgba(236,72,153,0.45) 75%, transparent);
+}
+.site-header .banner:hover { opacity: 0.92; }
+.site-header .banner-logo,
+.site-header .banner img {
+  width: 40px; height: 40px; border-radius: 10px;
+  box-shadow: 0 6px 16px rgba(99,102,241,0.35);
+  flex-shrink: 0;
+}
+.site-header .banner-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  min-width: 0;
+}
+.site-header .banner-title,
+.site-header .banner .brand-name,
+.site-header .banner h1,
+.site-header .banner .title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.site-header .banner-tagline {
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- Left sidebar (nav + actions) ----------------------------- */
+.site-header .header-bar {
+  grid-area: side;
+  position: sticky;
+  top: var(--topbar-h);
+  align-self: start;
+  height: calc(100vh - var(--topbar-h));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-3);
+  background: linear-gradient(180deg, rgba(15,18,25,0.85), rgba(11,13,19,0.85));
+  border-right: 1px solid var(--border);
+  box-shadow: 1px 0 0 rgba(255,255,255,0.03), 12px 0 36px rgba(0,0,0,0.25);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  z-index: 10;
+}
+html[data-theme="light"] .site-header .header-bar {
+  background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(248,250,252,0.88));
+  box-shadow: 1px 0 0 rgba(15,23,42,0.04), 12px 0 36px rgba(15,23,42,0.05);
+}
+/* Brand-gradient hairline along the right edge of the sidebar. */
+.site-header .header-bar::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; right: -1px;
+  width: 1px;
+  background: linear-gradient(180deg,
+    transparent, rgba(129,140,248,0.45) 30%,
+    rgba(244,114,182,0.45) 70%, transparent);
+  pointer-events: none;
+}
+html[data-theme="light"] .site-header .header-bar::after {
+  background: linear-gradient(180deg,
+    transparent, rgba(99,102,241,0.35) 30%,
+    rgba(236,72,153,0.35) 70%, transparent);
+}
+/* Old .site-header::after horizontal hairline is no longer needed. */
+.site-header::after { content: none; }
+
+/* Nav — vertical stack of full-width pills, like PM Agents. */
+.site-header nav,
+.site-header .header-bar > nav {
+  display: flex !important;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 6px;
+  margin: 0;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 0 1 auto;
+  min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  max-width: none;
+}
+html[data-theme="light"] .site-header nav { background: rgba(15,23,42,0.03); }
+
+.site-header nav button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--muted-2);
+  white-space: nowrap;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+.site-header nav button .icon {
+  width: 16px; height: 16px;
+  opacity: 0.75;
+  flex-shrink: 0;
+}
+.site-header nav button .nav-label {
+  display: inline;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.9rem;
+}
+.site-header nav button:hover {
+  color: var(--text);
+  background: rgba(255,255,255,0.05);
+}
+.site-header nav button:hover .icon { opacity: 1; }
+.site-header nav button.active {
+  color: var(--text);
+  background: linear-gradient(135deg, rgba(129,140,248,0.22), rgba(167,139,250,0.16));
+  border-color: rgba(129,140,248,0.45);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 4px 14px rgba(99,102,241,0.18);
+}
+.site-header nav button.active .icon { color: var(--accent); opacity: 1; }
+html[data-theme="light"] .site-header nav button:hover {
+  background: rgba(15,23,42,0.06);
+}
+html[data-theme="light"] .site-header nav button.active {
+  color: var(--accent-strong);
+  background: linear-gradient(135deg, rgba(79,70,229,0.12), rgba(124,58,237,0.10));
+  border-color: rgba(79,70,229,0.35);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 4px 12px rgba(79,70,229,0.12);
+}
+
+/* Actions — pinned to the bottom of the sidebar. */
+.site-header .header-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  margin-top: auto;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.site-header .header-actions .theme-toggle {
+  width: 100%;
+  justify-content: flex-start;
+  margin-left: 0;
+  height: auto;
+  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+}
+.site-header .header-actions #status-pill,
+.site-header .header-actions .pill {
+  width: 100%;
+  justify-content: flex-start;
+  border-radius: 10px;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.78rem;
+}
+
+/* Mobile: collapse to a top bar (brand + hamburger nav row).
+   Below 760px: sidebar becomes a horizontal strip on top. */
+@media (max-width: 760px) {
+  body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
+  .site-header {
+    position: sticky;
+    top: 0;
+    height: auto;
+    flex-direction: column;
+    padding: var(--space-3) var(--space-4);
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.03), 0 8px 24px rgba(0,0,0,0.25);
+  }
+  .site-header::after {
+    top: auto; bottom: -1px; right: 0; left: 0;
+    width: auto; height: 1px;
+    background: linear-gradient(90deg,
+      transparent, rgba(129,140,248,0.55) 25%,
+      rgba(244,114,182,0.55) 75%, transparent);
+  }
+  html[data-theme="light"] .site-header::after {
+    background: linear-gradient(90deg,
+      transparent, rgba(99,102,241,0.45) 25%,
+      rgba(236,72,153,0.45) 75%, transparent);
+  }
+  .site-header .header-bar { flex-direction: row; align-items: center; gap: var(--space-2); }
+  .site-header nav,
+  .site-header .header-bar > nav {
+    flex-direction: row !important;
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex: 1 1 auto;
+    border-radius: 999px;
+    padding: 4px;
+  }
+  .site-header nav button { width: auto; }
+  .site-header nav button .nav-label { display: none; }
+  .site-header nav button.active .nav-label { display: inline; }
+  .site-header .header-actions {
+    flex-direction: row;
+    align-items: center;
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+  }
+  .site-header .header-actions .theme-toggle,
+  .site-header .header-actions #status-pill,
+  .site-header .header-actions .pill {
+    width: auto;
+  }
+  .site-header .header-actions #status-pill { display: none; }
+}
+
+/* ---------------------------------------------------------------
+   3. Section eyebrows — left accent bar + cleaner type
+   --------------------------------------------------------------- */
+
+.dash-section-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: var(--space-8) 0 var(--space-4);
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.dash-section-head::before {
+  content: '';
+  width: 22px; height: 2px;
+  background: var(--brand-gradient);
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+/* The very first section head on a view has less top spacing. */
+.view > .dash-section-head:first-of-type,
+#dash-body > .dash-section-head:first-of-type {
+  margin-top: var(--space-5);
+}
+
+/* ---------------------------------------------------------------
+   4. Hero — display headline with gradient text
+   --------------------------------------------------------------- */
+
+.dash-hero {
+  position: relative;
+  background:
+    radial-gradient(120% 80% at 0% 0%, rgba(129,140,248,0.18), transparent 55%),
+    radial-gradient(120% 80% at 100% 0%, rgba(244,114,182,0.12), transparent 55%),
+    linear-gradient(180deg, var(--panel), var(--panel-2));
+  border: 1px solid var(--border);
+  /* Sidebar layout: hero is a free-floating panel again, so round
+     all four corners. */
+  border-radius: var(--radius-xl);
+  padding: var(--space-7) var(--space-8) var(--space-8);
+  margin-bottom: var(--space-6);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-6);
+  align-items: center;
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), var(--shadow-md);
+}
+/* Decorative gradient blob on the right that scrolls smoothly */
+.dash-hero::after {
+  content: '';
+  position: absolute;
+  right: -120px; top: -80px;
+  width: 360px; height: 360px;
+  background: radial-gradient(circle at center, rgba(167,139,250,0.35), transparent 60%);
+  filter: blur(20px);
+  pointer-events: none;
+  opacity: 0.7;
+  animation: hero-float 14s ease-in-out infinite alternate;
+}
+@keyframes hero-float {
+  from { transform: translate(0, 0) scale(1); }
+  to   { transform: translate(-30px, 20px) scale(1.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dash-hero::after { animation: none; }
+}
+
+.dash-hero h2 {
+  margin: 0 0 0.35rem;
+  font-size: clamp(1.8rem, 3.2vw, 2.4rem);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  background: linear-gradient(135deg, #ffffff 0%, #c7d2fe 60%, #f9a8d4 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  line-height: 1.1;
+}
+.dash-hero .hint,
+.dash-hero #dash-hero-sub {
+  font-size: 1rem;
+  color: var(--muted-2);
+  margin: 0;
+}
+.dash-hero-actions {
+  display: flex; flex-wrap: wrap; gap: 0.5rem;
+  position: relative; z-index: 1;
+}
+.dash-hero-actions button { padding: 0.65rem 1.2rem; font-size: 0.95rem; }
+
+/* The primary "Run a scan" CTA — make it pop with the brand gradient. */
+.dash-hero-actions .btn-primary,
+button.btn-primary {
+  background: var(--brand-gradient);
+  background-size: 180% 180%;
+  color: #fff;
+  border: 0;
+  font-weight: 600;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.22) inset,
+    0 8px 22px rgba(99,102,241,0.45);
+  transition: background-position 0.4s ease, transform 0.1s ease, box-shadow 0.18s ease;
+}
+.dash-hero-actions .btn-primary:hover:not(:disabled),
+button.btn-primary:hover:not(:disabled) {
+  background-position: 100% 0;
+  filter: none;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.28) inset,
+    0 12px 28px rgba(167,139,250,0.55);
+  transform: translateY(-1px);
+}
+
+/* On narrow screens stack vertically. */
+@media (max-width: 720px) {
+  .dash-hero {
+    grid-template-columns: 1fr;
+    padding: var(--space-6);
+  }
+  .dash-hero h2 { font-size: 1.6rem; }
+}
+
+/* ---------------------------------------------------------------
+   5. Stats tiles — gradient hairline border + display numbers
+   --------------------------------------------------------------- */
+
+.dash-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-2);
+}
+.dash-stats .stat {
+  position: relative;
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03), var(--shadow-sm);
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.dash-stats .stat::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, transparent, transparent);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
+  transition: background 0.25s ease, opacity 0.25s ease;
+  opacity: 0;
+}
+.dash-stats .stat:hover {
+  transform: translateY(-2px);
+  border-color: transparent;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05),
+              0 12px 28px rgba(2,6,18,0.45),
+              0 0 0 1px rgba(129,140,248,0.20);
+}
+.dash-stats .stat:hover::before {
+  opacity: 1;
+  background: var(--brand-gradient);
+}
+.dash-stats .stat-num {
+  font-family: var(--font-sans);
+  font-size: clamp(1.75rem, 2.6vw, 2.15rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.dash-stats .stat-label {
+  margin-top: 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------
+   6. Cards — slightly larger radius, refined hover
+   --------------------------------------------------------------- */
+
+.card {
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  transition:
+    transform 0.18s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+.card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(129,140,248,0.30);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.05),
+    0 14px 34px rgba(2,6,18,0.55),
+    0 0 0 1px rgba(129,140,248,0.10);
+}
+.card h3 {
+  margin: 0 0 var(--space-4);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------
+   7. Buttons — refine secondary, ghost, and link buttons
+   --------------------------------------------------------------- */
+
+button {
+  border-radius: 10px;
+  padding: 0.55rem 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+}
+button.secondary {
+  background: rgba(255,255,255,0.045);
+  border: 1px solid var(--border-strong);
+}
+button.secondary:hover:not(:disabled) {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(129,140,248,0.45);
+}
+button.link-btn,
+.link-btn {
+  background: transparent;
+  color: var(--muted-2);
+  box-shadow: none;
+  border: 0;
+  padding: 0.4rem 0.7rem;
+  font-weight: 500;
+  text-decoration: none;
+  border-radius: 8px;
+}
+button.link-btn:hover,
+.link-btn:hover {
+  background: rgba(255,255,255,0.05);
+  color: var(--text);
+  box-shadow: none;
+}
+/* "Start over" stays subtle but warns red on hover. */
+#wiz-restart:hover { color: var(--danger); }
+
+/* ---------------------------------------------------------------
+   8. Status pill — animated dot for "live" state
+   --------------------------------------------------------------- */
+
+#status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+#status-pill::before {
+  content: '';
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent-2);
+  box-shadow: 0 0 0 0 rgba(52,211,153,0.55);
+  animation: pill-pulse 2.4s ease-in-out infinite;
+  flex: 0 0 auto;
+}
+#status-pill.warn::before { background: var(--warn); box-shadow: 0 0 0 0 rgba(251,191,36,0.55); }
+#status-pill.error::before { background: var(--danger); box-shadow: 0 0 0 0 rgba(248,113,113,0.55); }
+/* External agent activity (Copilot Chat / `claude` CLI writing files) —
+   stronger pulse + brand-tinted text so it's noticeable in the sidebar. */
+#status-pill.agent-active {
+  color: var(--brand-2, #6ea8fe);
+  border-color: color-mix(in srgb, var(--brand-2, #6ea8fe) 50%, transparent);
+}
+#status-pill.agent-active::before {
+  background: var(--brand-2, #6ea8fe);
+  box-shadow: 0 0 0 0 rgba(110,168,254,0.7);
+  animation: pill-pulse-active 1.4s ease-in-out infinite;
+}
+@keyframes pill-pulse-active {
+  0%   { box-shadow: 0 0 0 0 rgba(110,168,254,0.7); }
+  70%  { box-shadow: 0 0 0 10px rgba(110,168,254,0); }
+  100% { box-shadow: 0 0 0 0 rgba(110,168,254,0); }
+}
+@keyframes pill-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(52,211,153,0.55); }
+  70%  { box-shadow: 0 0 0 8px rgba(52,211,153,0); }
+  100% { box-shadow: 0 0 0 0 rgba(52,211,153,0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #status-pill::before { animation: none; }
+}
+
+/* ---------------------------------------------------------------
+   9. View headings — tighter & less heavy
+   --------------------------------------------------------------- */
+
+.view > h2:first-child,
+.view-header h2 {
+  font-size: clamp(1.6rem, 2.6vw, 2rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: var(--space-3);
+}
+
+/* The Configs view header (added earlier) — give it some breathing room. */
+.view-header { margin-bottom: var(--space-2); }
+.view-header + .hint { margin-top: 0; }
+
+/* ---------------------------------------------------------------
+   10. Aside lists — softer hover, subtle selected state
+   --------------------------------------------------------------- */
+
+aside { padding: var(--space-3); }
+aside li { padding: 0.55rem 0.75rem; }
+aside li.selected {
+  background: linear-gradient(90deg, rgba(129,140,248,0.22), rgba(129,140,248,0.04) 80%);
+  border-left-color: var(--accent);
+}
+
+/* ---------------------------------------------------------------
+   11. Markdown viewer — wider line-height, refined code chips
+   --------------------------------------------------------------- */
+
+.markdown { padding: var(--space-8) var(--space-10); }
+.markdown h1, .markdown h2, .markdown h3 {
+  letter-spacing: -0.015em;
+  margin-top: 1.6em;
+}
+.markdown h1:first-child, .markdown h2:first-child, .markdown h3:first-child { margin-top: 0; }
+
+/* ---------------------------------------------------------------
+   12. Empty banner — gradient border accent
+   --------------------------------------------------------------- */
+
+.empty-banner {
+  position: relative;
+  padding: var(--space-10);
+  border-radius: var(--radius-xl);
+}
+.empty-banner h3 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  background: linear-gradient(135deg, #ffffff 0%, #c7d2fe 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ---------------------------------------------------------------
+   13. Light theme overrides
+   --------------------------------------------------------------- */
+
+html[data-theme="light"] {
+  --brand-gradient: linear-gradient(135deg,
+    #4f46e5 0%, #7c3aed 35%, #ec4899 70%, #f97316 100%);
+}
+html[data-theme="light"] body {
+  background:
+    radial-gradient(ellipse 60% 38% at 18% -8%, rgba(99,102,241,0.10), transparent 65%),
+    radial-gradient(ellipse 50% 32% at 88% -4%, rgba(236,72,153,0.07), transparent 65%),
+    var(--bg);
+  background-attachment: fixed;
+}
+html[data-theme="light"] .dash-hero {
+  background:
+    radial-gradient(120% 80% at 0% 0%, rgba(99,102,241,0.10), transparent 55%),
+    radial-gradient(120% 80% at 100% 0%, rgba(236,72,153,0.08), transparent 55%),
+    #ffffff;
+}
+html[data-theme="light"] .dash-hero h2 {
+  background: linear-gradient(135deg, #1e1b4b 0%, #4338ca 60%, #be185d 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+html[data-theme="light"] .dash-stats .stat:hover {
+  box-shadow: 0 12px 28px rgba(15,23,42,0.10),
+              0 0 0 1px rgba(99,102,241,0.25);
+}
+html[data-theme="light"] .card:hover {
+  box-shadow: 0 14px 34px rgba(15,23,42,0.10),
+              0 0 0 1px rgba(99,102,241,0.18);
+}
+html[data-theme="light"] .empty-banner h3 {
+  background: linear-gradient(135deg, #1e1b4b 0%, #4338ca 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ---------------------------------------------------------------
+   14. Subtle entrance animation when a view becomes active
+   --------------------------------------------------------------- */
+
+.view.active,
+.view:not([hidden]) {
+  animation: view-fade-in 0.28s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+@keyframes view-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .view.active, .view:not([hidden]) { animation: none; }
+}
+
+/* ---------------------------------------------------------------
+   15. Selection
+   --------------------------------------------------------------- */
+::selection {
+  background: rgba(129,140,248,0.35);
+  color: #ffffff;
+}
+html[data-theme="light"] ::selection {
+  background: rgba(99,102,241,0.22);
+  color: #1e1b4b;
+}

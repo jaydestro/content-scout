@@ -145,6 +145,11 @@ if (command === 'launch') {
   // surface them in the report as "X hiring posts dropped" without ever
   // seeing the post bodies. Keyed by platform.
   const hiringDropped = {};
+  // Per-month bucketing of dropped hiring items, keyed by YYYY-MM of the
+  // post_date, then by platform. Lets the report quantify hiring-context
+  // mentions for a given month as a market-demand signal. Items missing a
+  // valid post_date are bucketed under "unknown".
+  const hiringDroppedByMonth = {};
 
   // In CDP mode, attach ONCE and reuse the same context for all platforms —
   // the user is already logged in to all three in one Edge window.
@@ -192,6 +197,15 @@ if (command === 'launch') {
     // even sees them. See lib/hiring-filter.mjs.
     const { kept, dropped } = filterHiring(items);
     if (dropped.length) hiringDropped[platform] = dropped.length;
+    for (const it of dropped) {
+      let bucket = 'unknown';
+      const d = it && it.post_date ? new Date(it.post_date) : null;
+      if (d && !Number.isNaN(d.getTime())) {
+        bucket = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      }
+      hiringDroppedByMonth[bucket] = hiringDroppedByMonth[bucket] || {};
+      hiringDroppedByMonth[bucket][platform] = (hiringDroppedByMonth[bucket][platform] || 0) + 1;
+    }
     fs.writeFileSync(outFile, JSON.stringify(kept, null, 2));
     const droppedNote = dropped.length ? ` (dropped ${dropped.length} hiring/recruiting)` : '';
     console.log(`[browser-scan] ${platform}: ${kept.length} items${droppedNote} → ${path.relative(ROOT, outFile)}`);
@@ -207,6 +221,7 @@ if (command === 'launch') {
     platforms: requested,
     hiringDropped,
     hiringDroppedTotal: totalDropped,
+    hiringDroppedByMonth,
   }, null, 2));
 
   // In CDP mode we do NOT close the user's Edge — they own it. Just disconnect.

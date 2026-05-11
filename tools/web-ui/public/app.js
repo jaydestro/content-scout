@@ -54,6 +54,21 @@ async function loadStatus() {
   const s = await api('/api/status');
   cachedStatus = s;
   const pill = $('status-pill');
+  // External activity from another agent (Copilot Chat / `claude` CLI / etc.)
+  // takes precedence over the static "agent: …" label so the user can see
+  // at a glance that something is happening outside the web UI.
+  if (s.externalActivity && s.externalActivity.active) {
+    const a = s.externalActivity;
+    const ago = a.ageSeconds < 60
+      ? `${a.ageSeconds}s ago`
+      : `${Math.round(a.ageSeconds / 60)}m ago`;
+    pill.textContent = `🟢 agent active — wrote ${a.kind} ${ago}`;
+    pill.title = `Detected external activity: ${a.file} (${ago}). This is from a CLI / Copilot Chat session, not the web UI.`;
+    pill.classList.add('agent-active');
+    pill.classList.remove('warn');
+    return s;
+  }
+  pill.classList.remove('agent-active');
   if (s.runnerConfigured) {
     pill.textContent = `agent: ${s.agent || 'custom'}`;
     pill.title = `Runner: ${s.runner}${s.runnerLocked ? ' (from SCOUT_RUNNER env)' : ''}`;
@@ -65,6 +80,14 @@ async function loadStatus() {
   }
   return s;
 }
+
+// Poll status periodically so external-agent activity (Copilot Chat /
+// `claude` CLI) is reflected in the pill within ~10s without a refresh.
+// Skip the poll when the tab is hidden.
+setInterval(() => {
+  if (document.hidden) return;
+  loadStatus().catch(() => {});
+}, 10000);
 
 // --- Setup ---------------------------------------------------------
 let agentChoice = null;
@@ -2382,6 +2405,8 @@ $('run-command').addEventListener('change', (e) => {
   if (subjectWrap) subjectWrap.hidden = custom;
   const rangeWrap = $('run-range-wrap');
   if (rangeWrap) rangeWrap.hidden = custom || !COMMANDS_WITH_RANGE.has(e.target.value);
+  const bsWrap = $('run-browser-scan-wrap');
+  if (bsWrap) bsWrap.hidden = e.target.value !== 'scout-scan';
   updateRunPreview();
 });
 $('run-extra').addEventListener('input', updateRunPreview);
@@ -2465,11 +2490,16 @@ async function startRun() {
       : { slug: $('run-slug').value, extra: combinedExtra };
   $('run-output').textContent = '';
   $('run-meta').textContent = 'Starting…';
+  // Browser-scan preflight option — only meaningful for /scout-scan.
+  const browserScan =
+    cmd === 'scout-scan'
+      ? (document.querySelector('input[name="run-browser-scan"]:checked')?.value || 'auto')
+      : undefined;
   try {
     const res = await fetch('/api/runs', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ command: cmd, args }),
+      body: JSON.stringify({ command: cmd, args, options: browserScan ? { browserScan } : undefined }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -2524,6 +2554,11 @@ async function loadReports() {
       renderDocBody($('reports-body'), { name: li.dataset.name, html: r.html, kind: 'reports' });
     });
   });
+  // Auto-open the most recent report (list is sorted desc by mtime) so the
+  // page never lands on an empty viewer.
+  const body = $('reports-body');
+  const first = $('reports-list').querySelector('li[data-name]');
+  if (first && body && !body.dataset.name) first.click();
 }
 async function loadSocial() {
   const { social } = await api('/api/reports');
@@ -2545,6 +2580,11 @@ async function loadSocial() {
       enhanceSocialBody($('social-body'));
     });
   });
+  // Auto-open the most recent social-posts file (list is sorted desc by mtime)
+  // so the page never lands on an empty viewer.
+  const body = $('social-body');
+  const first = $('social-list').querySelector('li[data-name]');
+  if (first && body && !body.dataset.name) first.click();
 }
 
 // Render a markdown doc into the inline article view, with a toolbar that

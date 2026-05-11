@@ -85,6 +85,38 @@
     return `${fmt(monday)} – ${fmt(sunday)}, ${sunday.getUTCFullYear()}`;
   }
 
+  // Heuristic: does a conversation row look like a recruiter / job-search
+  // post? Mirrors the patterns in tools/browser-scan/lib/hiring-filter.mjs
+  // so the UI filter behaves consistently with the scan-time hard ban.
+  // Stylized Unicode letters (e.g. 𝗮𝗿𝗮𝗧) are folded via NFKD before matching.
+  const _HIRING_PHRASES = [
+    'hiring', '[hiring]', "we're hiring", 'we are hiring', 'now hiring',
+    'is hiring', 'looking to hire', 'apply now', 'open position', 'open role',
+    'seeking candidates', 'interested candidates', 'please share resume',
+    'please share resumes', 'share your resume', 'dm your resume',
+    'hr@', 'recruiting@', 'talent@', 'careers@', 'position 1:',
+    'urgent requirement', 'urgent hiring', 'c2c', 'c2h', 'w2 only',
+    'usc only', 'gc only', 'job opportunity', 'job opening', 'recruiter',
+  ];
+  const _HIRING_SUBS = [
+    'r/forhire', 'r/hiring', 'r/jobs', 'r/jobsearch', 'r/indiajobs',
+    'r/recruitinghell', 'r/cscareerquestions',
+  ];
+  function _looksLikeJob(c) {
+    if (!c) return false;
+    const norm = (s) => String(s || '').normalize('NFKD').toLowerCase();
+    const sub = norm(c.communityRaw || c.community || '');
+    for (const s of _HIRING_SUBS) {
+      if (sub === s || sub.startsWith(s + ' ') || sub.includes(' ' + s)) return true;
+    }
+    const hay = norm(`${c.summary || ''}\n${c.author || ''}`);
+    if (!hay.trim()) return false;
+    for (const p of _HIRING_PHRASES) {
+      if (hay.includes(p)) return true;
+    }
+    return false;
+  }
+
   function _convRowHtml(c) {
     const dot = SENTIMENT_DOT[c.sentiment] || '·';
     const link = c.url
@@ -116,11 +148,31 @@
     const q = (document.getElementById('conv-q')?.value || '').toLowerCase().trim();
     const sentiment = document.getElementById('conv-sentiment')?.value || '';
     const platform = document.getElementById('conv-platform')?.value || '';
+    const timeframe = document.getElementById('conv-timeframe')?.value || '';
+    const jobsMode = document.getElementById('conv-jobs')?.value ?? 'hide';
     const needsReply = document.getElementById('conv-needs-reply')?.checked || false;
 
     let convs = _allConvs.slice();
+    let jobsHidden = 0;
+    if (jobsMode === 'hide') {
+      const before = convs.length;
+      convs = convs.filter((c) => !_looksLikeJob(c));
+      jobsHidden = before - convs.length;
+    } else if (jobsMode === 'only') {
+      convs = convs.filter((c) => _looksLikeJob(c));
+    }
     if (sentiment) convs = convs.filter((c) => c.sentiment === sentiment);
     if (platform) convs = convs.filter((c) => c.platform === platform);
+    if (timeframe) {
+      const days = parseInt(timeframe, 10);
+      if (Number.isFinite(days) && days > 0) {
+        const cutoffMs = Date.now() - days * 86400000;
+        convs = convs.filter((c) => {
+          const dt = _parseDate(c.date);
+          return dt && dt.getTime() >= cutoffMs;
+        });
+      }
+    }
     if (needsReply) convs = convs.filter((c) => c.sentiment === 'negative' || c.sentiment === 'mixed');
     if (q) {
       convs = convs.filter(
@@ -157,9 +209,15 @@
 
     const meta = document.getElementById('conv-meta');
     if (meta) {
+      const jobNote =
+        jobsMode === 'hide' && jobsHidden
+          ? ` · ${jobsHidden} job post${jobsHidden === 1 ? '' : 's'} hidden`
+          : jobsMode === 'only'
+            ? ' · job posts only'
+            : '';
       const windowNote = isSearching
-        ? `${convs.length} of ${_allConvs.length} matched (full archive)`
-        : `${recent.length} in last ${RECENT_WINDOW_DAYS}d · ${convs.length - recent.length} older across ${older.length} week${older.length === 1 ? '' : 's'} · ${_allConvs.length} total`;
+        ? `${convs.length} of ${_allConvs.length} matched (full archive)${jobNote}`
+        : `${recent.length} in last ${RECENT_WINDOW_DAYS}d · ${convs.length - recent.length} older across ${older.length} week${older.length === 1 ? '' : 's'} · ${_allConvs.length} total${jobNote}`;
       meta.textContent = windowNote;
     }
 
@@ -214,7 +272,7 @@
   }
 
   function wireConversationsUI() {
-    ['conv-q', 'conv-sentiment', 'conv-platform', 'conv-needs-reply'].forEach((id) => {
+    ['conv-q', 'conv-sentiment', 'conv-platform', 'conv-timeframe', 'conv-jobs', 'conv-needs-reply'].forEach((id) => {
       const el = document.getElementById(id);
       if (el && !el.dataset.wired) {
         el.dataset.wired = '1';
@@ -276,7 +334,18 @@
     host.innerHTML = '<p class="hint">Loading…</p>';
     try {
       const data = await fetch('/api/conversations').then((r) => r.json());
-      const all = Array.isArray(data.conversations) ? data.conversations : [];
+      const allEver = Array.isArray(data.conversations) ? data.conversations : [];
+      // Dashboard card is intentionally scoped to the most recent 30 days.
+      // Anything older lives in the Conversations view, which has its own
+      // searchable timeframe filter (30d / 90d / 6m / 1y / all time).
+      const WINDOW_DAYS = 30;
+      const cutoffMs = Date.now() - WINDOW_DAYS * 86400000;
+      const all = allEver.filter((c) => {
+        const dt = _parseDate(c.date);
+        // Keep undated items so they don't silently disappear.
+        return !dt || dt.getTime() >= cutoffMs;
+      });
+      const olderCount = allEver.length - all.length;
 
       // Sentiment pills (top of card)
       const totals = { positive: 0, neutral: 0, mixed: 0, negative: 0, unknown: 0 };
@@ -314,9 +383,13 @@
 
       if (meta) {
         const platformsSeen = byPlatform.size;
+        const olderNote = olderCount > 0
+          ? ` · ${olderCount} older in Conversations`
+          : '';
         meta.textContent =
-          `${all.length} conversation${all.length === 1 ? '' : 's'} across ${platformsSeen} platform${platformsSeen === 1 ? '' : 's'}` +
-          (needs.length ? ` · ${needs.length} flagged for response` : '');
+          `Last 30d · ${all.length} conversation${all.length === 1 ? '' : 's'} across ${platformsSeen} platform${platformsSeen === 1 ? '' : 's'}` +
+          (needs.length ? ` · ${needs.length} flagged for response` : '') +
+          olderNote;
       }
 
       // Render: per-platform breakdown
@@ -339,8 +412,8 @@
               <span class="dash-plat-icon" aria-hidden="true">${p.icon}</span>
               <strong>${esc(p.label)}</strong>
               <span class="dash-plat-counts">
-                <span class="dash-plat-chip dash-plat-community" title="Community-generated">community ${c}</span>
-                <span class="dash-plat-chip dash-plat-product" title="Product / official">product ${pr}</span>
+                <span class="dash-plat-chip dash-plat-community" title="Community-generated posts">${c} community</span>
+                <span class="dash-plat-chip dash-plat-product" title="Product / official posts">${pr} official</span>
               </span>
             </div>
             ${sampleHtml}

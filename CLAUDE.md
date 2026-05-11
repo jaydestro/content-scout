@@ -68,7 +68,7 @@ When reading prompt files, the `${{input:...}}` placeholders are VS Code syntax.
 7. Update `.seen-links.json` after saving any report
 8. Auto-generate social posts only if the role has social posts enabled
 
-## Browser-scan tool (X / LinkedIn / Reddit, opt-in)
+## Browser-scan tool (X / LinkedIn / Reddit, first-class Layer 0)
 
 `tools/browser-scan/` attaches to a real Chromium-family browser (Edge,
 Chrome, Brave, Vivaldi, Arc, Opera — auto-detects your OS default) over
@@ -79,21 +79,31 @@ login walls, and rate limits, and X actively flags fresh Playwright
 profiles. Firefox and Safari aren't supported (no CDP); the launcher
 falls back to whichever Chromium-family browser is installed.
 
-**From the web UI (recommended):** the Run view has a 🌐 **Browser scan
-(Layer 0)** panel with a browser dropdown, Open browser button, Scan-now
-button, and live sidecar freshness per platform. The Dashboard intel row
-shows a Browser-scan status card. No CLI required after the first launch.
+**Now wired into `/scout-scan` as Step 0 — not optional, not separate.**
 
-**From the CLI:**
+**From the web UI:** the Run view's /scout-scan form has a "Browser
+scan (Layer 0)" fieldset with three modes — **Auto** (refresh sidecars
+older than 6h, default), **Force** (always re-scan first), **Skip**
+(API/RSS layers only). When you click Start run, the server runs
+`node tools/browser-scan/index.mjs scan --slug {slug}` for every
+selected subject before the agent kicks in and streams its output
+into the same run log. The 🌐 panel at the top of the Run view is
+now just for one-time browser launch + login + status indicators.
 
-- One-time setup: `node tools/browser-scan/launch-edge.mjs` (auto-detects your default browser; pass `--browser "<Name>"` to override or `--list` to see what's installed; opens login tabs for all three platforms; sign in once; leave the browser running)
-- Run before a scan: `node tools/browser-scan/index.mjs scan --slug {slug}` (default mode = `cdp` attach)
-- Output: `reports/.browser-scan/{slug}/{stamp}-{platform}.json`
-- `scout scan` automatically ingests sidecars dated within the last 6 hours
-  as **Layer 0** for each platform (top priority over Brave/RSS/old.reddit
-  cascade results), then dedupes by permalink. See
-  `tools/browser-scan/README.md` for full details, query-shaping rules
-  (multi-word terms get phrase-quoted), and the output schema.
+**From the CLI / chat (`/scout-scan` slash command):** the agent
+itself runs the preflight as Step 0 of Step 3 in
+`.github/prompts/scout-scan.prompt.md`. Re-running is idempotent.
+
+**One-time setup:** `node tools/browser-scan/launch-edge.mjs`
+(auto-detects your default browser; pass `--browser "<Name>"` to
+override or `--list` to see what's installed; opens login tabs for all
+three platforms; sign in once; leave the browser running).
+
+Output lands in `reports/.browser-scan/{slug}/{stamp}-{platform}.json`
+and the agent ingests it as **Layer 0** — top priority over Brave / RSS
+/ old.reddit cascade results, deduped by permalink. See
+`tools/browser-scan/README.md` for full details, query-shaping rules
+(multi-word terms get phrase-quoted), and the output schema.
 
 The `tools/browser-scan/.cdp-profile/` and legacy `.profile/` directories
 are gitignored — session cookies never leave your machine.
