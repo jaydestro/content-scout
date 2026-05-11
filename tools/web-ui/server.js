@@ -2976,6 +2976,60 @@ app.post('/api/browser-scan/launch', async (req, res) => {
   res.json({ ok: true, pid: child.pid, alreadyRunning: false });
 });
 
+// POST /api/browser-scan/auth-check — attach to the running browser via
+// CDP and report per-platform sign-in status (X / LinkedIn / Reddit).
+// Spawns tools/browser-scan/check-logins.mjs in --json mode. Slow (~10s)
+// but accurate; the UI calls this on demand, not on every poll.
+app.post('/api/browser-scan/auth-check', async (req, res) => {
+  if (!BROWSER_SCAN_INSTALLED) return res.status(404).json({ error: 'browser-scan not installed' });
+  const port = Number((req.body && req.body.port) || 9222);
+  const probe = await probeCdpPort(port);
+  if (!probe.up) {
+    return res.status(409).json({
+      ok: false,
+      error: 'cdp-down',
+      message: 'No browser is listening on the CDP port. Click "Open browser & sign in" first.',
+      port,
+    });
+  }
+  const checker = path.join(BROWSER_SCAN_DIR, 'check-logins.mjs');
+  const args = [checker, '--port', String(port), '--json'];
+  const child = spawn(process.execPath, args, {
+    cwd: BROWSER_SCAN_DIR, // so `import 'playwright'` resolves
+    env: process.env,
+  });
+  let out = '';
+  let err = '';
+  child.stdout.on('data', (d) => { out += d.toString(); });
+  child.stderr.on('data', (d) => { err += d.toString(); });
+  const timeout = setTimeout(() => {
+    try { child.kill('SIGKILL'); } catch { /* ignore */ }
+  }, 60000);
+  child.on('close', (code) => {
+    clearTimeout(timeout);
+    // check-logins.mjs prints exactly one JSON line on success or on
+    // graceful CDP errors (exit 2). Parse the last non-blank line.
+    const line = out.trim().split(/\r?\n/).filter(Boolean).pop();
+    if (line && line.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(line);
+        return res.json(parsed);
+      } catch { /* fall through */ }
+    }
+    res.status(500).json({
+      ok: false,
+      error: 'parse-failed',
+      exitCode: code,
+      stderr: err.slice(-1000),
+      stdout: out.slice(-1000),
+    });
+  });
+  child.on('error', (e) => {
+    clearTimeout(timeout);
+    res.status(500).json({ ok: false, error: 'spawn-failed', message: e.message });
+  });
+});
+
 // POST /api/browser-scan/scan — run `node index.mjs scan --slug {slug}`
 // as a child process and stream output via the same /api/runs/:id/stream
 // surface used by other commands.

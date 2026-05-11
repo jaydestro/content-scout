@@ -879,6 +879,22 @@ code, pre { overflow-wrap: anywhere; }
 }
 .link-btn:hover { color: var(--accent-hover, #2e5cb5); }
 legend .link-btn { margin-left: 0.4rem; font-weight: 500; }
+
+/* Browser-scan auth chips (Run view) */
+.bs-auth-row .bs-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--border, #d1d9e0);
+  border-radius: 999px;
+  font-size: 0.85rem;
+  background: var(--bg-subtle, #f6f8fa);
+  cursor: pointer;
+  user-select: none;
+}
+.bs-auth-row .bs-chip:hover { background: var(--bg-hover, #eef2f6); }
+.bs-auth-row .bs-chip-dot { font-size: 0.95em; line-height: 1; }
 .sep { color: var(--muted, #888); font-size: 0.85em; }
 .chip-bulk-bar {
   margin: 0.25rem 0;
