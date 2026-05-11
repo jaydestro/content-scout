@@ -428,7 +428,8 @@ html[data-theme="light"] .site-header nav button.active {
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  line-height: 1.1;
+  line-height: 1.25;
+  padding-bottom: 0.1em;
 }
 .dash-hero .hint,
 .dash-hero #dash-hero-sub {
