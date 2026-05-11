@@ -44,7 +44,13 @@
     if (!list) return;
     try {
       const include = _currentInclude();
-      const data = await fetch('/api/conversations?include=' + encodeURIComponent(include)).then((r) => r.json());
+      // "all" means show literally everything (open + closed + muted).
+      // "muted" already implies show-muted on the server. For "open" /
+      // "closed", muted authors are filtered out unless the user picks
+      // "all" explicitly.
+      const params = new URLSearchParams({ include });
+      if (include === 'all') params.set('includeMuted', '1');
+      const data = await fetch('/api/conversations?' + params.toString()).then((r) => r.json());
       _allConvs = Array.isArray(data.conversations) ? data.conversations : [];
       _platforms = new Set(_allConvs.map((c) => c.platform).filter(Boolean));
       _selectedKeys = new Set();
@@ -183,7 +189,16 @@
     } else if (key) {
       actionBtn = `<button type="button" class="conv-close-btn" data-key="${esc(key)}">Close…</button>`;
     }
-    return `<div class="conv-row sent-${esc(c.sentiment)}${closedClass}" data-key="${esc(key)}">
+    const author = c.author || '';
+    const mutedBanner = c.isMuted
+      ? `<div class="conv-closed-banner">Muted: <strong>@${esc(_cleanHandle(author))}</strong></div>`
+      : '';
+    const muteBtn = author && !c.isMuted
+      ? `<button type="button" class="conv-mute-btn" data-author="${esc(author)}" data-platform="${esc(c.platform || '')}" title="Hide every conversation from this account">Mute @…</button>`
+      : c.isMuted
+        ? `<button type="button" class="conv-unmute-btn" data-author="${esc(author)}" data-platform="${esc(c.platform || '')}">Unmute</button>`
+        : '';
+    return `<div class="conv-row sent-${esc(c.sentiment)}${closedClass}${c.isMuted ? ' conv-muted' : ''}" data-key="${esc(key)}">
       <div class="conv-row-head">
         ${checkbox}
         <span class="conv-dot" title="${esc(c.sentiment)}">${dot}</span>
@@ -194,8 +209,8 @@
         ${link}
       </div>
       <div class="conv-summary">${esc(c.summary || '')}</div>
-      ${closedBanner}
-      <div class="conv-actions">${replyBtn}${actionBtn}</div>
+      ${closedBanner}${mutedBanner}
+      <div class="conv-actions">${replyBtn}${actionBtn}${muteBtn}</div>
     </div>`;
   }
 
@@ -342,6 +357,12 @@
     list.querySelectorAll('.conv-reopen-btn').forEach((btn) => {
       btn.addEventListener('click', () => _reopen([btn.dataset.key]));
     });
+    list.querySelectorAll('.conv-mute-btn').forEach((btn) => {
+      btn.addEventListener('click', () => _promptMute(btn.dataset.author, btn.dataset.platform));
+    });
+    list.querySelectorAll('.conv-unmute-btn').forEach((btn) => {
+      btn.addEventListener('click', () => _unmute(btn.dataset.platform, btn.dataset.author));
+    });
     _updateBulkBar();
   }
 
@@ -434,6 +455,114 @@
     }
   }
 
+  // ----- Mute / unmute plumbing ---------------------------------
+
+  function _cleanHandle(h) {
+    return String(h || '').trim().replace(/^@+/, '').replace(/^u\//i, '').toLowerCase();
+  }
+
+  function _promptMute(author, platform) {
+    const handle = _cleanHandle(author);
+    if (!handle) {
+      alert('No handle to mute.');
+      return;
+    }
+    const scopeAns = window.prompt(
+      `Mute @${handle}.\n\nScope (1 = only on ${platform || 'this platform'}, 2 = all platforms):`,
+      '1'
+    );
+    if (scopeAns == null) return;
+    const scope = String(scopeAns).trim();
+    const useGlobal = scope === '2';
+    const reason = window.prompt(
+      'Reason (optional — e.g. recruiter, spam-bot, irrelevant, competitor):',
+      ''
+    );
+    if (reason == null) return;
+    const note = window.prompt('Note (optional):', '') || '';
+    _mute(useGlobal ? '' : platform, handle, reason, note);
+  }
+
+  async function _mute(platform, handle, reason, note) {
+    try {
+      const res = await fetch('/api/muted-accounts', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ platform: platform || '', handle, reason: reason || '', note: note || '' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      await loadConversations();
+      await _refreshMutedPanel();
+    } catch (err) {
+      alert('Mute failed: ' + (err.message || err));
+    }
+  }
+
+  async function _unmute(platform, handle) {
+    try {
+      const res = await fetch('/api/muted-accounts', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ platform: platform || '', handle: _cleanHandle(handle) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      await loadConversations();
+      await _refreshMutedPanel();
+    } catch (err) {
+      alert('Unmute failed: ' + (err.message || err));
+    }
+  }
+
+  async function _unmuteByKey(key) {
+    try {
+      const res = await fetch('/api/muted-accounts', {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ keys: [key] }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      await loadConversations();
+      await _refreshMutedPanel();
+    } catch (err) {
+      alert('Unmute failed: ' + (err.message || err));
+    }
+  }
+
+  async function _refreshMutedPanel() {
+    const list = document.getElementById('conv-muted-list');
+    if (!list) return;
+    try {
+      const data = await fetch('/api/muted-accounts').then((r) => r.json());
+      const items = Array.isArray(data.items) ? data.items : [];
+      if (!items.length) {
+        list.innerHTML = '<p class="hint">No muted accounts. Use the “Mute @…” button on any conversation row to add one.</p>';
+        return;
+      }
+      list.innerHTML = items
+        .map((it) => {
+          const when = it.mutedAt ? esc(it.mutedAt.slice(0, 10)) : '';
+          const platform = it.platform === '*' ? 'all platforms' : esc(it.platform || '?');
+          const reason = it.reason ? ` — ${esc(it.reason)}` : '';
+          const note = it.note ? ` <span class="hint">(${esc(it.note)})</span>` : '';
+          const ownedBadge = it.owned ? ' <span class="badge" title="Imported from config">owned</span>' : '';
+          return `<div class="conv-muted-row${it.owned ? ' is-owned' : ''}">
+            <span><strong>@${esc(it.handle)}</strong> on ${platform}${ownedBadge}${reason}${note}</span>
+            <span class="hint">${when}</span>
+            <button type="button" class="conv-muted-unmute" data-key="${esc(it.key)}">Unmute</button>
+          </div>`;
+        })
+        .join('');
+      list.querySelectorAll('.conv-muted-unmute').forEach((btn) => {
+        btn.addEventListener('click', () => _unmuteByKey(btn.dataset.key));
+      });
+    } catch (err) {
+      list.innerHTML = `<p class="hint">Failed to load muted accounts: ${esc(err.message || err)}</p>`;
+    }
+  }
+
   function wireConversationsUI() {
     ['conv-q', 'conv-sentiment', 'conv-platform', 'conv-timeframe', 'conv-jobs', 'conv-needs-reply'].forEach((id) => {
       const el = document.getElementById(id);
@@ -484,6 +613,86 @@
         _selectedKeys.clear();
         renderConversations();
       });
+    }
+    // Muted accounts manage panel
+    const manageBtn = document.getElementById('conv-manage-muted');
+    if (manageBtn && !manageBtn.dataset.wired) {
+      manageBtn.dataset.wired = '1';
+      manageBtn.addEventListener('click', () => {
+        const panel = document.getElementById('conv-muted-panel');
+        if (!panel) return;
+        const willOpen = panel.hidden;
+        panel.hidden = !willOpen;
+        if (willOpen) _refreshMutedPanel();
+      });
+    }
+    const mutedCloseBtn = document.getElementById('conv-muted-close');
+    if (mutedCloseBtn && !mutedCloseBtn.dataset.wired) {
+      mutedCloseBtn.dataset.wired = '1';
+      mutedCloseBtn.addEventListener('click', () => {
+        const panel = document.getElementById('conv-muted-panel');
+        if (panel) panel.hidden = true;
+      });
+    }
+    // "Mute owned accounts from config" controls inside the muted panel.
+    const ownedSel = document.getElementById('conv-owned-slug');
+    if (ownedSel && !ownedSel.dataset.wired) {
+      ownedSel.dataset.wired = '1';
+      _populateOwnedSlugSelect();
+    }
+    const ownedBtn = document.getElementById('conv-owned-import');
+    if (ownedBtn && !ownedBtn.dataset.wired) {
+      ownedBtn.dataset.wired = '1';
+      ownedBtn.addEventListener('click', _importOwnedAccounts);
+    }
+  }
+
+  async function _populateOwnedSlugSelect() {
+    const sel = document.getElementById('conv-owned-slug');
+    if (!sel) return;
+    try {
+      const data = await fetch('/api/configs').then((r) => r.json());
+      const configs = Array.isArray(data.configs) ? data.configs : [];
+      if (!configs.length) {
+        sel.innerHTML = '<option value="">(no configs)</option>';
+        return;
+      }
+      sel.innerHTML = configs
+        .map((c) => `<option value="${esc(c.slug)}">${esc(c.slug)}</option>`)
+        .join('');
+    } catch {
+      sel.innerHTML = '<option value="">(failed to load)</option>';
+    }
+  }
+
+  async function _importOwnedAccounts() {
+    const sel = document.getElementById('conv-owned-slug');
+    const status = document.getElementById('conv-owned-status');
+    const slug = sel && sel.value;
+    if (!slug) {
+      if (status) status.textContent = 'Pick a config first.';
+      return;
+    }
+    if (status) status.textContent = 'Importing…';
+    try {
+      const res = await fetch('/api/muted-accounts/import-owned', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ slug }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      const added = (data.added || []).length;
+      const parsed = data.parsed || 0;
+      if (status) {
+        status.textContent = parsed
+          ? `Muted ${added} of ${parsed} owned account(s).`
+          : 'No owned accounts found in this config.';
+      }
+      await _refreshMutedPanel();
+      await loadConversations();
+    } catch (err) {
+      if (status) status.textContent = 'Import failed: ' + (err.message || err);
     }
   }
 
