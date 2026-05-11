@@ -604,8 +604,12 @@ These rules are non-negotiable. They mirror the SCOPE evaluation methodology's r
 2. **Every item in the report MUST have a `provenance.raw_hash` matching content actually fetched in this run** OR be carried forward from `creators.json` posts (in which case `provenance.run_id` references the run that originally fetched it).
 3. **Plausible-sounding URLs are forbidden.** If the agent can't produce a working permalink retrieved this run, the item is dropped — not guessed.
 4. **Author handles must come from the platform's own response.** Never construct a handle from a display name.
-5. **Sentiment, confidence, tags, and engagement potential are inferences over fetched content** — if the content wasn't fetched, none of these fields can be filled.
-6. **At the end of every scan, the agent emits an integrity statement**: "All N items in this report have provenance. {M} items dropped for missing provenance/permalinks. 0 items fabricated." If M > 0, list the dropped sources.
+5. **Author display names must NEVER be fabricated from a username.** Do NOT expand `jcodella` to "Jay Codella", do NOT expand `mhuang` to "Michael Huang", do NOT guess a first name from initials. If the platform's response includes a real display name, use it verbatim. Otherwise:
+   - First, look up the handle in the config's `### Product Team Members` and `## Known Author Watchlist` alias mappings (see below). If matched, use the canonical display name from the config.
+   - If no alias match, use the bare username as the display name (e.g. `jcodella` stays `jcodella`). Never invent a first or last name.
+   - This applies to every source: Hacker News, Reddit, GitHub, X, Bluesky, LinkedIn, Dev.to, Stack Overflow, etc.
+6. **Sentiment, confidence, tags, and engagement potential are inferences over fetched content** — if the content wasn't fetched, none of these fields can be filled.
+7. **At the end of every scan, the agent emits an integrity statement**: "All N items in this report have provenance. {M} items dropped for missing provenance/permalinks. 0 items fabricated." If M > 0, list the dropped sources.
 
 The agent MUST refuse to produce a report that violates these rules. Better an empty section than a fabricated one.
 
@@ -669,6 +673,25 @@ counter in the JSON sidecar's `drop_reasons` block.
 
 ### Known Author Bypass
 Authors listed in the config file's known authors section always pass the relevancy gate (still must pass date gate). **The hiring ban above is NOT bypassed by the known-author list** — if a known author posts a job ad, it still drops.
+
+### Author Alias Resolution (mandatory)
+
+Both `### Product Team Members` and `## Known Author Watchlist` in the config support **inline per-platform handle aliases** in parentheses after the canonical display name, e.g.:
+
+```
+- James Codella (hn: jcodella, github: jcodella, x: jcodella, devto: jamescodella)
+- John Savill (x: NTFAQGuy, blog: savilltech.com)
+```
+
+Syntax: `display name (platform1: handle1, platform2: handle2, ...)`. Platform tokens: `hn`, `reddit`, `github`, `x` (or `twitter`), `bluesky` (or `bsky`), `linkedin`, `devto`, `medium`, `youtube`, `blog`, `stackoverflow`. Handles are case-insensitive and stored without leading `@` / `u/` / `/in/`.
+
+When the agent encounters a social/community item whose author handle matches an alias entry (case-insensitive, on the matching platform), it MUST:
+
+1. Render the **canonical display name** from the config (NOT a guessed expansion of the handle).
+2. Set `is_team_member: true` if the alias was in `### Product Team Members`.
+3. Apply the known-author bypass if the alias was in `## Known Author Watchlist`.
+
+If no alias matches, fall back to rule #5 in the Anti-Fabrication Hard Rules above.
 
 ### Scoring (internal)
 When evaluating borderline content:

@@ -43,9 +43,18 @@ Apply this configuration to the Content Scout agent. Copy this file, rename it t
 
 These are NOT your product team members. They are community developers, MVPs, and influencers who regularly produce content about your product.
 
+Add per-platform handle aliases inline in parentheses so the agent can resolve a
+username on any source back to the correct display name (and never fabricate
+one from initials, e.g. `jcodella` → "Jay Codella" is wrong; it's James).
+
+Format: `Display Name (platform1: handle1, platform2: handle2, ...)`
+Platform tokens: `hn`, `reddit`, `github`, `x` (or `twitter`), `bluesky` (or `bsky`),
+`linkedin`, `devto`, `medium`, `youtube`, `blog`, `stackoverflow`. Handles are
+case-insensitive and stored without leading `@` / `u/` / `/in/`.
+
 | Name | Affiliation | Handle |
 |------|-------------|--------|
-| {Name} | {Company/Community} | {@handle} |
+| {Name} (x: {handle}, github: {handle}) | {Company/Community} | {@handle} |
 
 ## Brand Assets
 <!-- CRITICAL: Never generate fake or placeholder logos. If no logos are provided, use text-only thumbnails. -->
