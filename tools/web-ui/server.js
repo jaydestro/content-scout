@@ -542,12 +542,61 @@ function serializeEnv(entries) {
 }
 
 // --- API -----------------------------------------------------------
+
+// Detect whether some external agent (e.g. Copilot Chat in VS Code, or a
+// `claude` CLI session) has been writing into the workspace recently. We
+// can't see their processes, but we can see their side-effects:
+//   - a new/updated file under reports/ or social-posts/
+//   - mtime changes in .scout-state/
+// If anything has been touched in the last `windowSec` seconds AND no
+// in-process web-UI run is currently active, we treat it as an external
+// agent operation and surface it in the status pill.
+async function detectExternalActivity(windowSec = 90) {
+  // If we already have a live web-UI run, don't claim "external".
+  for (const r of runs.values()) {
+    if (!r.endedAt) return null;
+  }
+  const dirs = [
+    { dir: path.join(REPO_ROOT, 'reports'), kind: 'report', exts: ['.md', '.json'] },
+    { dir: path.join(REPO_ROOT, 'social-posts'), kind: 'social post', exts: ['.md'] },
+    { dir: path.join(REPO_ROOT, '.scout-state'), kind: 'state', exts: null },
+  ];
+  const now = Date.now();
+  let best = null;
+  for (const { dir, kind, exts } of dirs) {
+    let entries;
+    try { entries = await fs.readdir(dir, { withFileTypes: true }); }
+    catch { continue; }
+    for (const ent of entries) {
+      if (!ent.isFile()) continue;
+      if (exts && !exts.includes(path.extname(ent.name).toLowerCase())) continue;
+      let st;
+      try { st = await fs.stat(path.join(dir, ent.name)); }
+      catch { continue; }
+      const ageMs = now - st.mtimeMs;
+      if (ageMs < 0 || ageMs > windowSec * 1000) continue;
+      if (!best || st.mtimeMs > best.mtimeMs) {
+        best = { kind, file: ent.name, mtimeMs: st.mtimeMs };
+      }
+    }
+  }
+  if (!best) return null;
+  return {
+    active: true,
+    kind: best.kind,
+    file: best.file,
+    ageSeconds: Math.round((now - best.mtimeMs) / 1000),
+    mtime: new Date(best.mtimeMs).toISOString(),
+  };
+}
+
 app.get('/api/status', async (_req, res) => {
-  const [env, configs, settings, runnerInfo] = await Promise.all([
+  const [env, configs, settings, runnerInfo, externalActivity] = await Promise.all([
     readEnv(),
     listConfigs(),
     loadSettings(),
     getRunner(),
+    detectExternalActivity(),
   ]);
   res.json({
     repoRoot: REPO_ROOT,
@@ -558,6 +607,7 @@ app.get('/api/status', async (_req, res) => {
     agent: settings.agent,
     hasConfigs: configs.length > 0,
     configCount: configs.length,
+    externalActivity,
     env,
   });
 });
@@ -2331,48 +2381,175 @@ async function startRunInternal(command, args, opts = {}) {
   if (opts.bulkLabel) {
     pushRunOutput(run, `[scout-web] Bulk run — item: ${opts.bulkLabel}\n`);
   }
-  const child = spawn(commandLine, {
-    shell: true,
-    cwd: REPO_ROOT,
-    env: process.env,
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
-  run.child = child;
-  if (usedStdin) {
-    try {
-      child.stdin.write(prompt);
-      child.stdin.write('\n');
-      child.stdin.end();
-    } catch (err) {
-      pushRunOutput(run, `\n[scout-web] Failed to write prompt to stdin: ${err.message}\n`);
-    }
-  }
-  child.stdout.on('data', (d) => pushRunOutput(run, d.toString()));
-  child.stderr.on('data', (d) => pushRunOutput(run, d.toString()));
   const cleanupPromptFile = () => {
     if (run.promptFile) {
       fs.unlink(run.promptFile).catch(() => {});
       run.promptFile = null;
     }
   };
-  child.on('close', (code) => {
-    run.child = null;
-    cleanupPromptFile();
-    closeRun(run, code === 0 ? 'success' : `exited ${code}`);
-    if (opts.onClose) {
-      try { opts.onClose(run); } catch {}
+  const spawnAgentChild = () => {
+    const child = spawn(commandLine, {
+      shell: true,
+      cwd: REPO_ROOT,
+      env: process.env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    run.child = child;
+    if (usedStdin) {
+      try {
+        child.stdin.write(prompt);
+        child.stdin.write('\n');
+        child.stdin.end();
+      } catch (err) {
+        pushRunOutput(run, `\n[scout-web] Failed to write prompt to stdin: ${err.message}\n`);
+      }
     }
-  });
-  child.on('error', (err) => {
-    pushRunOutput(run, `\n[runner error] ${err.message}\n`);
-    run.child = null;
-    cleanupPromptFile();
-    closeRun(run, 'error');
-    if (opts.onClose) {
-      try { opts.onClose(run); } catch {}
+    child.stdout.on('data', (d) => pushRunOutput(run, d.toString()));
+    child.stderr.on('data', (d) => pushRunOutput(run, d.toString()));
+    child.on('close', (code) => {
+      run.child = null;
+      cleanupPromptFile();
+      closeRun(run, code === 0 ? 'success' : `exited ${code}`);
+      if (opts.onClose) {
+        try { opts.onClose(run); } catch {}
+      }
+    });
+    child.on('error', (err) => {
+      pushRunOutput(run, `\n[runner error] ${err.message}\n`);
+      run.child = null;
+      cleanupPromptFile();
+      closeRun(run, 'error');
+      if (opts.onClose) {
+        try { opts.onClose(run); } catch {}
+      }
+    });
+  };
+
+  // ---- Browser-scan preflight (scout-scan only) -------------------
+  // When the user runs /scout-scan, refresh the Layer-0 browser-scan
+  // sidecars for X/LinkedIn/Reddit BEFORE the agent kicks in, so the
+  // agent always sees fresh logged-in results. Opt-out via
+  // options.browserScan === 'skip'; force-refresh via 'force'.
+  const browserScanOpt = (opts.options && opts.options.browserScan) || 'auto';
+  const preflightSlugs =
+    command === 'scout-scan' && browserScanOpt !== 'skip'
+      ? await computePreflightSlugs(args)
+      : [];
+  if (
+    command === 'scout-scan' &&
+    browserScanOpt !== 'skip' &&
+    BROWSER_SCAN_INSTALLED &&
+    preflightSlugs.length > 0
+  ) {
+    runBrowserScanPreflight(run, preflightSlugs, browserScanOpt === 'force')
+      .catch((err) => {
+        pushRunOutput(run, `\n[browser-scan preflight] error: ${err.message} — continuing without it\n`);
+      })
+      .then(() => {
+        if (run.status === 'running') spawnAgentChild();
+      });
+  } else {
+    if (command === 'scout-scan' && browserScanOpt === 'skip') {
+      pushRunOutput(run, `[scout-web] Browser-scan preflight skipped (user opted out).\n`);
     }
-  });
+    spawnAgentChild();
+  }
   return { id, commandLine, prompt };
+}
+
+// Resolve the list of subject slugs that a /scout-scan invocation will
+// cover. Mirrors the agent's own rule: explicit slug → that slug; "all"
+// or empty with multiple configs → every config. Empty with a single
+// config → that one config.
+async function computePreflightSlugs(args) {
+  const raw = String((args && args.slug) || '').trim();
+  if (raw && raw !== 'all') {
+    // Could be comma-separated from a multi-select. Split + filter.
+    const parts = raw.split(/[,\s]+/).filter((s) => s && isValidSlug(s));
+    if (parts.length) return parts;
+  }
+  try {
+    const configs = await listConfigs();
+    return configs.map((c) => c.slug);
+  } catch {
+    return [];
+  }
+}
+
+// Run `node tools/browser-scan/index.mjs scan --slug {slug}` for every
+// slug whose freshest sidecar is older than 6 hours (or force=true).
+// Streams stdout/stderr into the parent run so the user sees progress.
+// Resolves when every needed slug has finished (or been skipped). Never
+// rejects — failures are logged into the run output.
+async function runBrowserScanPreflight(run, slugs, force = false) {
+  pushRunOutput(
+    run,
+    `[browser-scan] Preflight starting for ${slugs.length} subject${slugs.length === 1 ? '' : 's'}: ${slugs.join(', ')}\n`,
+  );
+  const probe = await probeCdpPort(9222);
+  if (!probe.up) {
+    pushRunOutput(
+      run,
+      `[browser-scan] No browser is running on CDP port 9222 — skipping preflight.\n` +
+      `[browser-scan]   Open the Run view's "🌐 Browser scan" panel and click "Open browser & sign in" to enable Layer-0 coverage.\n` +
+      `[browser-scan]   Or run: node tools/browser-scan/launch-edge.mjs (one-time login per platform).\n` +
+      `[browser-scan] Continuing with API/RSS layers only.\n`,
+    );
+    return;
+  }
+  pushRunOutput(run, `[browser-scan] Attached to ${probe.browser || 'browser'} on CDP port 9222.\n`);
+
+  const sidecarRoot = path.join(REPORTS_DIR, '.browser-scan');
+  const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+  for (const slug of slugs) {
+    // Freshness check unless forced.
+    if (!force) {
+      let freshest = 0;
+      try {
+        const files = await fs.readdir(path.join(sidecarRoot, slug));
+        for (const f of files) {
+          if (!/^\d{4}-\d{2}-\d{2}-\d{4}-(x|linkedin|reddit)\.json$/.test(f)) continue;
+          const stat = await fs.stat(path.join(sidecarRoot, slug, f));
+          if (stat.mtimeMs > freshest) freshest = stat.mtimeMs;
+        }
+      } catch { /* no dir yet → freshest stays 0 */ }
+      if (freshest && Date.now() - freshest < SIX_HOURS_MS) {
+        const ageMin = Math.floor((Date.now() - freshest) / 60000);
+        pushRunOutput(
+          run,
+          `[browser-scan] ${slug}: sidecars are ${ageMin}m old (<6h) — reusing.\n`,
+        );
+        continue;
+      }
+    }
+    pushRunOutput(run, `[browser-scan] ${slug}: scanning X / LinkedIn / Reddit…\n`);
+    await new Promise((resolve) => {
+      const child = spawn(
+        process.execPath,
+        [path.join(BROWSER_SCAN_DIR, 'index.mjs'), 'scan', '--slug', slug],
+        { cwd: REPO_ROOT, env: process.env },
+      );
+      // Track on run so a stop request can kill the preflight too.
+      run.child = child;
+      child.stdout.on('data', (d) => pushRunOutput(run, d.toString()));
+      child.stderr.on('data', (d) => pushRunOutput(run, d.toString()));
+      child.on('close', (code) => {
+        run.child = null;
+        if (code === 0) {
+          pushRunOutput(run, `[browser-scan] ${slug}: preflight complete.\n`);
+        } else {
+          pushRunOutput(run, `[browser-scan] ${slug}: preflight exited ${code} — agent will fall back to API/RSS layers for this subject.\n`);
+        }
+        resolve();
+      });
+      child.on('error', (err) => {
+        run.child = null;
+        pushRunOutput(run, `[browser-scan] ${slug}: spawn error: ${err.message}\n`);
+        resolve();
+      });
+    });
+  }
+  pushRunOutput(run, `[browser-scan] Preflight done — starting agent.\n\n`);
 }
 
 // Allowed bulk commands — these are the ones that take a single URL or

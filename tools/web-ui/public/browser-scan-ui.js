@@ -72,12 +72,15 @@
     panel.style.marginBottom = '1rem';
     panel.innerHTML = `
       <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
-        <h3 style="margin:0;flex:1;">🌐 Browser scan (Layer 0)</h3>
+        <h3 style="margin:0;flex:1;">🌐 Browser scan (Layer 0) — runs automatically with /scout-scan</h3>
         <span id="bs-status-pill" class="hint" aria-live="polite">checking…</span>
       </div>
       <p class="hint" style="margin-top:0.5rem;">
         Drives your real browser via the Chrome DevTools Protocol so X / LinkedIn / Reddit
-        return logged-in results. <a href="/docs/SOURCES.md" target="_blank" rel="noopener">Why?</a>
+        return logged-in results. <strong>You only need to launch the browser and sign in once</strong> — every
+        subsequent /scout-scan will auto-refresh sidecars older than 6h before the agent kicks in.
+        Pick a different mode in the "Browser scan (Layer 0)" fieldset below to force or skip it.
+        <a href="/docs/SOURCES.md" target="_blank" rel="noopener">Why?</a>
       </p>
       <div class="toolbar" style="margin-top:0.5rem;flex-wrap:wrap;gap:0.5rem;">
         <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem;">

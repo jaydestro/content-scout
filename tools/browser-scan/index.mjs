@@ -26,6 +26,7 @@ import { scanLinkedIn, openLinkedInLogin } from './platforms/linkedin.mjs';
 import { scanReddit, openRedditLogin } from './platforms/reddit.mjs';
 import { loadConfig } from './lib/config.mjs';
 import { ensureProfileDir, launchEdge, attachEdge } from './lib/browser.mjs';
+import { filterHiring } from './lib/hiring-filter.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -140,6 +141,16 @@ if (command === 'launch') {
   const outDir = path.join(ROOT, 'reports', '.browser-scan', slug);
   fs.mkdirSync(outDir, { recursive: true });
 
+  // Per-scan meta sidecar — captures hiring-drop counts so the agent can
+  // surface them in the report as "X hiring posts dropped" without ever
+  // seeing the post bodies. Keyed by platform.
+  const hiringDropped = {};
+  // Per-month bucketing of dropped hiring items, keyed by YYYY-MM of the
+  // post_date, then by platform. Lets the report quantify hiring-context
+  // mentions for a given month as a market-demand signal. Items missing a
+  // valid post_date are bucketed under "unknown".
+  const hiringDroppedByMonth = {};
+
   // In CDP mode, attach ONCE and reuse the same context for all platforms —
   // the user is already logged in to all three in one Edge window.
   let sharedHandle = null;
@@ -179,9 +190,39 @@ if (command === 'launch') {
       if (ownsHandle) await handle.browser.close().catch(() => {});
     }
     const outFile = path.join(outDir, `${stamp}-${platform}.json`);
-    fs.writeFileSync(outFile, JSON.stringify(items, null, 2));
-    console.log(`[browser-scan] ${platform}: ${items.length} items → ${path.relative(ROOT, outFile)}`);
+    // Hard-drop hiring/recruiting/job-search posts before persisting the
+    // sidecar. The agent prompt already says "drop hiring content from every
+    // section", but in practice (especially on LinkedIn) recruiter posts
+    // leak through into reports — enforcing it here means the agent never
+    // even sees them. See lib/hiring-filter.mjs.
+    const { kept, dropped } = filterHiring(items);
+    if (dropped.length) hiringDropped[platform] = dropped.length;
+    for (const it of dropped) {
+      let bucket = 'unknown';
+      const d = it && it.post_date ? new Date(it.post_date) : null;
+      if (d && !Number.isNaN(d.getTime())) {
+        bucket = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      }
+      hiringDroppedByMonth[bucket] = hiringDroppedByMonth[bucket] || {};
+      hiringDroppedByMonth[bucket][platform] = (hiringDroppedByMonth[bucket][platform] || 0) + 1;
+    }
+    fs.writeFileSync(outFile, JSON.stringify(kept, null, 2));
+    const droppedNote = dropped.length ? ` (dropped ${dropped.length} hiring/recruiting)` : '';
+    console.log(`[browser-scan] ${platform}: ${kept.length} items${droppedNote} → ${path.relative(ROOT, outFile)}`);
   }
+
+  // Write the meta sidecar (always, even when zero drops, so absence of the
+  // file means "no scan ran" rather than "scan ran but zeros").
+  const totalDropped = Object.values(hiringDropped).reduce((a, b) => a + b, 0);
+  const metaFile = path.join(outDir, `${stamp}-meta.json`);
+  fs.writeFileSync(metaFile, JSON.stringify({
+    stamp,
+    slug,
+    platforms: requested,
+    hiringDropped,
+    hiringDroppedTotal: totalDropped,
+    hiringDroppedByMonth,
+  }, null, 2));
 
   // In CDP mode we do NOT close the user's Edge — they own it. Just disconnect.
   if (sharedHandle) await sharedHandle.browser.close().catch(() => {});
