@@ -303,10 +303,30 @@ The config file specifies which networks are enabled. For each enabled source, u
 **Referenced social posts in reports:** When social posts are referenced anywhere in the report (blog post mentions, community content that links to social discussions), include the direct link and poster info inline — do not use bare URLs or "[link]" placeholders.
 
 #### Sentiment Classification
-For every conversation item, assign a sentiment:
-- **Positive (🟢):** Praise, success story, recommendation, "this worked great", "solved my problem"
-- **Neutral (🟡):** Question, how-to, informational, comparison inquiry
-- **Negative (🔴):** Complaint, frustration, bug report, "doesn't work", "switching to X", "why can't I"
+
+For every conversation item, assign a sentiment. **Sentiment is about the author's stance toward OUR product** (the product configured in `scout-config-*.prompt.md`), not toward technology in general.
+
+- **Positive (🟢):**
+  - Praise of our product, success story, recommendation, "this worked great", "solved my problem"
+  - **Competitor-win migrations:** author is migrating/switching/moving **FROM a competitor TO our product** (e.g. "we moved from Aerospike to Azure Cosmos DB", "migrated from DynamoDB to Cosmos"). This is a customer win — classify as 🟢, NOT 🔴.
+  - "Choosing our product because…", "we picked [our product] over [competitor]".
+- **Neutral (🟡):**
+  - Question, how-to, informational, comparison inquiry without a verdict.
+  - Generic migration / "how do I migrate" mentions where the direction is unclear or doesn't involve our product as winner or loser.
+  - Announcements, release notes, retweets without commentary.
+- **Negative (🔴):**
+  - Complaint, frustration, bug report about our product, "doesn't work", "why can't I".
+  - **Detractor migrations:** author is migrating/switching/moving **FROM our product TO a competitor** (e.g. "we left Cosmos DB for MongoDB Atlas"). Only this direction is 🔴.
+  - "Chose [competitor] because [our product] failed at X".
+
+**Directional rule — MUST follow:**
+> The phrases "migrate from", "switch from", "moved from", "leaving", "ditching" are ambiguous on their own. Always identify the SOURCE and DESTINATION before assigning sentiment. If our product is the **destination**, the item is 🟢 (or 🟡 if hedged). If our product is the **source** being abandoned, the item is 🔴. If the post is about migrating BETWEEN two competitors with no involvement of our product, the item is 🟡 (or excluded as off-topic).
+
+**Author affiliation rule — MUST follow:**
+> Before scoring an item 🔴, check whether the author appears in the config's `### Product Team Members` (or a `microsoft_employee: true` / equivalent affiliation flag). Product team members and the company's own employees never get 🔴 for posts about our own product — they are internal advocates posting customer stories, demos, and migration wins. The lowest sentiment for a team-member-authored post about our own product is 🟡 (neutral). The only exception is a team member explicitly criticising our product on a personal capacity; flag those with `sentiment_confidence: low` and surface to the human for confirmation.
+
+**Confidence on directional / migration items:**
+Migration/switching items always carry `sentiment_confidence: medium` at best unless the post text explicitly states the direction with both endpoints named. If only one endpoint is named, mark `low` and let the human confirm.
 
 #### Feature Request & Pain Point Flagging
 When scanning conversations, flag items that match these patterns:
