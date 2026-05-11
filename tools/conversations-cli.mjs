@@ -13,12 +13,19 @@
 //   node tools/conversations-cli.mjs close <url-or-key> [--reason <id>] [--note "..."]
 //   node tools/conversations-cli.mjs reopen <url-or-key>
 //   node tools/conversations-cli.mjs is-closed <url-or-key>
+//   node tools/conversations-cli.mjs list-muted
+//   node tools/conversations-cli.mjs mute <handle> [--platform <name>] [--reason <text>] [--note "..."]
+//   node tools/conversations-cli.mjs unmute <handle> [--platform <name>]
+//   node tools/conversations-cli.mjs is-muted <handle> [--platform <name>]
+//   node tools/conversations-cli.mjs mute-owned <config-slug>
 //
 // Notes:
 // - <url-or-key> may be either a full URL (matched after normalization)
 //   or a previously-emitted composite key starting with "mix::".
 // - Reasons: not-relevant | contacted | follow-up-pm | spam | duplicate | other
 //   ("other" requires --note).
+// - For mute: <handle> is the account handle (leading @ optional). When
+//   --platform is omitted, the mute applies across every platform.
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +36,15 @@ import {
   closeMany,
   reopenMany,
 } from './web-ui/lib/closed-conversations.js';
+import {
+  loadMuted,
+  muteAccount,
+  unmuteMany,
+  muteKey,
+  normHandle,
+  normPlatform,
+  parseOwnedAccountsFromConfig,
+} from './web-ui/lib/muted-accounts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -63,7 +79,7 @@ function normalizeKey(target) {
 }
 
 function usage() {
-  console.log(`Content Scout — close/reopen Conversations rows
+  console.log(`Content Scout — close/reopen Conversations rows + mute noisy accounts
 
 Usage:
   node tools/conversations-cli.mjs list-closed
@@ -72,8 +88,17 @@ Usage:
   node tools/conversations-cli.mjs reopen <url-or-key>
   node tools/conversations-cli.mjs is-closed <url-or-key>
 
+  node tools/conversations-cli.mjs list-muted
+  node tools/conversations-cli.mjs mute <handle> [--platform <name>] [--reason <text>] [--note "..."]
+  node tools/conversations-cli.mjs unmute <handle> [--platform <name>]
+  node tools/conversations-cli.mjs is-muted <handle> [--platform <name>]
+
 Reasons: ${ALLOWED_REASONS.map((r) => r.id).join(' | ')}
-"other" requires --note.`);
+"other" requires --note.
+
+Mute notes:
+  - <handle> may include a leading @ (it's stripped automatically).
+  - Omit --platform to mute the handle across every platform.`);
 }
 
 async function main() {
@@ -161,6 +186,115 @@ async function main() {
     const key = normalizeKey(target);
     const { removed } = await reopenMany(REPORTS_DIR, [key]);
     console.log(`Reopened ${removed} conversation(s). key=${key}`);
+    return;
+  }
+
+  if (cmd === 'list-muted') {
+    const state = await loadMuted(REPORTS_DIR);
+    const items = Object.entries(state.items).sort((a, b) =>
+      (b[1].mutedAt || '').localeCompare(a[1].mutedAt || '')
+    );
+    if (!items.length) {
+      console.log('No muted accounts.');
+      return;
+    }
+    console.log(`${items.length} muted account(s):\n`);
+    for (const [key, info] of items) {
+      const when = info.mutedAt ? info.mutedAt.slice(0, 10) : '????-??-??';
+      const platform = info.platform === '*' ? '*all*' : info.platform;
+      const reason = info.reason ? ` — ${info.reason}` : '';
+      const note = info.note ? ` (${info.note})` : '';
+      console.log(`[${when}] @${info.handle} on ${platform}${reason}${note}`);
+      console.log(`  key: ${key}\n`);
+    }
+    return;
+  }
+
+  if (cmd === 'mute') {
+    const handle = positional[1];
+    if (!handle) {
+      console.error('mute requires <handle>');
+      process.exit(2);
+    }
+    const platform = typeof flags.platform === 'string' ? flags.platform : '';
+    const reason = typeof flags.reason === 'string' ? flags.reason : '';
+    const note = typeof flags.note === 'string' ? flags.note : '';
+    try {
+      const { key, state } = await muteAccount(REPORTS_DIR, { platform, handle, reason, note });
+      console.log(`Muted @${normHandle(handle)} on ${normPlatform(platform)}. key=${key}`);
+      console.log(`(${Object.keys(state.items).length} total muted)`);
+    } catch (err) {
+      console.error('Failed:', err.message || err);
+      process.exit(1);
+    }
+    return;
+  }
+
+  if (cmd === 'unmute') {
+    const handle = positional[1];
+    if (!handle) {
+      console.error('unmute requires <handle>');
+      process.exit(2);
+    }
+    const platform = typeof flags.platform === 'string' ? flags.platform : '';
+    const key = muteKey(platform, handle);
+    const { removed } = await unmuteMany(REPORTS_DIR, [key]);
+    console.log(`Unmuted ${removed} account(s). key=${key}`);
+    return;
+  }
+
+  if (cmd === 'is-muted') {
+    const handle = positional[1];
+    if (!handle) {
+      console.error('is-muted requires <handle>');
+      process.exit(2);
+    }
+    const platform = typeof flags.platform === 'string' ? flags.platform : '';
+    const key = muteKey(platform, handle);
+    const state = await loadMuted(REPORTS_DIR);
+    if (state.items[key]) {
+      const info = state.items[key];
+      console.log(`MUTED (${info.reason || 'no reason'}${info.note ? ': ' + info.note : ''})`);
+      process.exit(0);
+    } else {
+      console.log('not muted');
+      process.exit(1);
+    }
+  }
+
+  if (cmd === 'mute-owned') {
+    const slug = positional[1];
+    if (!slug) {
+      console.error('mute-owned requires <config-slug> (e.g. azure-cosmos-db)');
+      process.exit(2);
+    }
+    const { promises: fs } = await import('node:fs');
+    const cfgFile = path.join(REPO_ROOT, '.github', 'prompts', `scout-config-${slug}.prompt.md`);
+    let raw;
+    try {
+      raw = await fs.readFile(cfgFile, 'utf8');
+    } catch (err) {
+      console.error(`Could not read config: ${cfgFile}`);
+      process.exit(1);
+    }
+    const owned = parseOwnedAccountsFromConfig(raw);
+    if (!owned.length) {
+      console.log('No "Official social accounts" entries found in config.');
+      return;
+    }
+    console.log(`Found ${owned.length} owned account(s) in ${path.basename(cfgFile)}:`);
+    for (const acct of owned) {
+      const { key } = await muteAccount(REPORTS_DIR, {
+        platform: acct.platform,
+        handle: acct.handle,
+        reason: 'owned-account',
+        note: `Imported from scout-config-${slug}.prompt.md`,
+        owned: true,
+      });
+      console.log(`  muted @${acct.handle} on ${acct.platform} (key=${key})`);
+    }
+    const state = await loadMuted(REPORTS_DIR);
+    console.log(`(${Object.keys(state.items).length} total muted)`);
     return;
   }
 
