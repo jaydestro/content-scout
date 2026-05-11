@@ -10,6 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="theme-modern.css" />
+    <link rel="stylesheet" href="theme-polish.css" />
     <script>
       // Apply saved theme before first paint to avoid FOUC.
       (function () {
@@ -584,17 +585,10 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
 
           <!-- 3. Needs your attention: actionable items at the top of the fold -->
           <h3 class="dash-section-head">Needs your attention</h3>
-          <div class="card dash-action-items" id="dash-action-items-card">
-            <div class="dash-action-items-head">
-              <h3>Action items from latest scans</h3>
-              <span class="hint" id="dash-action-items-meta"></span>
-            </div>
-            <div id="dash-action-items"><span class="skeleton" style="width:70%"></span><span class="skeleton" style="width:50%"></span></div>
-          </div>
 
           <div class="card dash-social-activity" id="dash-social-activity-card">
             <div class="dash-social-activity-head">
-              <h3>Social activity — needs response</h3>
+              <h3>Social activity — last 30 days</h3>
               <span class="hint" id="dash-social-activity-meta"></span>
             </div>
             <div class="dash-social-summary" id="dash-social-summary"></div>
@@ -773,6 +767,15 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             Extra args (optional)
             <input id="run-extra" type="text" placeholder="e.g. a URL, item number, or additional context" />
           </label>
+          <fieldset id="run-browser-scan-wrap" class="run-browser-scan">
+            <legend>Browser scan (Layer 0)</legend>
+            <div class="run-browser-scan-choices">
+              <label class="field-inline"><input type="radio" name="run-browser-scan" value="auto" checked /><span>Auto — refresh sidecars older than 6h <span class="hint">(recommended)</span></span></label>
+              <label class="field-inline"><input type="radio" name="run-browser-scan" value="force" /><span>Force — always re-scan X / LinkedIn / Reddit first</span></label>
+              <label class="field-inline"><input type="radio" name="run-browser-scan" value="skip" /><span>Skip — only API / RSS layers</span></label>
+            </div>
+            <p class="hint" id="run-browser-scan-hint">Runs <code>node tools/browser-scan/index.mjs scan</code> before the agent so X / LinkedIn / Reddit return logged-in results. Requires the browser to be open on the CDP port — use the 🌐 panel above to launch it once.</p>
+          </fieldset>
           <fieldset id="run-range-wrap" class="run-range">
             <legend>Date range</legend>
             <div class="run-range-choices">
@@ -1029,6 +1032,18 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             <option value="negative">Negative</option>
           </select>
           <select id="conv-platform" aria-label="Filter by platform" title="Platform"><option value="">All platforms</option></select>
+          <select id="conv-timeframe" aria-label="Filter by timeframe" title="Timeframe">
+            <option value="">All time</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="180">Last 6 months</option>
+            <option value="365">Last year</option>
+          </select>
+          <select id="conv-jobs" aria-label="Filter job posts" title="Job posts">
+            <option value="hide">Hide job posts</option>
+            <option value="">Include job posts</option>
+            <option value="only">Only job posts</option>
+          </select>
           <label class="conv-needs-reply">
             <input type="checkbox" id="conv-needs-reply" />
             Needs reply (negative + mixed)
