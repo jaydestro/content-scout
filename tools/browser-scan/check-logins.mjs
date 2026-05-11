@@ -9,9 +9,10 @@
 
 import { chromium } from 'playwright';
 
-const flags = { port: 9222 };
+const flags = { port: 9222, json: false };
 for (let i = 2; i < process.argv.length; i++) {
   if (process.argv[i] === '--port') flags.port = Number(process.argv[++i] || 9222);
+  else if (process.argv[i] === '--json') flags.json = true;
 }
 
 const PROBES = [
@@ -39,12 +40,20 @@ let browser;
 try {
   browser = await chromium.connectOverCDP(`http://127.0.0.1:${flags.port}`, { timeout: 5000 });
 } catch (e) {
+  if (flags.json) {
+    console.log(JSON.stringify({ ok: false, error: `cdp-unreachable: ${e.message}`, port: flags.port }));
+    process.exit(2);
+  }
   console.error(`Could not attach to Edge on port ${flags.port}: ${e.message}`);
   console.error('Run `node tools/browser-scan/launch-edge.mjs` first.');
   process.exit(1);
 }
 const ctx = browser.contexts()[0];
 if (!ctx) {
+  if (flags.json) {
+    console.log(JSON.stringify({ ok: false, error: 'no-context' }));
+    process.exit(2);
+  }
   console.error('Edge has no contexts. Open a tab and re-run.');
   process.exit(1);
 }
@@ -72,6 +81,24 @@ for (const probe of PROBES) {
 }
 
 await browser.close().catch(() => {}); // disconnects, doesn't kill Edge
+
+if (flags.json) {
+  const byPlatform = {};
+  for (const r of results) {
+    let state = 'unclear';
+    if (r.status === 'OK') state = 'signed-in';
+    else if (typeof r.status === 'string' && r.status.startsWith('NOT')) state = 'signed-out';
+    else if (typeof r.status === 'string' && r.status.startsWith('error')) state = 'error';
+    byPlatform[r.platform] = { state, finalUrl: r.finalUrl, raw: r.status };
+  }
+  console.log(JSON.stringify({
+    ok: true,
+    port: flags.port,
+    checkedAt: new Date().toISOString(),
+    platforms: byPlatform,
+  }));
+  process.exit(0);
+}
 
 const pad = (s, n) => (s + ' '.repeat(n)).slice(0, n);
 console.log('');
