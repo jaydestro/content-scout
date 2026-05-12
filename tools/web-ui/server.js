@@ -1909,14 +1909,14 @@ app.get('/api/conversations', async (req, res) => {
     convs = convs
       .slice()
       .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    // Dedupe by key — the same conversation often appears in multiple
-    // report files. Keep the newest occurrence (already first after sort)
-    // and collect the other report names in `dupReports` for context.
+    // Pass 1: dedupe by exact key (URL or composite). Same conversation
+    // appears in multiple report files — keep the newest occurrence and
+    // collect the other report names in `dupReports`.
     const seen = new Map();
     for (const c of convs) {
       const k = c.key || c.url || `${c.platform}::${c.author}::${c.summary}`;
       if (!seen.has(k)) {
-        seen.set(k, { ...c, dupReports: [] });
+        seen.set(k, { ...c, dupReports: [], dupUrls: [] });
       } else {
         const first = seen.get(k);
         if (c.report && c.report !== first.report && !first.dupReports.includes(c.report)) {
@@ -1924,8 +1924,43 @@ app.get('/api/conversations', async (req, res) => {
         }
       }
     }
-    const dedupedConvs = Array.from(seen.values());
-    const dupesRemoved = convs.length - dedupedConvs.length;
+    let dedupedConvs = Array.from(seen.values());
+    // Pass 2: collapse near-duplicate posts from the same author whose
+    // bodies are virtually identical (e.g. recruiter/spam accounts that
+    // re-post the same blurb daily with a fresh activity URN). Signature
+    // is platform + author + first 120 chars of normalized summary.
+    // Skip when author/summary is empty — those would over-collapse.
+    const sigSeen = new Map();
+    const collapsed = [];
+    for (const c of dedupedConvs) {
+      const author = (c.author || '').toString().toLowerCase().trim();
+      const summary = (c.summary || '')
+        .toString()
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120);
+      if (!author || summary.length < 40) {
+        collapsed.push(c);
+        continue;
+      }
+      const platform = (c.platform || '').toString().toLowerCase().trim();
+      const sig = `sig::${platform}|${author}|${summary}`;
+      if (!sigSeen.has(sig)) {
+        sigSeen.set(sig, c);
+        collapsed.push(c);
+      } else {
+        const first = sigSeen.get(sig);
+        if (c.url && c.url !== first.url && !first.dupUrls.includes(c.url)) {
+          first.dupUrls.push(c.url);
+        }
+        if (c.report && c.report !== first.report && !first.dupReports.includes(c.report)) {
+          first.dupReports.push(c.report);
+        }
+      }
+    }
+    const dupesRemoved = convs.length - collapsed.length;
+    dedupedConvs = collapsed;
     res.json({
       conversations: dedupedConvs,
       total: dedupedConvs.length,
