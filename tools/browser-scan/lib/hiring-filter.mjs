@@ -102,6 +102,7 @@ const HIRING_PHRASES = [
   'oportunidade:',
   'oportunidade de',
   'estamos em busca',
+  'estamos contratando',
   'vaga:',
   'vaga de',
   'vagas de',
@@ -109,6 +110,85 @@ const HIRING_PHRASES = [
   'búsqueda laboral',
   'busco trabajo',
   'busco empleo',
+  'nous recrutons',
+  'nous cherchons',
+  // US contracting / vendor-list recruiter posts — Title/Duration/
+  // Location/Rate body format ("***W2,1099 requirement*** Title: …
+  // Duration: 1 year Location: Boston MA").
+  'w2/1099',
+  'w-2/1099',
+  'w2,1099',
+  'w-2,1099',
+  '1099 requirement',
+  'w2 requirement',
+  'w2/c2c',
+  'w2/c2h',
+  'corp to corp',
+  'corp-to-corp',
+  'no h1b',
+  'h1b transfer',
+  'h-1b transfer',
+  'visa status:',
+  'visa sponsorship',
+  'mandatory skills',
+  'required skills:',
+  'must-have skills',
+  'must have skills',
+  'must have skill',
+  'pay rate:',
+  'bill rate:',
+  'hourly rate:',
+  'job description:',
+  'job title:',
+  'job summary:',
+  'role:',
+  'job role:',
+  'looking for consultants',
+  'looking for candidates',
+  'consultant required',
+  'consultant requirement',
+  'send resumes to',
+  'send resumes at',
+  'send cvs to',
+  'kindly share resumes',
+  'kindly share profiles',
+  'please share profiles',
+  'please share matching',
+  'shortlist',
+  'shortlisting',
+  'interested please share',
+  'interested candidates can',
+  'walk in interview',
+  'walk-in interview',
+  'remote ok',
+  'remote contract',
+];
+
+// Recruiter-form-style body markers. Three or more of these in a single
+// post almost always means a vendor-list / contractor job spec sheet
+// (e.g. "Title: ... Duration: 1 year Location: Boston ...").
+const HIRING_FIELD_MARKERS = [
+  'title:',
+  'role:',
+  'position:',
+  'location:',
+  'duration:',
+  'rate:',
+  'pay rate:',
+  'bill rate:',
+  'client:',
+  'work mode:',
+  'work location:',
+  'experience:',
+  'skills:',
+  'mandatory skills',
+  'visa:',
+  'visa status',
+  'job description',
+  'must have',
+  'nice to have',
+  'tax term',
+  'work authorization',
 ];
 
 // Subreddits whose entire purpose is recruiting / job-search.
@@ -158,6 +238,17 @@ export function isHiringContent(item) {
   if (!haystack.trim()) return false;
   for (const phrase of HIRING_PHRASES) {
     if (haystack.includes(phrase)) return true;
+  }
+  // Structural fallback: a body that includes 3+ recruiter-form
+  // markers (Title:, Duration:, Location:, Rate:, etc.) is almost
+  // always a vendor-list contractor job spec, even if none of the
+  // explicit phrases trigger.
+  let markerHits = 0;
+  for (const m of HIRING_FIELD_MARKERS) {
+    if (haystack.includes(m)) {
+      markerHits++;
+      if (markerHits >= 3) return true;
+    }
   }
   return false;
 }
