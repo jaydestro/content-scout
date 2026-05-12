@@ -66,9 +66,24 @@
         if (cur) sel.value = cur;
       }
       renderConversations();
+      // Keep the toolbar mute-count pill fresh without forcing the
+      // modal open.
+      _refreshMutedCountSilent();
     } catch (err) {
       list.innerHTML = `<p class="hint">Failed to load conversations: ${esc(err.message || err)}</p>`;
     }
+  }
+  async function _refreshMutedCountSilent() {
+    try {
+      const data = await fetch('/api/muted-accounts').then((r) => r.json());
+      const n = Array.isArray(data.items) ? data.items.length : 0;
+      const pill = document.getElementById('conv-muted-count-pill');
+      if (pill) {
+        pill.textContent = String(n);
+        pill.style.display = n ? '' : 'none';
+      }
+      _mutedItemsCache = Array.isArray(data.items) ? data.items : _mutedItemsCache;
+    } catch {}
   }
 
   // Default visible window: most recent 14 days. Anything older is bucketed
@@ -137,8 +152,38 @@
     'job opportunity', 'job opportunities', 'job opening', 'job openings', 'recruiter',
     'looking to take on', 'critical role in a high-impact', 'are you an experienced',
     'oportunidade:', 'oportunidade de', 'estamos em busca', 'em busca de uma referência',
+    'estamos contratando',
     'vaga:', 'vaga de', 'vagas de',
     'búsqueda de', 'búsqueda laboral', 'busco trabajo', 'busco empleo',
+    'nous recrutons', 'nous cherchons',
+    // US contracting / vendor-list recruiter posts — Title/Duration/
+    // Location/Rate body format ("***W2,1099 requirement*** Title: …
+    // Duration: 1 year Location: Boston MA").
+    'w2/1099', 'w-2/1099', 'w2,1099', 'w-2,1099',
+    '1099 requirement', 'w2 requirement', 'w2/c2c', 'w2/c2h',
+    'corp to corp', 'corp-to-corp', 'no h1b', 'h1b transfer', 'h-1b transfer',
+    'visa status:', 'visa sponsorship',
+    'mandatory skills', 'required skills:', 'must-have skills', 'must have skills', 'must have skill',
+    'pay rate:', 'bill rate:', 'hourly rate:',
+    'job description:', 'job title:', 'job summary:', 'job role:',
+    'looking for consultants', 'looking for candidates',
+    'consultant required', 'consultant requirement',
+    'send resumes to', 'send resumes at', 'send cvs to',
+    'kindly share resumes', 'kindly share profiles', 'please share profiles', 'please share matching',
+    'shortlist', 'shortlisting',
+    'interested please share', 'interested candidates can',
+    'walk in interview', 'walk-in interview',
+    'remote ok', 'remote contract',
+  ];
+  // Recruiter-form-style body markers. 3+ markers in one post is
+  // almost always a vendor-list contractor job spec sheet.
+  const _HIRING_FIELDS = [
+    'title:', 'role:', 'position:', 'location:', 'duration:',
+    'rate:', 'pay rate:', 'bill rate:', 'client:',
+    'work mode:', 'work location:',
+    'experience:', 'skills:', 'mandatory skills',
+    'visa:', 'visa status', 'job description', 'must have',
+    'nice to have', 'tax term', 'work authorization',
   ];
   const _HIRING_SUBS = [
     'r/forhire', 'r/hiring', 'r/jobs', 'r/jobsearch', 'r/indiajobs',
@@ -155,6 +200,17 @@
     if (!hay.trim()) return false;
     for (const p of _HIRING_PHRASES) {
       if (hay.includes(p)) return true;
+    }
+    // Structural fallback: 3+ recruiter-form markers in one body
+    // (Title: / Duration: / Location: / Rate: / Skills: …) means
+    // it's a vendor-list job spec sheet, even without an explicit
+    // phrase hit.
+    let n = 0;
+    for (const m of _HIRING_FIELDS) {
+      if (hay.includes(m)) {
+        n++;
+        if (n >= 3) return true;
+      }
     }
     return false;
   }
@@ -461,26 +517,113 @@
     return String(h || '').trim().replace(/^@+/, '').replace(/^u\//i, '').toLowerCase();
   }
 
+  // --- Mute modal (replaces 3× window.prompt) ----------------------
+  let _muteModalEl = null;
+  function _ensureMuteModal() {
+    if (_muteModalEl) return _muteModalEl;
+    const dlg = document.createElement('dialog');
+    dlg.className = 'cs-modal cs-mute-modal';
+    dlg.innerHTML = `
+      <form method="dialog" class="cs-modal-form">
+        <header class="cs-modal-head">
+          <h3>Mute account</h3>
+          <button type="button" class="cs-modal-close" aria-label="Close" data-action="cancel">×</button>
+        </header>
+        <div class="cs-modal-body">
+          <label class="cs-field">
+            <span>Handle</span>
+            <input type="text" name="handle" autocomplete="off" required placeholder="e.g. nirav-mungara" />
+          </label>
+          <label class="cs-field">
+            <span>Scope</span>
+            <select name="scope">
+              <option value="platform">Only on this platform</option>
+              <option value="all">All platforms</option>
+            </select>
+          </label>
+          <input type="hidden" name="platform" />
+          <label class="cs-field">
+            <span>Reason</span>
+            <select name="reason">
+              <option value="">— None —</option>
+              <option value="recruiter">Recruiter / job post</option>
+              <option value="spam">Spam</option>
+              <option value="irrelevant">Irrelevant</option>
+              <option value="competitor">Competitor</option>
+              <option value="owned">Owned account</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <label class="cs-field">
+            <span>Note <span class="hint">(optional)</span></span>
+            <input type="text" name="note" maxlength="200" placeholder="Anything worth remembering" />
+          </label>
+          <p class="cs-modal-hint" data-role="ctx"></p>
+        </div>
+        <footer class="cs-modal-foot">
+          <button type="button" class="secondary" data-action="cancel">Cancel</button>
+          <button type="button" class="primary" data-action="confirm">Mute</button>
+        </footer>
+      </form>`;
+    document.body.appendChild(dlg);
+    _muteModalEl = dlg;
+    return dlg;
+  }
   function _promptMute(author, platform) {
     const handle = _cleanHandle(author);
     if (!handle) {
-      alert('No handle to mute.');
+      _toast('No handle to mute.', 'error');
       return;
     }
-    const scopeAns = window.prompt(
-      `Mute @${handle}.\n\nScope (1 = only on ${platform || 'this platform'}, 2 = all platforms):`,
-      '1'
-    );
-    if (scopeAns == null) return;
-    const scope = String(scopeAns).trim();
-    const useGlobal = scope === '2';
-    const reason = window.prompt(
-      'Reason (optional — e.g. recruiter, spam-bot, irrelevant, competitor):',
-      ''
-    );
-    if (reason == null) return;
-    const note = window.prompt('Note (optional):', '') || '';
-    _mute(useGlobal ? '' : platform, handle, reason, note);
+    const dlg = _ensureMuteModal();
+    const form = dlg.querySelector('form');
+    form.handle.value = handle;
+    form.platform.value = platform || '';
+    form.scope.value = platform ? 'platform' : 'all';
+    form.reason.value = '';
+    form.note.value = '';
+    const ctx = dlg.querySelector('[data-role="ctx"]');
+    ctx.textContent = platform
+      ? `From ${author || handle} on ${platform}.`
+      : `From ${author || handle} (no platform — defaults to all).`;
+    const onClick = (e) => {
+      const action = e.target?.dataset?.action;
+      if (!action) return;
+      if (action === 'cancel') {
+        dlg.close('cancel');
+        return;
+      }
+      if (action === 'confirm') {
+        const useGlobal = form.scope.value === 'all';
+        const h = _cleanHandle(form.handle.value);
+        if (!h) {
+          _toast('Handle is required.', 'error');
+          return;
+        }
+        _mute(useGlobal ? '' : (form.platform.value || ''), h, form.reason.value, form.note.value);
+        dlg.close('ok');
+      }
+    };
+    dlg.removeEventListener('click', dlg._csClick || (() => {}));
+    dlg._csClick = onClick;
+    dlg.addEventListener('click', onClick);
+    // Submit on Enter inside any text field
+    form.onsubmit = (ev) => {
+      ev.preventDefault();
+      onClick({ target: { dataset: { action: 'confirm' } } });
+    };
+    if (typeof dlg.showModal === 'function') dlg.showModal();
+    else dlg.setAttribute('open', '');
+    setTimeout(() => form.handle.focus(), 30);
+  }
+  function _toast(msg, tone) {
+    try {
+      if (window.csToast) {
+        window.csToast(msg, tone || 'info');
+        return;
+      }
+    } catch {}
+    if (tone === 'error') alert(msg);
   }
 
   async function _mute(platform, handle, reason, note) {
@@ -531,36 +674,91 @@
     }
   }
 
+  let _mutedItemsCache = [];
+  let _mutedFilter = '';
   async function _refreshMutedPanel() {
     const list = document.getElementById('conv-muted-list');
     if (!list) return;
     try {
       const data = await fetch('/api/muted-accounts').then((r) => r.json());
-      const items = Array.isArray(data.items) ? data.items : [];
-      if (!items.length) {
-        list.innerHTML = '<p class="hint">No muted accounts. Use the “Mute @…” button on any conversation row to add one.</p>';
-        return;
-      }
-      list.innerHTML = items
-        .map((it) => {
-          const when = it.mutedAt ? esc(it.mutedAt.slice(0, 10)) : '';
-          const platform = it.platform === '*' ? 'all platforms' : esc(it.platform || '?');
-          const reason = it.reason ? ` — ${esc(it.reason)}` : '';
-          const note = it.note ? ` <span class="hint">(${esc(it.note)})</span>` : '';
-          const ownedBadge = it.owned ? ' <span class="badge" title="Imported from config">owned</span>' : '';
-          return `<div class="conv-muted-row${it.owned ? ' is-owned' : ''}">
-            <span><strong>@${esc(it.handle)}</strong> on ${platform}${ownedBadge}${reason}${note}</span>
-            <span class="hint">${when}</span>
-            <button type="button" class="conv-muted-unmute" data-key="${esc(it.key)}">Unmute</button>
-          </div>`;
-        })
-        .join('');
-      list.querySelectorAll('.conv-muted-unmute').forEach((btn) => {
-        btn.addEventListener('click', () => _unmuteByKey(btn.dataset.key));
-      });
+      _mutedItemsCache = Array.isArray(data.items) ? data.items : [];
+      _renderMutedList();
     } catch (err) {
       list.innerHTML = `<p class="hint">Failed to load muted accounts: ${esc(err.message || err)}</p>`;
     }
+  }
+  function _platformGlyph(p) {
+    const k = String(p || '').toLowerCase();
+    if (k === 'linkedin') return 'in';
+    if (k === 'x' || k === 'twitter') return '𝕏';
+    if (k === 'reddit') return 'r/';
+    if (k === 'bluesky') return 'bsky';
+    if (k === 'youtube') return '▶';
+    if (k === 'github') return 'gh';
+    if (k === '*') return '∗';
+    return (k[0] || '?').toUpperCase();
+  }
+  function _renderMutedList() {
+    const list = document.getElementById('conv-muted-list');
+    const countEl = document.getElementById('conv-muted-count');
+    if (!list) return;
+    const items = _mutedItemsCache.slice();
+    if (countEl) countEl.textContent = String(items.length);
+    const pill = document.getElementById('conv-muted-count-pill');
+    if (pill) {
+      pill.textContent = String(items.length);
+      pill.style.display = items.length ? '' : 'none';
+    }
+    if (!items.length) {
+      list.innerHTML = `
+        <div class="cs-empty">
+          <div class="cs-empty-icon">🔇</div>
+          <h4>No muted accounts</h4>
+          <p>Use <strong>Mute @…</strong> on any conversation row, or
+          add one manually above. Owned accounts can also be imported
+          from a subject config.</p>
+        </div>`;
+      return;
+    }
+    const filter = (_mutedFilter || '').toLowerCase().trim();
+    const filtered = filter
+      ? items.filter(
+          (it) =>
+            (it.handle || '').toLowerCase().includes(filter) ||
+            (it.platform || '').toLowerCase().includes(filter) ||
+            (it.reason || '').toLowerCase().includes(filter) ||
+            (it.note || '').toLowerCase().includes(filter)
+        )
+      : items;
+    if (!filtered.length) {
+      list.innerHTML = `<p class="hint">No muted accounts match “${esc(_mutedFilter)}”.</p>`;
+      return;
+    }
+    list.innerHTML = filtered
+      .map((it) => {
+        const when = it.mutedAt ? esc(it.mutedAt.slice(0, 10)) : '';
+        const platform = it.platform === '*' ? 'all' : esc(it.platform || '?');
+        const reason = it.reason ? `<span class="cs-muted-tag cs-tag-reason">${esc(it.reason)}</span>` : '';
+        const note = it.note ? `<span class="cs-muted-note">${esc(it.note)}</span>` : '';
+        const ownedBadge = it.owned ? `<span class="cs-muted-tag cs-tag-owned" title="Imported from config">owned</span>` : '';
+        return `<div class="cs-muted-card${it.owned ? ' is-owned' : ''}" data-key="${esc(it.key)}">
+          <div class="cs-muted-avatar" data-platform="${esc(it.platform || '')}" aria-hidden="true">${esc(_platformGlyph(it.platform))}</div>
+          <div class="cs-muted-main">
+            <div class="cs-muted-title">
+              <strong>@${esc(it.handle)}</strong>
+              <span class="cs-muted-plat">${platform}</span>
+              ${ownedBadge}${reason}
+            </div>
+            ${note}
+            ${when ? `<div class="cs-muted-when">Muted ${when}</div>` : ''}
+          </div>
+          <button type="button" class="cs-muted-unmute" data-key="${esc(it.key)}" title="Unmute">Unmute</button>
+        </div>`;
+      })
+      .join('');
+    list.querySelectorAll('.cs-muted-unmute').forEach((btn) => {
+      btn.addEventListener('click', () => _unmuteByKey(btn.dataset.key));
+    });
   }
 
   function wireConversationsUI() {
@@ -614,16 +812,20 @@
         renderConversations();
       });
     }
-    // Muted accounts manage panel
+    // Muted accounts manage panel (now a <dialog> modal)
     const manageBtn = document.getElementById('conv-manage-muted');
     if (manageBtn && !manageBtn.dataset.wired) {
       manageBtn.dataset.wired = '1';
       manageBtn.addEventListener('click', () => {
         const panel = document.getElementById('conv-muted-panel');
         if (!panel) return;
-        const willOpen = panel.hidden;
-        panel.hidden = !willOpen;
-        if (willOpen) _refreshMutedPanel();
+        if (typeof panel.showModal === 'function') {
+          if (!panel.open) panel.showModal();
+        } else {
+          panel.hidden = false;
+          panel.setAttribute('open', '');
+        }
+        _refreshMutedPanel();
       });
     }
     const mutedCloseBtn = document.getElementById('conv-muted-close');
@@ -631,7 +833,56 @@
       mutedCloseBtn.dataset.wired = '1';
       mutedCloseBtn.addEventListener('click', () => {
         const panel = document.getElementById('conv-muted-panel');
-        if (panel) panel.hidden = true;
+        if (!panel) return;
+        if (typeof panel.close === 'function' && panel.open) panel.close();
+        else {
+          panel.hidden = true;
+          panel.removeAttribute('open');
+        }
+      });
+    }
+    // Click on backdrop closes the dialog
+    const mutedDlg = document.getElementById('conv-muted-panel');
+    if (mutedDlg && !mutedDlg.dataset.wiredBackdrop) {
+      mutedDlg.dataset.wiredBackdrop = '1';
+      mutedDlg.addEventListener('click', (e) => {
+        if (e.target === mutedDlg && typeof mutedDlg.close === 'function') mutedDlg.close();
+      });
+    }
+    // Search filter
+    const searchEl = document.getElementById('conv-muted-search');
+    if (searchEl && !searchEl.dataset.wired) {
+      searchEl.dataset.wired = '1';
+      searchEl.addEventListener('input', () => {
+        _mutedFilter = searchEl.value || '';
+        _renderMutedList();
+      });
+    }
+    // Manual add
+    const addBtn = document.getElementById('conv-add-mute');
+    if (addBtn && !addBtn.dataset.wired) {
+      addBtn.dataset.wired = '1';
+      addBtn.addEventListener('click', async () => {
+        const handle = _cleanHandle(document.getElementById('conv-add-handle')?.value);
+        const platform = document.getElementById('conv-add-platform')?.value || '';
+        const reason = document.getElementById('conv-add-reason')?.value || '';
+        const note = document.getElementById('conv-add-note')?.value || '';
+        const status = document.getElementById('conv-add-status');
+        if (!handle) {
+          if (status) status.textContent = 'Handle is required.';
+          return;
+        }
+        if (status) status.textContent = 'Muting…';
+        try {
+          await _mute(platform, handle, reason, note);
+          const inp = document.getElementById('conv-add-handle');
+          const n = document.getElementById('conv-add-note');
+          if (inp) inp.value = '';
+          if (n) n.value = '';
+          if (status) status.textContent = `Muted @${handle}.`;
+        } catch (err) {
+          if (status) status.textContent = 'Failed: ' + (err.message || err);
+        }
       });
     }
     // "Mute owned accounts from config" controls inside the muted panel.
