@@ -147,7 +147,12 @@
     if (!ul) return;
     const items = (activity && activity.activity) || [];
     if (!items.length) {
-      ul.innerHTML = '<li class="hint">No activity yet — run a scan to get started.</li>';
+      ul.innerHTML = `<li><div class="empty-state" style="margin:0.5rem 0">
+        <div class="empty-icon" aria-hidden="true">✨</div>
+        <p class="empty-title">No activity yet</p>
+        <p class="empty-body">Run a scan to surface reports, social posts, and creator signals here.</p>
+        <div class="empty-actions"><button type="button" class="btn-primary" data-goto="run" data-run-cmd="scout-scan">Run a scan</button></div>
+      </div></li>`;
       if (meta) meta.textContent = '';
       return;
     }
@@ -202,7 +207,12 @@
     const ul = $('dash-subjects');
     if (!ul) return;
     if (!configs.length) {
-      ul.innerHTML = '<li class="hint">No subjects yet — open <a href="#" data-goto="setup">Setup</a> to add one.</li>';
+      ul.innerHTML = `<li><div class="empty-state" style="margin:0.5rem 0">
+        <div class="empty-icon" aria-hidden="true">🎯</div>
+        <p class="empty-title">No subjects yet</p>
+        <p class="empty-body">Add a product, technology, or project to start tracking.</p>
+        <div class="empty-actions"><button type="button" class="btn-primary" data-goto="setup">Open Setup</button></div>
+      </div></li>`;
       return;
     }
     // For each config, find the most recent report whose name contains the slug.
