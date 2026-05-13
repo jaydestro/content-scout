@@ -449,7 +449,11 @@
     card.id = 'bs-dash-card';
     card.innerHTML = `
       <h3>Browser scan</h3>
-      <div id="bs-dash-body" class="hint">Loading…</div>
+      <div id="bs-dash-body" class="skeleton-stack">
+        <div class="skeleton skeleton-line" style="width:70%"></div>
+        <div class="skeleton skeleton-line" style="width:55%"></div>
+        <div class="skeleton skeleton-line" style="width:80%"></div>
+      </div>
     `;
     intel.appendChild(card);
   }
