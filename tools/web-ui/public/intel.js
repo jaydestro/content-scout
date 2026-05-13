@@ -30,6 +30,45 @@
     return document.getElementById('conv-show')?.value || 'open';
   }
 
+  // Switch to the Conversations view and scroll/highlight the row that
+  // matches `key`. If the row isn't in the current view (filtered out
+  // by include/platform), broaden filters and reload before scrolling.
+  // Called from Social pulse links so users can read the post inline
+  // instead of being kicked out to the external site.
+  async function _navigateToConversation(key) {
+    if (!key) return;
+    const navBtn = document.querySelector('nav button[data-view="conversations"]');
+    if (navBtn) navBtn.click();
+    const findRow = () => document.querySelector(`#conv-list .conv-row[data-key="${CSS.escape(key)}"]`);
+    const flash = (row) => {
+      if (!row) return;
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      row.classList.add('conv-row-flash');
+      setTimeout(() => row.classList.remove('conv-row-flash'), 2200);
+      try { row.focus({ preventScroll: true }); } catch {}
+    };
+    // Wait one tick for the view swap to render the existing list.
+    await new Promise((r) => setTimeout(r, 60));
+    let row = findRow();
+    if (row) { flash(row); return; }
+    // Not in current view — broaden filters: include=all, clear platform.
+    const show = document.getElementById('conv-show');
+    const plat = document.getElementById('conv-platform');
+    let mutated = false;
+    if (show && show.value !== 'all') { show.value = 'all'; mutated = true; }
+    if (plat && plat.value) { plat.value = ''; mutated = true; }
+    if (mutated) {
+      (show || plat).dispatchEvent(new Event('change', { bubbles: true }));
+      // loadConversations is async — poll briefly for the row to land.
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 80));
+        row = findRow();
+        if (row) break;
+      }
+    }
+    if (row) flash(row);
+  }
+
   const REASON_LABELS = {
     'not-relevant': 'Not relevant',
     'contacted': 'Contacted',
@@ -254,7 +293,9 @@
       : c.isMuted
         ? `<button type="button" class="conv-unmute-btn" data-author="${esc(author)}" data-platform="${esc(c.platform || '')}">Unmute</button>`
         : '';
-    return `<div class="conv-row sent-${esc(c.sentiment)}${closedClass}${c.isMuted ? ' conv-muted' : ''}" data-key="${esc(key)}">
+    const selectedClass = key && _selectedKeys.has(key) ? ' is-selected' : '';
+    const rowAttrs = key ? ` data-key="${esc(key)}" tabindex="0" role="button" aria-pressed="${_selectedKeys.has(key) ? 'true' : 'false'}"` : '';
+    return `<div class="conv-row sent-${esc(c.sentiment)}${closedClass}${c.isMuted ? ' conv-muted' : ''}${selectedClass}"${rowAttrs}>
       <div class="conv-row-head">
         ${checkbox}
         <span class="conv-dot" title="${esc(c.sentiment)}">${dot}</span>
@@ -399,12 +440,41 @@
     });
 
     list.querySelectorAll('.conv-cb').forEach((cb) => {
-      cb.addEventListener('change', () => {
+      // Checkbox = additive multi-select. Don't let the click bubble up
+      // to the row handler (which would treat it as a single-select click).
+      cb.addEventListener('click', (ev) => ev.stopPropagation());
+      cb.addEventListener('change', (ev) => {
+        ev.stopPropagation();
         const key = cb.dataset.key;
         if (!key) return;
         if (cb.checked) _selectedKeys.add(key);
         else _selectedKeys.delete(key);
+        _syncRowSelected(key);
         _updateBulkBar();
+      });
+    });
+    // Click anywhere on the card = single-select (radio-style). Ignore
+    // clicks on interactive children (links, buttons, inputs, labels).
+    list.querySelectorAll('.conv-row').forEach((row) => {
+      const key = row.dataset.key;
+      if (!key) return;
+      const select = (ev) => {
+        if (ev.target.closest('a, button, input, label, textarea, select')) return;
+        if (window.getSelection && String(window.getSelection())) return; // user is text-selecting
+        const wasOnly = _selectedKeys.size === 1 && _selectedKeys.has(key);
+        const prev = [..._selectedKeys];
+        _selectedKeys = new Set(wasOnly ? [] : [key]);
+        prev.forEach((k) => _syncRowSelected(k));
+        _syncRowSelected(key);
+        _updateBulkBar();
+      };
+      row.addEventListener('click', select);
+      row.addEventListener('keydown', (ev) => {
+        if (ev.key === ' ' || ev.key === 'Enter') {
+          if (ev.target !== row) return;
+          ev.preventDefault();
+          select(ev);
+        }
       });
     });
     list.querySelectorAll('.conv-close-btn').forEach((btn) => {
@@ -435,6 +505,22 @@
     bar.hidden = count === 0;
     const lbl = document.getElementById('conv-bulk-count');
     if (lbl) lbl.textContent = count === 1 ? '1 selected' : `${count} selected`;
+  }
+
+  // Toggle the .is-selected class + checkbox state on a single row
+  // without re-rendering the full list.
+  function _syncRowSelected(key) {
+    if (!key) return;
+    const sel = _selectedKeys.has(key);
+    const list = document.getElementById('conv-list');
+    if (!list) return;
+    const row = list.querySelector(`.conv-row[data-key="${CSS.escape(key)}"]`);
+    if (row) {
+      row.classList.toggle('is-selected', sel);
+      row.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      const cb = row.querySelector('.conv-cb');
+      if (cb && cb.checked !== sel) cb.checked = sel;
+    }
   }
 
   function _promptCloseSingle(key) {
@@ -955,6 +1041,31 @@
     await Promise.all([loadSentiment(), loadCreators(), loadSourceHealth(), loadSocialActivity()]);
   }
 
+  // ----- Post URL validation ---------------------------------------
+  // Syntactic + live check used by the social-activity card to hide dead
+  // links. Results cached client-side; the server has its own 1h cache.
+  function isValidPostUrl(u) {
+    if (!u || typeof u !== 'string') return false;
+    let parsed;
+    try { parsed = new URL(u); } catch { return false; }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    if (!parsed.hostname || !parsed.hostname.includes('.')) return false;
+    return true;
+  }
+  const _urlLiveCache = new Map(); // url -> Promise<{ok,status}>
+  function checkUrlLive(u) {
+    if (!isValidPostUrl(u)) return Promise.resolve({ ok: false, status: 0, reason: 'malformed' });
+    if (_urlLiveCache.has(u)) return _urlLiveCache.get(u);
+    const p = fetch(`/api/check-url?u=${encodeURIComponent(u)}`)
+      .then((r) => r.json())
+      .catch(() => ({ ok: false, status: 0, reason: 'fetch-failed' }));
+    _urlLiveCache.set(u, p);
+    return p;
+  }
+  // Expose so dashboard-enhancer.js (and any other dashboard module) can
+  // honor the "never put dead links in the dashboard" rule.
+  window.csUrlCheck = { isValidPostUrl, checkUrlLive };
+
   // ----- Social activity (community + product, multi-platform) ----
   // Buckets every conversation into Community vs Product per platform so the
   // dashboard surfaces both sides of social activity (Reddit, Bluesky,
@@ -1017,6 +1128,39 @@
         return;
       }
 
+      // Pre-validate every URL we might render so dead links never reach the
+      // dashboard. Items whose URL is malformed or unreachable get their
+      // url stripped — the item itself stays (as plain text / no-link form)
+      // so we don't silently lose conversation context. Server caches probe
+      // results for 1h, so repeat loads are effectively free.
+      const urlSet = new Set();
+      for (const c of all) {
+        if (c && isValidPostUrl(c.url)) urlSet.add(c.url);
+      }
+      const urls = [...urlSet].slice(0, 80); // hard cap on per-load probes
+      const liveMap = new Map();
+      const PROBE_CONC = 6;
+      let pi = 0;
+      async function probeWorker() {
+        while (pi < urls.length) {
+          const u = urls[pi++];
+          try {
+            const r = await checkUrlLive(u);
+            liveMap.set(u, !!(r && r.ok));
+          } catch {
+            liveMap.set(u, false);
+          }
+        }
+      }
+      await Promise.all(Array.from({ length: PROBE_CONC }, probeWorker));
+      // Strip URLs that failed the probe (or that we didn't probe due to the
+      // cap — treat those as unknown/dead to honor "never put dead links").
+      for (const c of all) {
+        if (!c) continue;
+        if (!isValidPostUrl(c.url)) { c.url = ''; continue; }
+        if (liveMap.get(c.url) !== true) c.url = '';
+      }
+
       // Bucket by platform → community/product
       const byPlatform = new Map();
       for (const c of all) {
@@ -1050,10 +1194,15 @@
           const c = b.community.length;
           const pr = b.product.length;
           if (!c && !pr) return null;
-          const sample = (b.community[0] || b.product[0]);
+          const sample =
+            b.community.find((x) => isValidPostUrl(x.url)) ||
+            b.product.find((x) => isValidPostUrl(x.url)) ||
+            b.community[0] ||
+            b.product[0];
+          const sampleHasUrl = sample && isValidPostUrl(sample.url);
           const sampleHtml = sample
             ? `<div class="dash-plat-sample">
-                ${sample.url ? `<a href="${esc(sample.url)}" target="_blank" rel="noopener">${esc(trim(sample.summary || sample.author || '(post)', 100))}</a>` : esc(trim(sample.summary || sample.author || '(post)', 100))}
+                ${sampleHasUrl ? `<a href="${esc(sample.url)}" class="dash-link" data-check-url="${esc(sample.url)}" data-conv-key="${esc(sample.key || '')}" target="_blank" rel="noopener" title="Open in Conversations (Ctrl/Cmd-click for source)">${esc(trim(sample.summary || sample.author || '(post)', 100))}</a>` : esc(trim(sample.summary || sample.author || '(post)', 100))}
                 <div class="hint">${esc(sample.author || '')}${sample.author && sample.date ? ' · ' : ''}${esc(sample.date || '')}</div>
               </div>`
             : '';
@@ -1079,10 +1228,11 @@
             ${needs.slice(0, 5).map((c) => {
               const dot = c.sentiment === 'negative' ? '🔴' : '🟡';
               const tone = c.sentiment === 'negative' ? 'critical' : 'mixed';
-              const link = c.url
-                ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">Source ↗</a>`
+              const hasUrl = isValidPostUrl(c.url);
+              const link = hasUrl
+                ? `<a href="${esc(c.url)}" class="dash-link" data-check-url="${esc(c.url)}" data-conv-key="${esc(c.key || '')}" target="_blank" rel="noopener" title="Open in Conversations (Ctrl/Cmd-click for source)">Source ↗</a>`
                 : '';
-              const replyBtn = c.url
+              const replyBtn = hasUrl
                 ? `<button type="button" class="dash-reply-btn" data-url="${esc(c.url)}">Draft reply</button>`
                 : '';
               return `<div class="dash-needs-row sent-${esc(c.sentiment)}">
@@ -1105,6 +1255,18 @@
         needsHtml ||
         '<p class="hint">No platform-specific conversations parsed yet.</p>';
 
+      // Social pulse links go to the Conversations view by default so
+      // users can read the post inline. Ctrl/Cmd/middle-click still
+      // opens the external source in a new tab.
+      host.querySelectorAll('a.dash-link[data-conv-key]').forEach((a) => {
+        const k = a.dataset.convKey;
+        if (!k) return;
+        a.addEventListener('click', (e) => {
+          if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) return;
+          e.preventDefault();
+          _navigateToConversation(k);
+        });
+      });
       host.querySelectorAll('.dash-reply-btn').forEach((btn) => {
         btn.addEventListener('click', () => {
           const url = btn.dataset.url;

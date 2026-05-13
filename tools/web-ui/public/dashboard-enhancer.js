@@ -341,6 +341,43 @@
       if (meta) meta.textContent = '';
       return;
     }
+    // Sanitize every external URL so we never put dead links in the
+    // dashboard. Falls back to a no-op if intel.js hasn't loaded the helper.
+    const check = window.csUrlCheck;
+    if (check && typeof check.checkUrlLive === 'function') {
+      const urls = new Set();
+      const collect = (u) => { if (check.isValidPostUrl(u)) urls.add(u); };
+      for (const g of groups) {
+        for (const it of g.topItems || []) collect(it.url);
+        for (const c of g.cfps || []) {
+          if (typeof c === 'string') continue;
+          collect(c.site); collect(c.cfp);
+          for (const ln of c.links || []) collect(ln.url);
+        }
+      }
+      const list = [...urls].slice(0, 80);
+      const live = new Map();
+      const CONC = 6;
+      let i = 0;
+      const worker = async () => {
+        while (i < list.length) {
+          const u = list[i++];
+          try { const r = await check.checkUrlLive(u); live.set(u, !!(r && r.ok)); }
+          catch { live.set(u, false); }
+        }
+      };
+      await Promise.all(Array.from({ length: CONC }, worker));
+      const sanitize = (u) => (check.isValidPostUrl(u) && live.get(u) === true ? u : '');
+      for (const g of groups) {
+        for (const it of g.topItems || []) it.url = sanitize(it.url);
+        for (const c of g.cfps || []) {
+          if (typeof c === 'string') continue;
+          c.site = sanitize(c.site);
+          c.cfp = sanitize(c.cfp);
+          c.links = (c.links || []).map((ln) => ({ ...ln, url: sanitize(ln.url) })).filter((ln) => ln.url);
+        }
+      }
+    }
     if (meta) {
       const total = groups.reduce(
         (n, g) => n + (g.topItems?.length || 0) + (g.cfps?.length || 0),

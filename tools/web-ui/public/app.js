@@ -1,4 +1,71 @@
 // Content Scout web UI — vanilla JS SPA
+
+// --- /api GET coalescing + short-TTL cache --------------------------
+// The dashboard fires ~11 GETs across three modules (app.js loadDashboard,
+// dashboard-enhancer loadAll, intel.js loadIntelCards) and several
+// endpoints (/api/configs, /api/reports) are fetched twice in parallel.
+// We dedupe in-flight GETs and cache OK responses for 4s so the dashboard
+// renders without waiting on redundant round-trips. Streaming and
+// mutation requests are passed through untouched.
+(() => {
+  const TTL_MS = 4000;
+  const inflight = new Map(); // url -> Promise<Response>
+  const cache = new Map();    // url -> { at, body, status, ct }
+  const origFetch = window.fetch.bind(window);
+  function cacheable(url, method) {
+    if (method !== 'GET') return false;
+    if (!url.startsWith('/api/')) return false;
+    if (url.includes('/stream')) return false;       // SSE
+    if (url.startsWith('/api/runs/') && /\/(stream|output)$/.test(url)) return false;
+    return true;
+  }
+  window.fetch = function (input, init) {
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    const method = String(
+      (init && init.method) ||
+      (typeof input !== 'string' && input && input.method) ||
+      'GET'
+    ).toUpperCase();
+    if (!cacheable(url, method)) return origFetch(input, init);
+    const now = Date.now();
+    const hit = cache.get(url);
+    if (hit && now - hit.at < TTL_MS) {
+      return Promise.resolve(
+        new Response(hit.body, { status: hit.status, headers: { 'content-type': hit.ct } })
+      );
+    }
+    if (inflight.has(url)) {
+      return inflight.get(url).then((r) => r.clone());
+    }
+    const p = origFetch(input, init)
+      .then(async (r) => {
+        try {
+          if (r.ok) {
+            const text = await r.clone().text();
+            cache.set(url, {
+              at: Date.now(),
+              body: text,
+              status: r.status,
+              ct: r.headers.get('content-type') || 'application/json',
+            });
+          }
+        } catch { /* ignore caching errors */ }
+        inflight.delete(url);
+        return r;
+      })
+      .catch((e) => {
+        inflight.delete(url);
+        throw e;
+      });
+    inflight.set(url, p);
+    return p.then((r) => r.clone());
+  };
+  // Expose a tiny invalidator so mutation handlers can drop stale entries.
+  window.__apiCacheBust = (prefix) => {
+    for (const k of cache.keys()) if (!prefix || k.startsWith(prefix)) cache.delete(k);
+  };
+})();
+
 const $ = (id) => document.getElementById(id);
 const api = async (path, opts) => {
   const r = await fetch(path, opts);

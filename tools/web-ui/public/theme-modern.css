@@ -1427,6 +1427,14 @@ aside li[data-name] .entry-open:hover {
 .conv-row.sent-negative { border-left-color: #ef4444; }
 .conv-row.sent-mixed    { border-left-color: #eab308; }
 .conv-row.sent-neutral  { border-left-color: #94a3b8; }
+.conv-row { cursor: pointer; transition: background 0.12s, box-shadow 0.12s, border-color 0.12s; }
+.conv-row:hover { background: rgba(129,140,248,0.05); }
+.conv-row:focus-visible { outline: 2px solid var(--accent, #818cf8); outline-offset: 2px; }
+.conv-row.is-selected {
+  background: rgba(129,140,248,0.10);
+  border-color: var(--accent, #818cf8);
+  box-shadow: 0 0 0 1px var(--accent, #818cf8) inset;
+}
 .conv-row-head { display: flex; gap: 0.5rem; align-items: baseline; flex-wrap: wrap; }
 .conv-row-head .conv-dot { font-size: 0.9rem; }
 .conv-row-head .conv-platform { color: var(--muted, #94a3b8); font-size: 0.85rem; padding: 0 0.4rem; border: 1px solid var(--border, #2a2e44); border-radius: 999px; }
@@ -2394,6 +2402,37 @@ html[data-theme="light"] .dash-plat-chip.dash-plat-product {
   line-height: 1.35;
 }
 .dash-plat-sample a { font-weight: 500; }
+
+/* Brief highlight when a Social pulse link jumps to its row in the
+   Conversations view. */
+@keyframes conv-row-flash-kf {
+  0%   { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.55); background-color: rgba(59, 130, 246, 0.12); }
+  60%  { box-shadow: 0 0 0 6px rgba(59, 130, 246, 0);   background-color: rgba(59, 130, 246, 0.06); }
+  100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);   background-color: transparent; }
+}
+.conv-row.conv-row-flash {
+  animation: conv-row-flash-kf 2.1s ease-out 1;
+  border-radius: 8px;
+}
+
+/* Dead/unreachable post links surfaced by the /api/check-url probe. */
+a.dash-link.is-dead-link {
+  color: var(--muted, #6b7280);
+  text-decoration: line-through;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+a.dash-link.is-dead-link .dash-link-badge {
+  text-decoration: none;
+  font-size: .72rem;
+  font-weight: 500;
+  color: #b91c1c;
+  margin-left: .25rem;
+}
+button.dash-reply-btn[disabled] {
+  opacity: .55;
+  cursor: not-allowed;
+}
 
 .dash-needs-card {
   margin-top: .85rem;
