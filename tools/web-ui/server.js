@@ -2083,6 +2083,65 @@ app.get('/api/conversations/reasons', (_req, res) => {
   res.json({ reasons: ALLOWED_REASONS });
 });
 
+// URL liveness probe — used by the dashboard to hide/flag dead post links.
+// In-memory cache; HEAD with GET fallback (many sites 405 HEAD). Treats
+// 2xx / 3xx / 401 / 403 / 429 as "reachable" (the page exists; we just can't
+// see it anonymously). Aggressively short timeout so we never block the UI.
+const _urlCheckCache = new Map(); // url -> { at, ok, status }
+const URL_CHECK_TTL_MS = 60 * 60 * 1000; // 1h
+const URL_CHECK_TIMEOUT_MS = 6000;
+async function probeUrl(url) {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), URL_CHECK_TIMEOUT_MS);
+  const ua = 'Mozilla/5.0 (compatible; ContentScout-LinkCheck/1.0)';
+  try {
+    let r = await fetch(url, {
+      method: 'HEAD',
+      redirect: 'follow',
+      signal: ac.signal,
+      headers: { 'user-agent': ua, accept: '*/*' },
+    });
+    if (r.status === 405 || r.status === 501 || r.status === 403) {
+      // Try GET — some hosts block HEAD or return 403 to it.
+      r = await fetch(url, {
+        method: 'GET',
+        redirect: 'follow',
+        signal: ac.signal,
+        headers: { 'user-agent': ua, accept: 'text/html,*/*' },
+      });
+    }
+    const s = r.status;
+    const ok = (s >= 200 && s < 400) || s === 401 || s === 403 || s === 429;
+    return { ok, status: s };
+  } catch (err) {
+    return { ok: false, status: 0, error: String(err && err.message || err) };
+  } finally {
+    clearTimeout(t);
+  }
+}
+app.get('/api/check-url', async (req, res) => {
+  const raw = String(req.query.u || '').trim();
+  if (!raw) return res.status(400).json({ error: 'u: required' });
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return res.json({ ok: false, status: 0, reason: 'malformed' });
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return res.json({ ok: false, status: 0, reason: 'bad-protocol' });
+  }
+  const key = parsed.toString();
+  const now = Date.now();
+  const hit = _urlCheckCache.get(key);
+  if (hit && now - hit.at < URL_CHECK_TTL_MS) {
+    return res.json({ ok: hit.ok, status: hit.status, cached: true });
+  }
+  const result = await probeUrl(key);
+  _urlCheckCache.set(key, { at: now, ok: result.ok, status: result.status });
+  res.json({ ...result, cached: false });
+});
+
 app.get('/api/conversations/closed', async (_req, res) => {
   try {
     const closed = await loadClosed(REPORTS_DIR);
