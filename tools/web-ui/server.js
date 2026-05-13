@@ -25,6 +25,8 @@ import {
   muteAccount,
   unmuteMany,
   isMutedConv,
+  mutedInfoForConv,
+  isNoTriageInfo,
   muteKey,
   normHandle,
   normPlatform,
@@ -1879,17 +1881,22 @@ app.get('/api/conversations', async (req, res) => {
     const includeMutedFlag = String(req.query.includeMuted || '').toLowerCase();
     const includeMuted = includeMutedFlag === '1' || includeMutedFlag === 'true' || include === 'muted';
     const onlyMuted = include === 'muted';
+    const onlyNoTriage = include === 'no-triage';
     const closed = await loadClosed(REPORTS_DIR);
     const muted = await loadMuted(REPORTS_DIR);
     let convs = idx.conversations.map((c) => {
       const key = convoKey(c);
       const closedInfo = key && closed.items[key] ? closed.items[key] : null;
-      const isMuted = isMutedConv(muted, c);
-      const base = { ...c, key, isClosed: !!closedInfo, isMuted };
+      const mutedInfo = mutedInfoForConv(muted, c);
+      const isMuted = !!mutedInfo || isMutedConv(muted, c);
+      const isNoTriage = isNoTriageInfo(mutedInfo);
+      const base = { ...c, key, isClosed: !!closedInfo, isMuted, isNoTriage };
       if (closedInfo) base.closedInfo = closedInfo;
+      if (mutedInfo) base.mutedInfo = mutedInfo;
       return base;
     });
-    if (onlyMuted) convs = convs.filter((c) => c.isMuted);
+    if (onlyNoTriage) convs = convs.filter((c) => c.isNoTriage);
+    else if (onlyMuted) convs = convs.filter((c) => c.isMuted);
     else if (!includeMuted) convs = convs.filter((c) => !c.isMuted);
     if (include === 'open') convs = convs.filter((c) => !c.isClosed);
     else if (include === 'closed') convs = convs.filter((c) => c.isClosed);

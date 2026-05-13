@@ -288,3 +288,28 @@ table.scout-table td,
   font-size: 2rem !important;
   margin-bottom: 0.5rem !important;
 }
+
+/* ---------- Conversations: no-triage people ------------------------------ */
+
+.conv-no-triage-banner {
+  border-color: rgba(86, 211, 138, 0.32) !important;
+  background: rgba(86, 211, 138, 0.08) !important;
+  color: var(--text) !important;
+}
+
+.conv-no-triage-btn {
+  border-color: rgba(86, 211, 138, 0.38) !important;
+  color: var(--text) !important;
+  background: rgba(86, 211, 138, 0.10) !important;
+}
+
+.conv-no-triage-btn:hover {
+  background: rgba(86, 211, 138, 0.18) !important;
+  border-color: rgba(86, 211, 138, 0.55) !important;
+}
+
+.cs-tag-no-triage {
+  border-color: rgba(86, 211, 138, 0.34) !important;
+  background: rgba(86, 211, 138, 0.10) !important;
+  color: #b8f3ce !important;
+}

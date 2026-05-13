@@ -17,6 +17,9 @@
 //   node tools/conversations-cli.mjs mute <handle> [--platform <name>] [--reason <text>] [--note "..."]
 //   node tools/conversations-cli.mjs unmute <handle> [--platform <name>]
 //   node tools/conversations-cli.mjs is-muted <handle> [--platform <name>]
+//   node tools/conversations-cli.mjs no-triage <handle> [--platform <name>] [--note "..."]
+//   node tools/conversations-cli.mjs list-no-triage
+//   node tools/conversations-cli.mjs is-no-triage <handle> [--platform <name>]
 //   node tools/conversations-cli.mjs mute-owned <config-slug>
 //
 // Notes:
@@ -43,6 +46,8 @@ import {
   muteKey,
   normHandle,
   normPlatform,
+  NO_TRIAGE_REASON,
+  isNoTriageInfo,
   parseOwnedAccountsFromConfig,
 } from './web-ui/lib/muted-accounts.js';
 
@@ -92,13 +97,23 @@ Usage:
   node tools/conversations-cli.mjs mute <handle> [--platform <name>] [--reason <text>] [--note "..."]
   node tools/conversations-cli.mjs unmute <handle> [--platform <name>]
   node tools/conversations-cli.mjs is-muted <handle> [--platform <name>]
+  node tools/conversations-cli.mjs no-triage <handle> [--platform <name>] [--note "..."]
+  node tools/conversations-cli.mjs list-no-triage
+  node tools/conversations-cli.mjs is-no-triage <handle> [--platform <name>]
 
 Reasons: ${ALLOWED_REASONS.map((r) => r.id).join(' | ')}
 "other" requires --note.
 
 Mute notes:
   - <handle> may include a leading @ (it's stripped automatically).
-  - Omit --platform to mute the handle across every platform.`);
+  - Omit --platform to mute the handle across every platform.
+  - no-triage is for likely Microsoft employees / owned people who should not enter the triage inbox.`);
+}
+
+function noTriageItems(state) {
+  return Object.entries(state.items)
+    .filter(([, info]) => isNoTriageInfo(info))
+    .sort((a, b) => (b[1].mutedAt || '').localeCompare(a[1].mutedAt || ''));
 }
 
 async function main() {
@@ -210,6 +225,24 @@ async function main() {
     return;
   }
 
+  if (cmd === 'list-no-triage') {
+    const state = await loadMuted(REPORTS_DIR);
+    const items = noTriageItems(state);
+    if (!items.length) {
+      console.log('No no-triage accounts.');
+      return;
+    }
+    console.log(`${items.length} no-triage account(s):\n`);
+    for (const [key, info] of items) {
+      const when = info.mutedAt ? info.mutedAt.slice(0, 10) : '????-??-??';
+      const platform = info.platform === '*' ? '*all*' : info.platform;
+      const note = info.note ? ` — ${info.note}` : '';
+      console.log(`[${when}] @${info.handle} on ${platform}${note}`);
+      console.log(`  key: ${key}\n`);
+    }
+    return;
+  }
+
   if (cmd === 'mute') {
     const handle = positional[1];
     if (!handle) {
@@ -223,6 +256,30 @@ async function main() {
       const { key, state } = await muteAccount(REPORTS_DIR, { platform, handle, reason, note });
       console.log(`Muted @${normHandle(handle)} on ${normPlatform(platform)}. key=${key}`);
       console.log(`(${Object.keys(state.items).length} total muted)`);
+    } catch (err) {
+      console.error('Failed:', err.message || err);
+      process.exit(1);
+    }
+    return;
+  }
+
+  if (cmd === 'no-triage') {
+    const handle = positional[1];
+    if (!handle) {
+      console.error('no-triage requires <handle>');
+      process.exit(2);
+    }
+    const platform = typeof flags.platform === 'string' ? flags.platform : '';
+    const note = typeof flags.note === 'string' ? flags.note : 'Likely Microsoft employee; no community triage needed.';
+    try {
+      const { key, state } = await muteAccount(REPORTS_DIR, {
+        platform,
+        handle,
+        reason: NO_TRIAGE_REASON,
+        note,
+      });
+      console.log(`Marked @${normHandle(handle)} on ${normPlatform(platform)} as no-triage. key=${key}`);
+      console.log(`(${noTriageItems(state).length} total no-triage)`);
     } catch (err) {
       console.error('Failed:', err.message || err);
       process.exit(1);
@@ -258,6 +315,26 @@ async function main() {
       process.exit(0);
     } else {
       console.log('not muted');
+      process.exit(1);
+    }
+  }
+
+  if (cmd === 'is-no-triage') {
+    const handle = positional[1];
+    if (!handle) {
+      console.error('is-no-triage requires <handle>');
+      process.exit(2);
+    }
+    const platform = typeof flags.platform === 'string' ? flags.platform : '';
+    const key = muteKey(platform, handle);
+    const state = await loadMuted(REPORTS_DIR);
+    const globalKey = muteKey('', handle);
+    const info = state.items[key] || state.items[globalKey];
+    if (isNoTriageInfo(info)) {
+      console.log(`NO_TRIAGE (${info.note || 'likely Microsoft employee'})`);
+      process.exit(0);
+    } else {
+      console.log('triage required');
       process.exit(1);
     }
   }

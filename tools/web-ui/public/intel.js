@@ -77,6 +77,7 @@
     'duplicate': 'Duplicate',
     'other': 'Other',
   };
+  const NO_TRIAGE_REASON = 'microsoft-employee';
 
   async function loadConversations() {
     const list = document.getElementById('conv-list');
@@ -285,8 +286,18 @@
       actionBtn = `<button type="button" class="conv-close-btn" data-key="${esc(key)}">Close…</button>`;
     }
     const author = c.author || '';
+    const noTriageBanner = c.isNoTriage
+      ? `<div class="conv-closed-banner conv-no-triage-banner">No triage: <strong>likely Microsoft employee</strong>${
+          c.mutedInfo?.note ? ` — ${esc(c.mutedInfo.note)}` : ''
+        }</div>`
+      : '';
     const mutedBanner = c.isMuted
-      ? `<div class="conv-closed-banner">Muted: <strong>@${esc(_cleanHandle(author))}</strong></div>`
+      ? c.isNoTriage
+        ? ''
+        : `<div class="conv-closed-banner">Muted: <strong>@${esc(_cleanHandle(author))}</strong></div>`
+      : '';
+    const noTriageBtn = author && !c.isNoTriage
+      ? `<button type="button" class="conv-no-triage-btn" data-author="${esc(author)}" data-platform="${esc(c.platform || '')}" title="Hide this person from the triage inbox as likely Microsoft/owned">No triage</button>`
       : '';
     const muteBtn = author && !c.isMuted
       ? `<button type="button" class="conv-mute-btn" data-author="${esc(author)}" data-platform="${esc(c.platform || '')}" title="Hide every conversation from this account">Mute @…</button>`
@@ -306,8 +317,8 @@
         ${link}
       </div>
       <div class="conv-summary">${esc(c.summary || '')}</div>
-      ${closedBanner}${mutedBanner}
-      <div class="conv-actions">${replyBtn}${actionBtn}${muteBtn}</div>
+      ${closedBanner}${noTriageBanner}${mutedBanner}
+      <div class="conv-actions">${replyBtn}${actionBtn}${noTriageBtn}${muteBtn}</div>
     </div>`;
   }
 
@@ -485,6 +496,9 @@
     });
     list.querySelectorAll('.conv-mute-btn').forEach((btn) => {
       btn.addEventListener('click', () => _promptMute(btn.dataset.author, btn.dataset.platform));
+    });
+    list.querySelectorAll('.conv-no-triage-btn').forEach((btn) => {
+      btn.addEventListener('click', () => _markNoTriage(btn.dataset.author, btn.dataset.platform));
     });
     list.querySelectorAll('.conv-unmute-btn').forEach((btn) => {
       btn.addEventListener('click', () => _unmute(btn.dataset.platform, btn.dataset.author));
@@ -728,6 +742,19 @@
     }
   }
 
+  async function _markNoTriage(author, platform) {
+    const handle = _cleanHandle(author);
+    if (!handle) {
+      _toast('No handle to mark no-triage.', 'error');
+      return;
+    }
+    const ok = window.confirm(
+      `Mark @${handle} as no-triage?\n\nUse this for likely Microsoft employees or owned people who should not enter community triage.`
+    );
+    if (!ok) return;
+    await _mute(platform || '', handle, NO_TRIAGE_REASON, 'Likely Microsoft employee; no community triage needed.');
+  }
+
   async function _unmute(platform, handle) {
     try {
       const res = await fetch('/api/muted-accounts', {
@@ -825,6 +852,9 @@
         const when = it.mutedAt ? esc(it.mutedAt.slice(0, 10)) : '';
         const platform = it.platform === '*' ? 'all' : esc(it.platform || '?');
         const reason = it.reason ? `<span class="cs-muted-tag cs-tag-reason">${esc(it.reason)}</span>` : '';
+        const noTriage = it.noTriage || it.reason === NO_TRIAGE_REASON
+          ? `<span class="cs-muted-tag cs-tag-no-triage">no triage</span>`
+          : '';
         const note = it.note ? `<span class="cs-muted-note">${esc(it.note)}</span>` : '';
         const ownedBadge = it.owned ? `<span class="cs-muted-tag cs-tag-owned" title="Imported from config">owned</span>` : '';
         return `<div class="cs-muted-card${it.owned ? ' is-owned' : ''}" data-key="${esc(it.key)}">
@@ -833,7 +863,7 @@
             <div class="cs-muted-title">
               <strong>@${esc(it.handle)}</strong>
               <span class="cs-muted-plat">${platform}</span>
-              ${ownedBadge}${reason}
+              ${ownedBadge}${noTriage}${reason}
             </div>
             ${note}
             ${when ? `<div class="cs-muted-when">Muted ${when}</div>` : ''}
