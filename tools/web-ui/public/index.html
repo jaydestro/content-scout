@@ -23,6 +23,8 @@
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="theme-modern.css" />
     <link rel="stylesheet" href="theme-polish.css" />
+    <!-- Additive polish layer: skeletons, focus rings, responsive fixes, motion. -->
+    <link rel="stylesheet" href="theme-refresh.css" />
     <script>
       // Apply saved theme before first paint to avoid FOUC.
       (function () {
@@ -1209,8 +1211,12 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
       </form>
     </dialog>
 
+    <!-- Shared utilities. Loaded before everything so window.scout is ready. -->
+    <script src="lib/utils.js"></script>
     <script src="app.js" type="module"></script>
     <script src="toasts.js" defer></script>
+    <!-- Auto-trap focus + Escape close for any dialog/modal. -->
+    <script src="lib/modal-a11y.js" defer></script>
     <script src="runs-queue.js" defer></script>
     <script src="run-enhancer.js" defer></script>
     <script src="bulk-urls.js" defer></script>
