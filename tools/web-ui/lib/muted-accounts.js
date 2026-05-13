@@ -27,6 +27,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 export const MUTED_FILE_NAME = '.muted-accounts.json';
+export const NO_TRIAGE_REASON = 'microsoft-employee';
 
 export function normHandle(h) {
   return String(h == null ? '' : h).trim().replace(/^@+/, '').toLowerCase();
@@ -88,12 +89,14 @@ export async function muteAccount(reportsDir, { platform, handle, reason, note, 
   }
   const state = await loadMuted(reportsDir);
   const key = muteKey(platform, cleanHandle);
+  const reasonText = reason ? String(reason).trim().slice(0, 100) : '';
   state.items[key] = {
     platform: normPlatform(platform),
     handle: cleanHandle,
-    reason: reason ? String(reason).trim().slice(0, 100) : '',
+    reason: reasonText,
     note: note ? String(note).trim().slice(0, 500) : '',
     owned: !!owned,
+    noTriage: reasonText === NO_TRIAGE_REASON,
     mutedAt: new Date().toISOString(),
   };
   await saveMuted(reportsDir, state);
@@ -201,4 +204,21 @@ export function isMutedConv(state, conv) {
   if (!handle) return false;
   const platform = normPlatform(conv.platform);
   return !!(state.items[`${platform}::${handle}`] || state.items[`*::${handle}`]);
+}
+
+export function mutedInfoForConv(state, conv) {
+  if (!state || !state.items || !conv) return null;
+  const handle = normHandle(conv.author);
+  if (!handle) return null;
+  const platform = normPlatform(conv.platform);
+  return state.items[`${platform}::${handle}`] || state.items[`*::${handle}`] || null;
+}
+
+export function isNoTriageInfo(info) {
+  if (!info || typeof info !== 'object') return false;
+  return !!info.noTriage || info.reason === NO_TRIAGE_REASON;
+}
+
+export function isNoTriageConv(state, conv) {
+  return isNoTriageInfo(mutedInfoForConv(state, conv));
 }
