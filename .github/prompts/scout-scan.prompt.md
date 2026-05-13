@@ -16,6 +16,24 @@ Run a content scan using the Content Scout agent.
 > run before a report file has been written to `reports/` (a stub report is
 > required even if zero items qualify).
 
+> **Speed — batch independent calls.** Per-source fetches are independent.
+> Inside a single tool turn, issue them in **parallel** (multiple
+> `fetch_webpage` / `run_in_terminal` calls in the same response) whenever
+> the next step doesn't depend on the previous result. Concretely, you can
+> fan out in parallel: Brave search per source, RSS feed pulls, GitHub API
+> queries, HN Algolia, DEV/Medium tags, Bluesky `app.bsky.feed.searchPosts`,
+> Stack Overflow, YouTube. Sequential is only required when you actually
+> need a previous result (e.g., reading a sidecar produced by a terminal
+> call). This typically cuts scan wall-clock by 4–8×.
+
+> **Subagent dispatch (if available).** If your runtime exposes a
+> `runSubagent`-style tool that returns the child's full output back to
+> the caller, you may fan out one subagent per source family (e.g., one
+> for "social: Bluesky+X+LinkedIn+Reddit", one for "blogs: DEV+Medium+RSS",
+> one for "code: GitHub+HN+Stack Overflow") and merge their findings.
+> Never fire-and-forget — only use subagents when their result text comes
+> back to you for inclusion in the final report.
+
 ## Instructions
 
 1. Load topic configuration(s) from `scout-config-*.prompt.md` files in `.github/prompts/`:
