@@ -864,6 +864,7 @@ code, pre { overflow-wrap: anywhere; }
 .run-range legend { padding: 0 0.4rem; font-size: 0.9rem; color: var(--muted); }
 .run-range-choices { display: flex; flex-wrap: wrap; gap: 0.6rem 1.1rem; margin-bottom: 0.4rem; }
 .run-range-detail { display: flex; gap: 0.75rem; margin-top: 0.4rem; flex-wrap: wrap; }
+.run-range-detail[hidden] { display: none; }
 .run-range-detail .field { max-width: 220px; }
 
 /* Bulk select (Select all / Clear) controls */
