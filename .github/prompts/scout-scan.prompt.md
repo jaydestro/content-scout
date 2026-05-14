@@ -44,6 +44,9 @@ Run a content scan using the Content Scout agent.
    - If no config exists, tell the user to run `/scout-onboard` first and stop.
 2. For each topic being scanned, determine the **time window**:
    - If the user specified a month/year (e.g., "March 2026"), scan that calendar month.
+   - If the user said **"today only"** (optionally with a date), scan only items posted on that calendar date (apply the timezone rule below — accept items whose UTC date is the same as, or one day after, the local date).
+   - If the user said **"this week so far"** or gave a phrase like `from YYYY-MM-DD to YYYY-MM-DD`, scan that explicit window inclusive of both endpoints.
+   - If the user said **"{Month} {Year} so far"** (e.g., "May 2026 so far"), scan from the 1st of that month through *now*.
    - Otherwise, use a **rolling 30-day window** ending at *now* (the moment the scan runs), **not** "the current calendar month". The window must always include items posted earlier today, including ones posted within the last few hours.
    - **Source-specific timezone rule:** Hacker News, Reddit, Bluesky, and X timestamps are UTC. The user's local time is likely behind UTC. When computing "today", treat any item with a UTC timestamp on the same calendar date as the user's local date *or* the next UTC date as in-window. Never reject an item solely because its UTC date is "tomorrow" relative to local time.
    - **Hacker News specifically:** use Algolia `search_by_date` with `numericFilters=created_at_i>{epoch_30_days_ago}` rather than a calendar-month query. Do NOT phrase HN queries as "stories from {Month Year}" — that pattern has historically produced false negatives near month boundaries.

@@ -796,13 +796,19 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
           </fieldset>
           <fieldset id="run-range-wrap" class="run-range">
             <legend>Date range</legend>
-            <div class="run-range-choices">
-              <label class="field-inline"><input type="radio" name="run-range" value="default" checked /><span>Last 30 days <span class="hint">(default)</span></span></label>
-              <label class="field-inline"><input type="radio" name="run-range" value="current-month" /><span>Current month</span></label>
-              <label class="field-inline"><input type="radio" name="run-range" value="last-month" /><span>Last month</span></label>
-              <label class="field-inline"><input type="radio" name="run-range" value="month" /><span>Specific month</span></label>
-              <label class="field-inline"><input type="radio" name="run-range" value="custom" /><span>Custom range</span></label>
-            </div>
+            <label class="field">
+              <span>Time frame</span>
+              <select id="run-range-preset">
+                <option value="default" selected>Last 30 days (default)</option>
+                <option value="today">Today</option>
+                <option value="this-week">This week (since Monday)</option>
+                <option value="this-month">This month so far</option>
+                <option value="last-month">Last month</option>
+                <option value="month">Specific month…</option>
+                <option value="custom">Custom range…</option>
+              </select>
+            </label>
+            <p id="run-range-summary" class="hint" style="margin:0.4rem 0 0;">Rolling 30-day window ending now.</p>
             <div id="run-range-month-wrap" class="run-range-detail" hidden>
               <label class="field">
                 <span>Month</span>
