@@ -8,6 +8,8 @@ description: "Scan for public content about your product, technology, or project
 
 Run a content scan using the Content Scout agent.
 
+> **Sub-flow — manual Reddit import.** If the user pastes a list of Reddit URLs and asks to ingest them (or automated Reddit Layers 0–3 are blocked and the user wants the manual fallback), follow `.github/prompts/scout-reddit-import.prompt.md` end-to-end instead of the full multi-source scan below.
+
 > **Do the work in this session.** Only delegate to subagents if you have a
 > real dispatch tool that returns the child's results back to you. Otherwise
 > scan every source yourself, sequentially, using your own `web/fetch` and
