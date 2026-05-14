@@ -281,7 +281,7 @@ We need to exclude your team's own content so we only find community/external co
 3. **Official social handles** — ask each platform separately: LinkedIn? X/Twitter? Bluesky? *(say "none" per platform)*
 4. Any **GitHub orgs or repos** to exclude? (e.g., "Azure/azure-cosmos-dotnet-v3") *(say "none" to skip)*
 5. Any **other domains or authors** to exclude? *(say "none" to skip)*
-6. Any specific **product team members** whose content should be tracked separately in a "Team Member Mentions" section? Provide names and optionally handles/roles. *(say "none" to skip)*
+6. Any specific **product team members / co-workers** whose content should be tracked separately in a "Team Member Mentions" section and excluded from community triage? Provide names plus any platform handles you know (e.g., `James Codella (github: jcodella, x: jcodella, linkedin: jamescodella)`). Name-only entries are allowed, but handles are required for automatic no-triage matching. *(say "none" to skip)*
 
 ### Group 4 — Networks to Scan
 Present the full source list and ask: **"Select all, or pick the ones you want."**
@@ -574,7 +574,7 @@ description: "Content Scout configuration for {Product Name}"
 - {domain or author or "none"}
 
 ### Product Team Members
-<!-- Content by these people appears in "Team Member Mentions" section, not as numbered items. Omit section if "none". -->
+<!-- Content by these people appears in "Team Member Mentions" section, not as numbered community items. Handles in parentheses can be imported as no-triage accounts with `node tools/conversations-cli.mjs no-triage-team {slug}` or the Conversations web UI. Omit section if "none". -->
 - {name} — {role or context}
 
 ## Networks

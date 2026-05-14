@@ -1,0 +1,315 @@
+/*
+ * theme-compact.css — Density & organization pass.
+ *
+ * Goals:
+ *   1. Reduce visual noise on the dashboard (tabs hide the long scroll).
+ *   2. Group primary nav into Admin / Work clusters with a visual divider.
+ *   3. Tighten card padding and spacing without losing readability.
+ *   4. Make the layout actually responsive below 960px.
+ *   5. Style the new .dash-tabs strip.
+ *
+ * Loaded last in index.html so it wins ties.
+ */
+
+/* ---------- Dashboard tabs ------------------------------------------------ */
+
+.dash-tabs {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+  margin: 1.25rem 0 1rem;
+  padding: 0.35rem;
+  background: linear-gradient(180deg, rgba(22, 26, 34, 0.7), rgba(22, 26, 34, 0.5));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.dash-tabs button[data-tab] {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font: 600 0.85rem / 1 'Inter', system-ui, sans-serif;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+  white-space: nowrap;
+}
+
+.dash-tabs button[data-tab]:hover {
+  color: var(--text);
+  background: rgba(122, 167, 255, 0.08);
+}
+
+.dash-tabs button[data-tab].active {
+  color: var(--text);
+  background: linear-gradient(135deg, rgba(122, 167, 255, 0.18), rgba(86, 211, 138, 0.12));
+  border-color: rgba(122, 167, 255, 0.35);
+  box-shadow: 0 0 0 1px rgba(122, 167, 255, 0.15) inset, 0 4px 12px -6px rgba(122, 167, 255, 0.4);
+}
+
+.dash-tabs button[data-tab]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.dash-tab-panel {
+  animation: dashTabFade 0.22s ease-out;
+}
+
+.dash-tab-panel[hidden] {
+  display: none !important;
+}
+
+@keyframes dashTabFade {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Tabs replace section heads inside them; demote any leftover heads. */
+.dash-tab-panel .dash-section-head {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+/* ---------- Hero compaction ---------------------------------------------- */
+
+.dash-hero {
+  padding: 1.25rem 1.5rem !important;
+  gap: 1rem !important;
+}
+
+.dash-hero h2 {
+  font-size: 1.5rem !important;
+  margin: 0 0 0.25rem !important;
+}
+
+.dash-hero .hint {
+  font-size: 0.9rem;
+}
+
+/* Stat tiles — slightly tighter on small screens */
+.dash-stats {
+  gap: 0.75rem !important;
+  margin-bottom: 0 !important;
+}
+
+.dash-stats .stat {
+  padding: 1rem 1.1rem !important;
+}
+
+.dash-stats .stat-num {
+  font-size: 1.65rem !important;
+}
+
+.dash-stats .stat-label {
+  font-size: 0.72rem !important;
+  letter-spacing: 0.05em;
+}
+
+/* ---------- Card density -------------------------------------------------- */
+
+.card {
+  padding: 1.1rem 1.25rem;
+}
+
+.card h3 {
+  font-size: 1rem;
+  margin: 0 0 0.65rem;
+}
+
+.dash-tab-panel .card + .card {
+  margin-top: 0.85rem;
+}
+
+.dash-tab-panel .cards {
+  gap: 0.85rem;
+}
+
+/* Lists inside cards: tighter rows */
+.card ul li {
+  padding: 0.45rem 0;
+}
+
+/* ---------- Nav grouping (Admin | Work) ---------------------------------- */
+
+/* Add a subtle vertical divider between Configs and Run buttons */
+.header-bar nav button[data-view="run"] {
+  position: relative;
+  margin-left: 0.5rem;
+}
+
+.header-bar nav button[data-view="run"]::before {
+  content: '';
+  position: absolute;
+  left: -0.35rem;
+  top: 25%;
+  bottom: 25%;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, var(--border) 30%, var(--border) 70%, transparent);
+  pointer-events: none;
+}
+
+/* ---------- Header trim --------------------------------------------------- */
+
+.site-header {
+  padding-block: 0.55rem 0.55rem !important;
+}
+
+.banner-title {
+  font-size: 1.05rem !important;
+}
+
+.banner-tagline {
+  font-size: 0.75rem !important;
+  opacity: 0.7;
+}
+
+.banner-logo {
+  width: 36px !important;
+  height: 36px !important;
+}
+
+/* ---------- View headers -------------------------------------------------- */
+
+main h2 {
+  font-size: 1.35rem;
+  margin: 0.25rem 0 0.85rem;
+}
+
+main .view {
+  padding-top: 0.5rem;
+}
+
+/* ---------- Responsive breakpoints --------------------------------------- */
+
+@media (max-width: 1100px) {
+  .dash-row-2,
+  .cards {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 860px) {
+  .header-bar nav .nav-label { display: none; }
+  .header-bar nav button { padding: 0.5rem 0.6rem; }
+  .banner-tagline { display: none; }
+  .header-bar nav button[data-view="run"] { margin-left: 0.3rem; }
+
+  .dash-hero {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    text-align: left;
+  }
+  .dash-hero-actions {
+    flex-wrap: wrap;
+  }
+  .dash-hero-actions button {
+    flex: 1 1 calc(50% - 0.5rem);
+  }
+
+  .dash-stats {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .dash-tabs {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .dash-tabs button[data-tab] {
+    flex: 1;
+    padding: 0.55rem 0.5rem;
+    text-align: center;
+  }
+}
+
+@media (max-width: 540px) {
+  .dash-stats {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  .dash-stats .stat-num { font-size: 1.4rem !important; }
+  main .view { padding-inline: 0.75rem; }
+  .site-header { padding-inline: 0.75rem !important; }
+  .header-bar { gap: 0.4rem; }
+  .header-actions .theme-toggle-label { display: none; }
+  .header-actions .theme-toggle { padding: 0.4rem; }
+}
+
+/* ---------- Reports / Social / Conversations density -------------------- */
+
+#view-reports .toolbar,
+#view-social .toolbar {
+  margin-bottom: 0.5rem;
+}
+
+/* Make tables denser & scroll horizontally on small screens */
+table.scout-table,
+.scout-table {
+  font-size: 0.88rem;
+}
+
+table.scout-table th,
+table.scout-table td,
+.scout-table th,
+.scout-table td {
+  padding: 0.5rem 0.7rem;
+}
+
+@media (max-width: 860px) {
+  .view :is(table, .scout-table) {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+}
+
+/* ---------- Run output area --------------------------------------------- */
+
+#run-output {
+  max-height: min(70vh, 720px);
+}
+
+/* ---------- Empty-state component, tighter ------------------------------- */
+
+.empty-state {
+  padding: 1.5rem 1rem !important;
+}
+.empty-state .empty-icon {
+  font-size: 2rem !important;
+  margin-bottom: 0.5rem !important;
+}
+
+/* ---------- Conversations: no-triage people ------------------------------ */
+
+.conv-no-triage-banner {
+  border-color: rgba(86, 211, 138, 0.32) !important;
+  background: rgba(86, 211, 138, 0.08) !important;
+  color: var(--text) !important;
+}
+
+.conv-no-triage-btn {
+  border-color: rgba(86, 211, 138, 0.38) !important;
+  color: var(--text) !important;
+  background: rgba(86, 211, 138, 0.10) !important;
+}
+
+.conv-no-triage-btn:hover {
+  background: rgba(86, 211, 138, 0.18) !important;
+  border-color: rgba(86, 211, 138, 0.55) !important;
+}
+
+.cs-tag-no-triage {
+  border-color: rgba(86, 211, 138, 0.34) !important;
+  background: rgba(86, 211, 138, 0.10) !important;
+  color: #b8f3ce !important;
+}

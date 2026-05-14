@@ -30,19 +30,22 @@ Users will request these operations using natural language. Map their requests t
 | User says | Prompt file | What to do |
 |-----------|-------------|------------|
 | "scout onboard", "set up content scout", "configure" | `.github/prompts/scout-onboard.prompt.md` | Interactive config wizard — ask questions one group at a time |
-| "scout scan", "scan for content", "find content" | `.github/prompts/scout-scan.prompt.md` | Search all sources, filter, generate report |
-| "scout post", "generate posts", "create social posts" | `.github/prompts/scout-post.prompt.md` | Generate social posts from a URL or report item |
+| "scout scan", "scan for content", "find content", "import reddit threads", "reddit fallback", "manual reddit" | `.github/prompts/scout-scan.prompt.md` | Search all sources, filter, generate report. Routes to the `scout-reddit-import.prompt.md` sub-flow when the user pastes Reddit URLs to ingest manually. |
+| "scout post", "generate posts", "create social posts", "alt text", "generate alt text", "describe this image" | `.github/prompts/scout-post.prompt.md` | Generate social posts from a URL or report item. Routes to the `scout-alt.prompt.md` sub-flow when alt text is requested for a post image. |
 | "scout calendar", "schedule posts", "posting calendar" | `.github/prompts/scout-calendar.prompt.md` | Create a weekly posting schedule |
 | "scout gaps", "content gaps", "gap analysis" | `.github/prompts/scout-gaps.prompt.md` | Show topics with no recent coverage |
 | "scout trends", "show trends", "compare months" | `.github/prompts/scout-trends.prompt.md` | Month-over-month trajectory analysis |
 | "scout creators", "influence movers", "log intervention", "record outcome" | `.github/prompts/scout-creators.prompt.md` | View creator trajectories, log outreach, track sentiment outcomes |
-| "scout doctor", "health check", "validate setup", "check keys" | `.github/prompts/scout-doctor.prompt.md` | Validate config, `.env` keys, source reachability, state integrity |
-| "scout keys", "add API keys", "set up credentials", "add reddit creds", "add bluesky creds" | `.github/prompts/scout-keys.prompt.md` | Interactive credential setup that writes safely to `.env` and verifies reachability |
+| "scout doctor", "health check", "validate setup", "check keys", "add API keys", "set up credentials", "add reddit creds", "add bluesky creds", "set vision provider", "switch to ollama", "use openai vision", "configure vision" | `.github/prompts/scout-doctor.prompt.md` | Validate config, `.env` keys, source reachability, state integrity. Routes to the `scout-keys.prompt.md` sub-flow for adding/fixing credentials and to `scout-vision.prompt.md` for configuring the vision provider used by alt text. |
 | "scout replay", "replay scan", "re-run filters" | `.github/prompts/scout-replay.prompt.md` | Re-apply filters/scoring/sentiment to a saved scan with no API calls |
 | "scout seo", "audit SEO", "optimize this page", "SEO check" | `.github/prompts/scout-seo.prompt.md` | SEO audit and concrete rewrite recommendations for one or more URLs |
-| "scout reddit-import", "import reddit threads", "reddit fallback", "manual reddit" | `.github/prompts/scout-reddit-import.prompt.md` | Manually ingest Reddit URLs when automated layers are blocked |
-| "scout alt", "alt text", "generate alt text", "describe this image" | `.github/prompts/scout-alt.prompt.md` | Draft accessibility-quality alt text for an image attached to a social post |
-| "scout vision", "set vision provider", "switch to ollama", "use openai vision", "configure vision" | `.github/prompts/scout-vision.prompt.md` | Configure or switch the vision provider used by `/scout-alt` (ollama / openai / none) |
+
+## Full-text search across reports + social posts
+
+Both surfaces share the same indexer (`tools/lib/corpus-search.mjs`) and grep `reports/*.md` + `social-posts/*.md`:
+
+- **CLI:** `node tools/search.mjs "vector search"` (add `--regex` for regex, `--kind reports` to scope, `--json` for machine output).
+- **Web UI:** the command palette (⌘/Ctrl-K) now has an **In files** section that surfaces matching files with the line number and a snippet preview. Clicking a hit jumps to the Reports or Social posts view with that file selected.
 
 When reading prompt files, the `${{input:...}}` placeholders are VS Code syntax. Instead, ask the user for those inputs conversationally.
 

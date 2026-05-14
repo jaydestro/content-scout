@@ -30,6 +30,45 @@
     return document.getElementById('conv-show')?.value || 'open';
   }
 
+  // Switch to the Conversations view and scroll/highlight the row that
+  // matches `key`. If the row isn't in the current view (filtered out
+  // by include/platform), broaden filters and reload before scrolling.
+  // Called from Social pulse links so users can read the post inline
+  // instead of being kicked out to the external site.
+  async function _navigateToConversation(key) {
+    if (!key) return;
+    const navBtn = document.querySelector('nav button[data-view="conversations"]');
+    if (navBtn) navBtn.click();
+    const findRow = () => document.querySelector(`#conv-list .conv-row[data-key="${CSS.escape(key)}"]`);
+    const flash = (row) => {
+      if (!row) return;
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      row.classList.add('conv-row-flash');
+      setTimeout(() => row.classList.remove('conv-row-flash'), 2200);
+      try { row.focus({ preventScroll: true }); } catch {}
+    };
+    // Wait one tick for the view swap to render the existing list.
+    await new Promise((r) => setTimeout(r, 60));
+    let row = findRow();
+    if (row) { flash(row); return; }
+    // Not in current view — broaden filters: include=all, clear platform.
+    const show = document.getElementById('conv-show');
+    const plat = document.getElementById('conv-platform');
+    let mutated = false;
+    if (show && show.value !== 'all') { show.value = 'all'; mutated = true; }
+    if (plat && plat.value) { plat.value = ''; mutated = true; }
+    if (mutated) {
+      (show || plat).dispatchEvent(new Event('change', { bubbles: true }));
+      // loadConversations is async — poll briefly for the row to land.
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 80));
+        row = findRow();
+        if (row) break;
+      }
+    }
+    if (row) flash(row);
+  }
+
   const REASON_LABELS = {
     'not-relevant': 'Not relevant',
     'contacted': 'Contacted',
@@ -38,6 +77,7 @@
     'duplicate': 'Duplicate',
     'other': 'Other',
   };
+  const NO_TRIAGE_REASON = 'microsoft-employee';
 
   async function loadConversations() {
     const list = document.getElementById('conv-list');
@@ -66,9 +106,24 @@
         if (cur) sel.value = cur;
       }
       renderConversations();
+      // Keep the toolbar mute-count pill fresh without forcing the
+      // modal open.
+      _refreshMutedCountSilent();
     } catch (err) {
       list.innerHTML = `<p class="hint">Failed to load conversations: ${esc(err.message || err)}</p>`;
     }
+  }
+  async function _refreshMutedCountSilent() {
+    try {
+      const data = await fetch('/api/muted-accounts').then((r) => r.json());
+      const n = Array.isArray(data.items) ? data.items.length : 0;
+      const pill = document.getElementById('conv-muted-count-pill');
+      if (pill) {
+        pill.textContent = String(n);
+        pill.style.display = n ? '' : 'none';
+      }
+      _mutedItemsCache = Array.isArray(data.items) ? data.items : _mutedItemsCache;
+    } catch {}
   }
 
   // Default visible window: most recent 14 days. Anything older is bucketed
@@ -137,8 +192,38 @@
     'job opportunity', 'job opportunities', 'job opening', 'job openings', 'recruiter',
     'looking to take on', 'critical role in a high-impact', 'are you an experienced',
     'oportunidade:', 'oportunidade de', 'estamos em busca', 'em busca de uma referência',
+    'estamos contratando',
     'vaga:', 'vaga de', 'vagas de',
     'búsqueda de', 'búsqueda laboral', 'busco trabajo', 'busco empleo',
+    'nous recrutons', 'nous cherchons',
+    // US contracting / vendor-list recruiter posts — Title/Duration/
+    // Location/Rate body format ("***W2,1099 requirement*** Title: …
+    // Duration: 1 year Location: Boston MA").
+    'w2/1099', 'w-2/1099', 'w2,1099', 'w-2,1099',
+    '1099 requirement', 'w2 requirement', 'w2/c2c', 'w2/c2h',
+    'corp to corp', 'corp-to-corp', 'no h1b', 'h1b transfer', 'h-1b transfer',
+    'visa status:', 'visa sponsorship',
+    'mandatory skills', 'required skills:', 'must-have skills', 'must have skills', 'must have skill',
+    'pay rate:', 'bill rate:', 'hourly rate:',
+    'job description:', 'job title:', 'job summary:', 'job role:',
+    'looking for consultants', 'looking for candidates',
+    'consultant required', 'consultant requirement',
+    'send resumes to', 'send resumes at', 'send cvs to',
+    'kindly share resumes', 'kindly share profiles', 'please share profiles', 'please share matching',
+    'shortlist', 'shortlisting',
+    'interested please share', 'interested candidates can',
+    'walk in interview', 'walk-in interview',
+    'remote ok', 'remote contract',
+  ];
+  // Recruiter-form-style body markers. 3+ markers in one post is
+  // almost always a vendor-list contractor job spec sheet.
+  const _HIRING_FIELDS = [
+    'title:', 'role:', 'position:', 'location:', 'duration:',
+    'rate:', 'pay rate:', 'bill rate:', 'client:',
+    'work mode:', 'work location:',
+    'experience:', 'skills:', 'mandatory skills',
+    'visa:', 'visa status', 'job description', 'must have',
+    'nice to have', 'tax term', 'work authorization',
   ];
   const _HIRING_SUBS = [
     'r/forhire', 'r/hiring', 'r/jobs', 'r/jobsearch', 'r/indiajobs',
@@ -155,6 +240,17 @@
     if (!hay.trim()) return false;
     for (const p of _HIRING_PHRASES) {
       if (hay.includes(p)) return true;
+    }
+    // Structural fallback: 3+ recruiter-form markers in one body
+    // (Title: / Duration: / Location: / Rate: / Skills: …) means
+    // it's a vendor-list job spec sheet, even without an explicit
+    // phrase hit.
+    let n = 0;
+    for (const m of _HIRING_FIELDS) {
+      if (hay.includes(m)) {
+        n++;
+        if (n >= 3) return true;
+      }
     }
     return false;
   }
@@ -190,15 +286,27 @@
       actionBtn = `<button type="button" class="conv-close-btn" data-key="${esc(key)}">Close…</button>`;
     }
     const author = c.author || '';
+    const noTriageBanner = c.isNoTriage
+      ? `<div class="conv-closed-banner conv-no-triage-banner">No triage: <strong>likely Microsoft employee</strong>${
+          c.mutedInfo?.note ? ` — ${esc(c.mutedInfo.note)}` : ''
+        }</div>`
+      : '';
     const mutedBanner = c.isMuted
-      ? `<div class="conv-closed-banner">Muted: <strong>@${esc(_cleanHandle(author))}</strong></div>`
+      ? c.isNoTriage
+        ? ''
+        : `<div class="conv-closed-banner">Muted: <strong>@${esc(_cleanHandle(author))}</strong></div>`
+      : '';
+    const noTriageBtn = author && !c.isNoTriage
+      ? `<button type="button" class="conv-no-triage-btn" data-author="${esc(author)}" data-platform="${esc(c.platform || '')}" title="Hide this person from the triage inbox as likely Microsoft/owned">No triage</button>`
       : '';
     const muteBtn = author && !c.isMuted
       ? `<button type="button" class="conv-mute-btn" data-author="${esc(author)}" data-platform="${esc(c.platform || '')}" title="Hide every conversation from this account">Mute @…</button>`
       : c.isMuted
         ? `<button type="button" class="conv-unmute-btn" data-author="${esc(author)}" data-platform="${esc(c.platform || '')}">Unmute</button>`
         : '';
-    return `<div class="conv-row sent-${esc(c.sentiment)}${closedClass}${c.isMuted ? ' conv-muted' : ''}" data-key="${esc(key)}">
+    const selectedClass = key && _selectedKeys.has(key) ? ' is-selected' : '';
+    const rowAttrs = key ? ` data-key="${esc(key)}" tabindex="0" role="button" aria-pressed="${_selectedKeys.has(key) ? 'true' : 'false'}"` : '';
+    return `<div class="conv-row sent-${esc(c.sentiment)}${closedClass}${c.isMuted ? ' conv-muted' : ''}${selectedClass}"${rowAttrs}>
       <div class="conv-row-head">
         ${checkbox}
         <span class="conv-dot" title="${esc(c.sentiment)}">${dot}</span>
@@ -209,8 +317,8 @@
         ${link}
       </div>
       <div class="conv-summary">${esc(c.summary || '')}</div>
-      ${closedBanner}${mutedBanner}
-      <div class="conv-actions">${replyBtn}${actionBtn}${muteBtn}</div>
+      ${closedBanner}${noTriageBanner}${mutedBanner}
+      <div class="conv-actions">${replyBtn}${actionBtn}${noTriageBtn}${muteBtn}</div>
     </div>`;
   }
 
@@ -343,12 +451,41 @@
     });
 
     list.querySelectorAll('.conv-cb').forEach((cb) => {
-      cb.addEventListener('change', () => {
+      // Checkbox = additive multi-select. Don't let the click bubble up
+      // to the row handler (which would treat it as a single-select click).
+      cb.addEventListener('click', (ev) => ev.stopPropagation());
+      cb.addEventListener('change', (ev) => {
+        ev.stopPropagation();
         const key = cb.dataset.key;
         if (!key) return;
         if (cb.checked) _selectedKeys.add(key);
         else _selectedKeys.delete(key);
+        _syncRowSelected(key);
         _updateBulkBar();
+      });
+    });
+    // Click anywhere on the card = single-select (radio-style). Ignore
+    // clicks on interactive children (links, buttons, inputs, labels).
+    list.querySelectorAll('.conv-row').forEach((row) => {
+      const key = row.dataset.key;
+      if (!key) return;
+      const select = (ev) => {
+        if (ev.target.closest('a, button, input, label, textarea, select')) return;
+        if (window.getSelection && String(window.getSelection())) return; // user is text-selecting
+        const wasOnly = _selectedKeys.size === 1 && _selectedKeys.has(key);
+        const prev = [..._selectedKeys];
+        _selectedKeys = new Set(wasOnly ? [] : [key]);
+        prev.forEach((k) => _syncRowSelected(k));
+        _syncRowSelected(key);
+        _updateBulkBar();
+      };
+      row.addEventListener('click', select);
+      row.addEventListener('keydown', (ev) => {
+        if (ev.key === ' ' || ev.key === 'Enter') {
+          if (ev.target !== row) return;
+          ev.preventDefault();
+          select(ev);
+        }
       });
     });
     list.querySelectorAll('.conv-close-btn').forEach((btn) => {
@@ -359,6 +496,9 @@
     });
     list.querySelectorAll('.conv-mute-btn').forEach((btn) => {
       btn.addEventListener('click', () => _promptMute(btn.dataset.author, btn.dataset.platform));
+    });
+    list.querySelectorAll('.conv-no-triage-btn').forEach((btn) => {
+      btn.addEventListener('click', () => _markNoTriage(btn.dataset.author, btn.dataset.platform));
     });
     list.querySelectorAll('.conv-unmute-btn').forEach((btn) => {
       btn.addEventListener('click', () => _unmute(btn.dataset.platform, btn.dataset.author));
@@ -379,6 +519,22 @@
     bar.hidden = count === 0;
     const lbl = document.getElementById('conv-bulk-count');
     if (lbl) lbl.textContent = count === 1 ? '1 selected' : `${count} selected`;
+  }
+
+  // Toggle the .is-selected class + checkbox state on a single row
+  // without re-rendering the full list.
+  function _syncRowSelected(key) {
+    if (!key) return;
+    const sel = _selectedKeys.has(key);
+    const list = document.getElementById('conv-list');
+    if (!list) return;
+    const row = list.querySelector(`.conv-row[data-key="${CSS.escape(key)}"]`);
+    if (row) {
+      row.classList.toggle('is-selected', sel);
+      row.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      const cb = row.querySelector('.conv-cb');
+      if (cb && cb.checked !== sel) cb.checked = sel;
+    }
   }
 
   function _promptCloseSingle(key) {
@@ -461,26 +617,113 @@
     return String(h || '').trim().replace(/^@+/, '').replace(/^u\//i, '').toLowerCase();
   }
 
+  // --- Mute modal (replaces 3× window.prompt) ----------------------
+  let _muteModalEl = null;
+  function _ensureMuteModal() {
+    if (_muteModalEl) return _muteModalEl;
+    const dlg = document.createElement('dialog');
+    dlg.className = 'cs-modal cs-mute-modal';
+    dlg.innerHTML = `
+      <form method="dialog" class="cs-modal-form">
+        <header class="cs-modal-head">
+          <h3>Mute account</h3>
+          <button type="button" class="cs-modal-close" aria-label="Close" data-action="cancel">×</button>
+        </header>
+        <div class="cs-modal-body">
+          <label class="cs-field">
+            <span>Handle</span>
+            <input type="text" name="handle" autocomplete="off" required placeholder="e.g. nirav-mungara" />
+          </label>
+          <label class="cs-field">
+            <span>Scope</span>
+            <select name="scope">
+              <option value="platform">Only on this platform</option>
+              <option value="all">All platforms</option>
+            </select>
+          </label>
+          <input type="hidden" name="platform" />
+          <label class="cs-field">
+            <span>Reason</span>
+            <select name="reason">
+              <option value="">— None —</option>
+              <option value="recruiter">Recruiter / job post</option>
+              <option value="spam">Spam</option>
+              <option value="irrelevant">Irrelevant</option>
+              <option value="competitor">Competitor</option>
+              <option value="owned">Owned account</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <label class="cs-field">
+            <span>Note <span class="hint">(optional)</span></span>
+            <input type="text" name="note" maxlength="200" placeholder="Anything worth remembering" />
+          </label>
+          <p class="cs-modal-hint" data-role="ctx"></p>
+        </div>
+        <footer class="cs-modal-foot">
+          <button type="button" class="secondary" data-action="cancel">Cancel</button>
+          <button type="button" class="primary" data-action="confirm">Mute</button>
+        </footer>
+      </form>`;
+    document.body.appendChild(dlg);
+    _muteModalEl = dlg;
+    return dlg;
+  }
   function _promptMute(author, platform) {
     const handle = _cleanHandle(author);
     if (!handle) {
-      alert('No handle to mute.');
+      _toast('No handle to mute.', 'error');
       return;
     }
-    const scopeAns = window.prompt(
-      `Mute @${handle}.\n\nScope (1 = only on ${platform || 'this platform'}, 2 = all platforms):`,
-      '1'
-    );
-    if (scopeAns == null) return;
-    const scope = String(scopeAns).trim();
-    const useGlobal = scope === '2';
-    const reason = window.prompt(
-      'Reason (optional — e.g. recruiter, spam-bot, irrelevant, competitor):',
-      ''
-    );
-    if (reason == null) return;
-    const note = window.prompt('Note (optional):', '') || '';
-    _mute(useGlobal ? '' : platform, handle, reason, note);
+    const dlg = _ensureMuteModal();
+    const form = dlg.querySelector('form');
+    form.handle.value = handle;
+    form.platform.value = platform || '';
+    form.scope.value = platform ? 'platform' : 'all';
+    form.reason.value = '';
+    form.note.value = '';
+    const ctx = dlg.querySelector('[data-role="ctx"]');
+    ctx.textContent = platform
+      ? `From ${author || handle} on ${platform}.`
+      : `From ${author || handle} (no platform — defaults to all).`;
+    const onClick = (e) => {
+      const action = e.target?.dataset?.action;
+      if (!action) return;
+      if (action === 'cancel') {
+        dlg.close('cancel');
+        return;
+      }
+      if (action === 'confirm') {
+        const useGlobal = form.scope.value === 'all';
+        const h = _cleanHandle(form.handle.value);
+        if (!h) {
+          _toast('Handle is required.', 'error');
+          return;
+        }
+        _mute(useGlobal ? '' : (form.platform.value || ''), h, form.reason.value, form.note.value);
+        dlg.close('ok');
+      }
+    };
+    dlg.removeEventListener('click', dlg._csClick || (() => {}));
+    dlg._csClick = onClick;
+    dlg.addEventListener('click', onClick);
+    // Submit on Enter inside any text field
+    form.onsubmit = (ev) => {
+      ev.preventDefault();
+      onClick({ target: { dataset: { action: 'confirm' } } });
+    };
+    if (typeof dlg.showModal === 'function') dlg.showModal();
+    else dlg.setAttribute('open', '');
+    setTimeout(() => form.handle.focus(), 30);
+  }
+  function _toast(msg, tone) {
+    try {
+      if (window.csToast) {
+        window.csToast(msg, tone || 'info');
+        return;
+      }
+    } catch {}
+    if (tone === 'error') alert(msg);
   }
 
   async function _mute(platform, handle, reason, note) {
@@ -497,6 +740,19 @@
     } catch (err) {
       alert('Mute failed: ' + (err.message || err));
     }
+  }
+
+  async function _markNoTriage(author, platform) {
+    const handle = _cleanHandle(author);
+    if (!handle) {
+      _toast('No handle to mark no-triage.', 'error');
+      return;
+    }
+    const ok = window.confirm(
+      `Mark @${handle} as no-triage?\n\nUse this for likely Microsoft employees or owned people who should not enter community triage.`
+    );
+    if (!ok) return;
+    await _mute(platform || '', handle, NO_TRIAGE_REASON, 'Likely Microsoft employee; no community triage needed.');
   }
 
   async function _unmute(platform, handle) {
@@ -531,36 +787,94 @@
     }
   }
 
+  let _mutedItemsCache = [];
+  let _mutedFilter = '';
   async function _refreshMutedPanel() {
     const list = document.getElementById('conv-muted-list');
     if (!list) return;
     try {
       const data = await fetch('/api/muted-accounts').then((r) => r.json());
-      const items = Array.isArray(data.items) ? data.items : [];
-      if (!items.length) {
-        list.innerHTML = '<p class="hint">No muted accounts. Use the “Mute @…” button on any conversation row to add one.</p>';
-        return;
-      }
-      list.innerHTML = items
-        .map((it) => {
-          const when = it.mutedAt ? esc(it.mutedAt.slice(0, 10)) : '';
-          const platform = it.platform === '*' ? 'all platforms' : esc(it.platform || '?');
-          const reason = it.reason ? ` — ${esc(it.reason)}` : '';
-          const note = it.note ? ` <span class="hint">(${esc(it.note)})</span>` : '';
-          const ownedBadge = it.owned ? ' <span class="badge" title="Imported from config">owned</span>' : '';
-          return `<div class="conv-muted-row${it.owned ? ' is-owned' : ''}">
-            <span><strong>@${esc(it.handle)}</strong> on ${platform}${ownedBadge}${reason}${note}</span>
-            <span class="hint">${when}</span>
-            <button type="button" class="conv-muted-unmute" data-key="${esc(it.key)}">Unmute</button>
-          </div>`;
-        })
-        .join('');
-      list.querySelectorAll('.conv-muted-unmute').forEach((btn) => {
-        btn.addEventListener('click', () => _unmuteByKey(btn.dataset.key));
-      });
+      _mutedItemsCache = Array.isArray(data.items) ? data.items : [];
+      _renderMutedList();
     } catch (err) {
       list.innerHTML = `<p class="hint">Failed to load muted accounts: ${esc(err.message || err)}</p>`;
     }
+  }
+  function _platformGlyph(p) {
+    const k = String(p || '').toLowerCase();
+    if (k === 'linkedin') return 'in';
+    if (k === 'x' || k === 'twitter') return '𝕏';
+    if (k === 'reddit') return 'r/';
+    if (k === 'bluesky') return 'bsky';
+    if (k === 'youtube') return '▶';
+    if (k === 'github') return 'gh';
+    if (k === '*') return '∗';
+    return (k[0] || '?').toUpperCase();
+  }
+  function _renderMutedList() {
+    const list = document.getElementById('conv-muted-list');
+    const countEl = document.getElementById('conv-muted-count');
+    if (!list) return;
+    const items = _mutedItemsCache.slice();
+    if (countEl) countEl.textContent = String(items.length);
+    const pill = document.getElementById('conv-muted-count-pill');
+    if (pill) {
+      pill.textContent = String(items.length);
+      pill.style.display = items.length ? '' : 'none';
+    }
+    if (!items.length) {
+      list.innerHTML = `
+        <div class="cs-empty">
+          <div class="cs-empty-icon">🔇</div>
+          <h4>No muted accounts</h4>
+          <p>Use <strong>Mute @…</strong> on any conversation row, or
+          add one manually above. Owned accounts can also be imported
+          from a subject config.</p>
+        </div>`;
+      return;
+    }
+    const filter = (_mutedFilter || '').toLowerCase().trim();
+    const filtered = filter
+      ? items.filter(
+          (it) =>
+            (it.handle || '').toLowerCase().includes(filter) ||
+            (it.platform || '').toLowerCase().includes(filter) ||
+            (it.reason || '').toLowerCase().includes(filter) ||
+            (it.note || '').toLowerCase().includes(filter)
+        )
+      : items;
+    if (!filtered.length) {
+      list.innerHTML = `<p class="hint">No muted accounts match “${esc(_mutedFilter)}”.</p>`;
+      return;
+    }
+    list.innerHTML = filtered
+      .map((it) => {
+        const when = it.mutedAt ? esc(it.mutedAt.slice(0, 10)) : '';
+        const platform = it.platform === '*' ? 'all' : esc(it.platform || '?');
+        const reason = it.reason ? `<span class="cs-muted-tag cs-tag-reason">${esc(it.reason)}</span>` : '';
+        const noTriage = it.noTriage || it.reason === NO_TRIAGE_REASON
+          ? `<span class="cs-muted-tag cs-tag-no-triage">no triage</span>`
+          : '';
+        const note = it.note ? `<span class="cs-muted-note">${esc(it.note)}</span>` : '';
+        const ownedBadge = it.owned ? `<span class="cs-muted-tag cs-tag-owned" title="Imported from config">owned</span>` : '';
+        return `<div class="cs-muted-card${it.owned ? ' is-owned' : ''}" data-key="${esc(it.key)}">
+          <div class="cs-muted-avatar" data-platform="${esc(it.platform || '')}" aria-hidden="true">${esc(_platformGlyph(it.platform))}</div>
+          <div class="cs-muted-main">
+            <div class="cs-muted-title">
+              <strong>@${esc(it.handle)}</strong>
+              <span class="cs-muted-plat">${platform}</span>
+              ${ownedBadge}${noTriage}${reason}
+            </div>
+            ${note}
+            ${when ? `<div class="cs-muted-when">Muted ${when}</div>` : ''}
+          </div>
+          <button type="button" class="cs-muted-unmute" data-key="${esc(it.key)}" title="Unmute">Unmute</button>
+        </div>`;
+      })
+      .join('');
+    list.querySelectorAll('.cs-muted-unmute').forEach((btn) => {
+      btn.addEventListener('click', () => _unmuteByKey(btn.dataset.key));
+    });
   }
 
   function wireConversationsUI() {
@@ -614,16 +928,20 @@
         renderConversations();
       });
     }
-    // Muted accounts manage panel
+    // Muted accounts manage panel (now a <dialog> modal)
     const manageBtn = document.getElementById('conv-manage-muted');
     if (manageBtn && !manageBtn.dataset.wired) {
       manageBtn.dataset.wired = '1';
       manageBtn.addEventListener('click', () => {
         const panel = document.getElementById('conv-muted-panel');
         if (!panel) return;
-        const willOpen = panel.hidden;
-        panel.hidden = !willOpen;
-        if (willOpen) _refreshMutedPanel();
+        if (typeof panel.showModal === 'function') {
+          if (!panel.open) panel.showModal();
+        } else {
+          panel.hidden = false;
+          panel.setAttribute('open', '');
+        }
+        _refreshMutedPanel();
       });
     }
     const mutedCloseBtn = document.getElementById('conv-muted-close');
@@ -631,7 +949,56 @@
       mutedCloseBtn.dataset.wired = '1';
       mutedCloseBtn.addEventListener('click', () => {
         const panel = document.getElementById('conv-muted-panel');
-        if (panel) panel.hidden = true;
+        if (!panel) return;
+        if (typeof panel.close === 'function' && panel.open) panel.close();
+        else {
+          panel.hidden = true;
+          panel.removeAttribute('open');
+        }
+      });
+    }
+    // Click on backdrop closes the dialog
+    const mutedDlg = document.getElementById('conv-muted-panel');
+    if (mutedDlg && !mutedDlg.dataset.wiredBackdrop) {
+      mutedDlg.dataset.wiredBackdrop = '1';
+      mutedDlg.addEventListener('click', (e) => {
+        if (e.target === mutedDlg && typeof mutedDlg.close === 'function') mutedDlg.close();
+      });
+    }
+    // Search filter
+    const searchEl = document.getElementById('conv-muted-search');
+    if (searchEl && !searchEl.dataset.wired) {
+      searchEl.dataset.wired = '1';
+      searchEl.addEventListener('input', () => {
+        _mutedFilter = searchEl.value || '';
+        _renderMutedList();
+      });
+    }
+    // Manual add
+    const addBtn = document.getElementById('conv-add-mute');
+    if (addBtn && !addBtn.dataset.wired) {
+      addBtn.dataset.wired = '1';
+      addBtn.addEventListener('click', async () => {
+        const handle = _cleanHandle(document.getElementById('conv-add-handle')?.value);
+        const platform = document.getElementById('conv-add-platform')?.value || '';
+        const reason = document.getElementById('conv-add-reason')?.value || '';
+        const note = document.getElementById('conv-add-note')?.value || '';
+        const status = document.getElementById('conv-add-status');
+        if (!handle) {
+          if (status) status.textContent = 'Handle is required.';
+          return;
+        }
+        if (status) status.textContent = 'Muting…';
+        try {
+          await _mute(platform, handle, reason, note);
+          const inp = document.getElementById('conv-add-handle');
+          const n = document.getElementById('conv-add-note');
+          if (inp) inp.value = '';
+          if (n) n.value = '';
+          if (status) status.textContent = `Muted @${handle}.`;
+        } catch (err) {
+          if (status) status.textContent = 'Failed: ' + (err.message || err);
+        }
       });
     }
     // "Mute owned accounts from config" controls inside the muted panel.
@@ -644,6 +1011,11 @@
     if (ownedBtn && !ownedBtn.dataset.wired) {
       ownedBtn.dataset.wired = '1';
       ownedBtn.addEventListener('click', _importOwnedAccounts);
+    }
+    const teamBtn = document.getElementById('conv-team-import');
+    if (teamBtn && !teamBtn.dataset.wired) {
+      teamBtn.dataset.wired = '1';
+      teamBtn.addEventListener('click', _importTeamNoTriageAccounts);
     }
   }
 
@@ -696,6 +1068,37 @@
     }
   }
 
+  async function _importTeamNoTriageAccounts() {
+    const sel = document.getElementById('conv-owned-slug');
+    const status = document.getElementById('conv-team-status') || document.getElementById('conv-owned-status');
+    const slug = sel && sel.value;
+    if (!slug) {
+      if (status) status.textContent = 'Pick a config first.';
+      return;
+    }
+    if (status) status.textContent = 'Importing team…';
+    try {
+      const res = await fetch('/api/muted-accounts/import-team-members', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ slug }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      const added = (data.added || []).length;
+      const parsed = data.parsed || 0;
+      if (status) {
+        status.textContent = parsed
+          ? `Marked ${added} of ${parsed} team handle(s) no-triage.`
+          : 'No team handles found. Add platform aliases like (linkedin: name) to Product Team Members.';
+      }
+      await _refreshMutedPanel();
+      await loadConversations();
+    } catch (err) {
+      if (status) status.textContent = 'Import failed: ' + (err.message || err);
+    }
+  }
+
   // ============================================================
   // Dashboard intel cards
   // ============================================================
@@ -703,6 +1106,31 @@
     if (!document.getElementById('dash-sentiment')) return;
     await Promise.all([loadSentiment(), loadCreators(), loadSourceHealth(), loadSocialActivity()]);
   }
+
+  // ----- Post URL validation ---------------------------------------
+  // Syntactic + live check used by the social-activity card to hide dead
+  // links. Results cached client-side; the server has its own 1h cache.
+  function isValidPostUrl(u) {
+    if (!u || typeof u !== 'string') return false;
+    let parsed;
+    try { parsed = new URL(u); } catch { return false; }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    if (!parsed.hostname || !parsed.hostname.includes('.')) return false;
+    return true;
+  }
+  const _urlLiveCache = new Map(); // url -> Promise<{ok,status}>
+  function checkUrlLive(u) {
+    if (!isValidPostUrl(u)) return Promise.resolve({ ok: false, status: 0, reason: 'malformed' });
+    if (_urlLiveCache.has(u)) return _urlLiveCache.get(u);
+    const p = fetch(`/api/check-url?u=${encodeURIComponent(u)}`)
+      .then((r) => r.json())
+      .catch(() => ({ ok: false, status: 0, reason: 'fetch-failed' }));
+    _urlLiveCache.set(u, p);
+    return p;
+  }
+  // Expose so dashboard-enhancer.js (and any other dashboard module) can
+  // honor the "never put dead links in the dashboard" rule.
+  window.csUrlCheck = { isValidPostUrl, checkUrlLive };
 
   // ----- Social activity (community + product, multi-platform) ----
   // Buckets every conversation into Community vs Product per platform so the
@@ -766,6 +1194,39 @@
         return;
       }
 
+      // Pre-validate every URL we might render so dead links never reach the
+      // dashboard. Items whose URL is malformed or unreachable get their
+      // url stripped — the item itself stays (as plain text / no-link form)
+      // so we don't silently lose conversation context. Server caches probe
+      // results for 1h, so repeat loads are effectively free.
+      const urlSet = new Set();
+      for (const c of all) {
+        if (c && isValidPostUrl(c.url)) urlSet.add(c.url);
+      }
+      const urls = [...urlSet].slice(0, 80); // hard cap on per-load probes
+      const liveMap = new Map();
+      const PROBE_CONC = 6;
+      let pi = 0;
+      async function probeWorker() {
+        while (pi < urls.length) {
+          const u = urls[pi++];
+          try {
+            const r = await checkUrlLive(u);
+            liveMap.set(u, !!(r && r.ok));
+          } catch {
+            liveMap.set(u, false);
+          }
+        }
+      }
+      await Promise.all(Array.from({ length: PROBE_CONC }, probeWorker));
+      // Strip URLs that failed the probe (or that we didn't probe due to the
+      // cap — treat those as unknown/dead to honor "never put dead links").
+      for (const c of all) {
+        if (!c) continue;
+        if (!isValidPostUrl(c.url)) { c.url = ''; continue; }
+        if (liveMap.get(c.url) !== true) c.url = '';
+      }
+
       // Bucket by platform → community/product
       const byPlatform = new Map();
       for (const c of all) {
@@ -799,10 +1260,15 @@
           const c = b.community.length;
           const pr = b.product.length;
           if (!c && !pr) return null;
-          const sample = (b.community[0] || b.product[0]);
+          const sample =
+            b.community.find((x) => isValidPostUrl(x.url)) ||
+            b.product.find((x) => isValidPostUrl(x.url)) ||
+            b.community[0] ||
+            b.product[0];
+          const sampleHasUrl = sample && isValidPostUrl(sample.url);
           const sampleHtml = sample
             ? `<div class="dash-plat-sample">
-                ${sample.url ? `<a href="${esc(sample.url)}" target="_blank" rel="noopener">${esc(trim(sample.summary || sample.author || '(post)', 100))}</a>` : esc(trim(sample.summary || sample.author || '(post)', 100))}
+                ${sampleHasUrl ? `<a href="${esc(sample.url)}" class="dash-link" data-check-url="${esc(sample.url)}" data-conv-key="${esc(sample.key || '')}" target="_blank" rel="noopener" title="Open in Conversations (Ctrl/Cmd-click for source)">${esc(trim(sample.summary || sample.author || '(post)', 100))}</a>` : esc(trim(sample.summary || sample.author || '(post)', 100))}
                 <div class="hint">${esc(sample.author || '')}${sample.author && sample.date ? ' · ' : ''}${esc(sample.date || '')}</div>
               </div>`
             : '';
@@ -828,10 +1294,11 @@
             ${needs.slice(0, 5).map((c) => {
               const dot = c.sentiment === 'negative' ? '🔴' : '🟡';
               const tone = c.sentiment === 'negative' ? 'critical' : 'mixed';
-              const link = c.url
-                ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">Source ↗</a>`
+              const hasUrl = isValidPostUrl(c.url);
+              const link = hasUrl
+                ? `<a href="${esc(c.url)}" class="dash-link" data-check-url="${esc(c.url)}" data-conv-key="${esc(c.key || '')}" target="_blank" rel="noopener" title="Open in Conversations (Ctrl/Cmd-click for source)">Source ↗</a>`
                 : '';
-              const replyBtn = c.url
+              const replyBtn = hasUrl
                 ? `<button type="button" class="dash-reply-btn" data-url="${esc(c.url)}">Draft reply</button>`
                 : '';
               return `<div class="dash-needs-row sent-${esc(c.sentiment)}">
@@ -854,6 +1321,18 @@
         needsHtml ||
         '<p class="hint">No platform-specific conversations parsed yet.</p>';
 
+      // Social pulse links go to the Conversations view by default so
+      // users can read the post inline. Ctrl/Cmd/middle-click still
+      // opens the external source in a new tab.
+      host.querySelectorAll('a.dash-link[data-conv-key]').forEach((a) => {
+        const k = a.dataset.convKey;
+        if (!k) return;
+        a.addEventListener('click', (e) => {
+          if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) return;
+          e.preventDefault();
+          _navigateToConversation(k);
+        });
+      });
       host.querySelectorAll('.dash-reply-btn').forEach((btn) => {
         btn.addEventListener('click', () => {
           const url = btn.dataset.url;

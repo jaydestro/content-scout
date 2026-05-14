@@ -7,6 +7,8 @@ mode: content-scout
 
 Generate social media posts for LinkedIn and X. Follow all Social Post Standards from the product config. Produce at least 3 LinkedIn options and 3 X options, each with a different framing angle.
 
+> **Sub-flow — accessibility alt text.** If the user asks for alt text for a post image (or invokes `/scout-post --alt <image>`), follow `.github/prompts/scout-alt.prompt.md` end-to-end instead of the post-generation flow below. Output goes to `social-posts/{YYYY-MM-DD-HHmm}-{slug}-alt-{image-slug}.md`.
+
 ${{input:URL (optional) -- the CTA link for the posts. Leave blank if the link isn't live yet and you're drafting from raw copy}}
 
 ${{input:Item number from report? (optional, e.g., "#3") Leave blank if providing a URL or copy directly}}

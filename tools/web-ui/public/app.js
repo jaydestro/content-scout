@@ -1,4 +1,71 @@
 // Content Scout web UI — vanilla JS SPA
+
+// --- /api GET coalescing + short-TTL cache --------------------------
+// The dashboard fires ~11 GETs across three modules (app.js loadDashboard,
+// dashboard-enhancer loadAll, intel.js loadIntelCards) and several
+// endpoints (/api/configs, /api/reports) are fetched twice in parallel.
+// We dedupe in-flight GETs and cache OK responses for 4s so the dashboard
+// renders without waiting on redundant round-trips. Streaming and
+// mutation requests are passed through untouched.
+(() => {
+  const TTL_MS = 4000;
+  const inflight = new Map(); // url -> Promise<Response>
+  const cache = new Map();    // url -> { at, body, status, ct }
+  const origFetch = window.fetch.bind(window);
+  function cacheable(url, method) {
+    if (method !== 'GET') return false;
+    if (!url.startsWith('/api/')) return false;
+    if (url.includes('/stream')) return false;       // SSE
+    if (url.startsWith('/api/runs/') && /\/(stream|output)$/.test(url)) return false;
+    return true;
+  }
+  window.fetch = function (input, init) {
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    const method = String(
+      (init && init.method) ||
+      (typeof input !== 'string' && input && input.method) ||
+      'GET'
+    ).toUpperCase();
+    if (!cacheable(url, method)) return origFetch(input, init);
+    const now = Date.now();
+    const hit = cache.get(url);
+    if (hit && now - hit.at < TTL_MS) {
+      return Promise.resolve(
+        new Response(hit.body, { status: hit.status, headers: { 'content-type': hit.ct } })
+      );
+    }
+    if (inflight.has(url)) {
+      return inflight.get(url).then((r) => r.clone());
+    }
+    const p = origFetch(input, init)
+      .then(async (r) => {
+        try {
+          if (r.ok) {
+            const text = await r.clone().text();
+            cache.set(url, {
+              at: Date.now(),
+              body: text,
+              status: r.status,
+              ct: r.headers.get('content-type') || 'application/json',
+            });
+          }
+        } catch { /* ignore caching errors */ }
+        inflight.delete(url);
+        return r;
+      })
+      .catch((e) => {
+        inflight.delete(url);
+        throw e;
+      });
+    inflight.set(url, p);
+    return p.then((r) => r.clone());
+  };
+  // Expose a tiny invalidator so mutation handlers can drop stale entries.
+  window.__apiCacheBust = (prefix) => {
+    for (const k of cache.keys()) if (!prefix || k.startsWith(prefix)) cache.delete(k);
+  };
+})();
+
 const $ = (id) => document.getElementById(id);
 const api = async (path, opts) => {
   const r = await fetch(path, opts);
@@ -2413,26 +2480,43 @@ $('run-extra').addEventListener('input', updateRunPreview);
 
 // --- Date range helper ---------------------------------------------
 // Produces a natural-language phrase the prompts already understand
-// (e.g., "March 2026" or "from 2026-01-15 to 2026-02-10"). Emits empty
-// string for the default (agent uses last 30 days).
+// (e.g., "March 2026", "today only", "from 2026-01-15 to 2026-02-10").
+// Emits empty string for the default (agent uses last 30 days).
 const COMMANDS_WITH_RANGE = new Set(['scout-scan', 'scout-gaps', 'scout-trends']);
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const RANGE_LS_KEY = 'cs.run.range.preset';
+function fmtDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function startOfWeek(now) {
+  // Monday as week start.
+  const d = new Date(now);
+  const day = d.getDay(); // 0=Sun..6=Sat
+  const diff = (day === 0 ? -6 : 1 - day);
+  d.setDate(d.getDate() + diff);
+  d.setHours(0,0,0,0);
+  return d;
+}
+function rangePreset() {
+  return $('run-range-preset')?.value || 'default';
+}
 function dateRangePhrase() {
   const wrap = $('run-range-wrap');
   if (!wrap || wrap.hidden) return '';
-  const choice = wrap.querySelector('input[name="run-range"]:checked')?.value || 'default';
+  const choice = rangePreset();
   const now = new Date();
   if (choice === 'default') return '';
-  if (choice === 'current-month') return `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}`;
+  if (choice === 'today') return `today only (${fmtDate(now)})`;
+  if (choice === 'this-week') {
+    const start = startOfWeek(now);
+    return `this week so far (from ${fmtDate(start)} to ${fmtDate(now)})`;
+  }
+  if (choice === 'this-month') {
+    return `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()} so far (from ${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01 to ${fmtDate(now)})`;
+  }
   if (choice === 'last-month') {
     const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
-  }
-  if (choice === 'month') {
-    const v = $('run-range-month')?.value; // "YYYY-MM"
-    if (!v) return '';
-    const [y, m] = v.split('-').map(Number);
-    return `${MONTH_NAMES[m - 1]} ${y}`;
   }
   if (choice === 'custom') {
     const from = $('run-range-from')?.value;
@@ -2444,17 +2528,42 @@ function dateRangePhrase() {
   }
   return '';
 }
-document.querySelectorAll('input[name="run-range"]').forEach((r) => {
-  r.addEventListener('change', () => {
-    const choice = document.querySelector('input[name="run-range"]:checked')?.value;
-    $('run-range-month-wrap').hidden = choice !== 'month';
+function updateRangeSummary() {
+  const el = $('run-range-summary');
+  if (!el) return;
+  const choice = rangePreset();
+  if (choice === 'default') {
+    el.textContent = 'Rolling 30-day window ending now.';
+    return;
+  }
+  const phrase = dateRangePhrase();
+  el.textContent = phrase ? `Agent will scan: ${phrase}.` : 'Pick a date to continue.';
+}
+const presetEl = $('run-range-preset');
+if (presetEl) {
+  // Restore last choice.
+  try {
+    const saved = localStorage.getItem(RANGE_LS_KEY);
+    if (saved && presetEl.querySelector(`option[value="${saved}"]`)) {
+      presetEl.value = saved;
+    }
+  } catch {}
+  const syncDetailVisibility = () => {
+    const choice = rangePreset();
     $('run-range-custom-wrap').hidden = choice !== 'custom';
+  };
+  syncDetailVisibility();
+  presetEl.addEventListener('change', () => {
+    try { localStorage.setItem(RANGE_LS_KEY, rangePreset()); } catch {}
+    syncDetailVisibility();
+    updateRangeSummary();
     updateRunPreview();
   });
+}
+['run-range-from', 'run-range-to'].forEach((id) => {
+  $(id)?.addEventListener('input', () => { updateRangeSummary(); updateRunPreview(); });
 });
-['run-range-month', 'run-range-from', 'run-range-to'].forEach((id) => {
-  $(id)?.addEventListener('input', updateRunPreview);
-});
+updateRangeSummary();
 const runPromptEl = $('run-prompt');
 if (runPromptEl) runPromptEl.addEventListener('input', updateRunPreview);
 $('run-copy').addEventListener('click', async () => {
@@ -2535,6 +2644,67 @@ function streamRun(id) {
 }
 
 // --- Reports / Social ---------------------------------------------
+
+// Wire a list-filter input that hides <li> rows whose text doesn't match,
+// and (for queries >= 2 chars) calls /api/search to mark/show files whose
+// CONTENT matches even when the name doesn't. Idempotent: safe to call
+// every time the list is rebuilt.
+function wireListFilter({ inputId, listId, kind }) {
+  const input = $(inputId);
+  const list = $(listId);
+  if (!input || !list) return;
+  let timer = null;
+  let lastSeq = 0;
+  const apply = async () => {
+    const q = (input.value || '').trim().toLowerCase();
+    const items = list.querySelectorAll('li[data-name]');
+    let visible = 0;
+    items.forEach((li) => {
+      const name = (li.dataset.name || '').toLowerCase();
+      const matchName = !q || name.includes(q);
+      li.hidden = !matchName;
+      li.classList.remove('content-match');
+      if (matchName) visible++;
+    });
+    // Existing "no matches" placeholder cleanup
+    const ph = list.querySelector('li.filter-empty');
+    if (ph) ph.remove();
+    if (q.length >= 2) {
+      const seq = ++lastSeq;
+      try {
+        const r = await fetch('/api/search?q=' + encodeURIComponent(q));
+        if (!r.ok) return;
+        const data = await r.json();
+        if (seq !== lastSeq) return;
+        const files = (data.files || []).filter((f) => f.kind === kind);
+        files.forEach((f) => {
+          const li = list.querySelector(`li[data-name="${CSS.escape(f.name)}"]`);
+          if (!li) return;
+          if (li.hidden) {
+            li.hidden = false;
+            visible++;
+          }
+          li.classList.add('content-match');
+          const firstSnippet = (f.snippets && f.snippets[0]) || null;
+          li.title = firstSnippet ? `Content match — L${firstSnippet.line}: ${firstSnippet.text}` : 'Content match';
+        });
+      } catch { /* ignore */ }
+    }
+    if (q && visible === 0) {
+      const li = document.createElement('li');
+      li.className = 'hint filter-empty';
+      li.textContent = 'No matches.';
+      list.appendChild(li);
+    }
+  };
+  input.addEventListener('input', () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(apply, 140);
+  });
+  // Re-apply on every list rebuild.
+  if (input.value) apply();
+}
+
 async function loadReports() {
   const { reports } = await api('/api/reports');
   $('reports-list').innerHTML = reports
@@ -2559,6 +2729,7 @@ async function loadReports() {
   const body = $('reports-body');
   const first = $('reports-list').querySelector('li[data-name]');
   if (first && body && !body.dataset.name) first.click();
+  wireListFilter({ inputId: 'reports-filter', listId: 'reports-list', kind: 'reports' });
 }
 async function loadSocial() {
   const { social } = await api('/api/reports');
@@ -2585,6 +2756,7 @@ async function loadSocial() {
   const body = $('social-body');
   const first = $('social-list').querySelector('li[data-name]');
   if (first && body && !body.dataset.name) first.click();
+  wireListFilter({ inputId: 'social-filter', listId: 'social-list', kind: 'social-posts' });
 }
 
 // Render a markdown doc into the inline article view, with a toolbar that

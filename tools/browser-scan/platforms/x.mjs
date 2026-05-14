@@ -22,14 +22,18 @@ export async function scanX(browser, ctx) {
   const { searchTerms, sinceMs, maxPerTerm } = ctx;
   const items = new Map(); // url -> item
 
-  const page = await newPage(browser);
+  // Reuse a caller-provided page if present (lets the orchestrator keep a
+  // single tab open across all platforms instead of flickering 3 tabs in
+  // and out of the user's browser). Fall back to opening our own.
+  const page = ctx.page || (await newPage(browser));
+  const ownsPage = !ctx.page;
 
   // Quick session probe — if we land on /login, the cookies are gone.
   await page.goto('https://x.com/home', { waitUntil: 'domcontentloaded' });
   await sleep(2000);
   if (/\/login|\/i\/flow\/login/.test(page.url())) {
     console.warn('[browser-scan] x: session expired — run "node index.mjs login --platform x"');
-    await page.close();
+    if (ownsPage) await page.close();
     return [];
   }
 
@@ -73,7 +77,7 @@ export async function scanX(browser, ctx) {
     await sleep(3000); // polite delay between search terms
   }
 
-  await page.close();
+  if (ownsPage) await page.close();
   return [...items.values()];
 }
 

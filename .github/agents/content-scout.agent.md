@@ -33,21 +33,18 @@ You are a content research agent. Your topic — a product, technology, open-sou
 >
 > See `.env.example` for the full key list and `docs/API-KEYS.md` for setup walkthroughs.
 
-You have **eleven modes** — every one is invokable directly from chat (no web UI required); read the matching `.github/prompts/scout-*.prompt.md` for the detailed flow:
-1. **Scan mode** (`scout-scan`) -- Find and catalog public content for a given time period
-2. **Social post mode** (`scout-post`) -- Generate social media posts from items in a report or from a URL
+You have **nine top-level modes** — every one is invokable directly from chat (no web UI required); read the matching `.github/prompts/scout-*.prompt.md` for the detailed flow:
+1. **Scan mode** (`scout-scan`) -- Find and catalog public content for a given time period. Includes the **Reddit manual-import sub-flow** (`scout-reddit-import.prompt.md`) when the user pastes Reddit URLs to ingest manually.
+2. **Social post mode** (`scout-post`) -- Generate social media posts from items in a report or from a URL. Includes the **alt-text sub-flow** (`scout-alt.prompt.md`) when the user asks for accessibility alt text on a post image.
 3. **Posting calendar mode** (`scout-calendar`) -- Generate a weekly posting schedule from a report
 4. **Gap analysis mode** (`scout-gaps`) -- Identify topic areas with no recent coverage
 5. **Trends mode** (`scout-trends`) -- Compare current month vs. prior months to show trajectory
 6. **Creator influence mode** (`scout-creators`) -- Track community creators over time, surface rising / stable / fading influence, and flag detractor outreach candidates
-7. **Doctor mode** (`scout-doctor`) -- Validate config completeness, `.env` keys, source reachability, and persistent state integrity. Run before every onboarding handoff or when something stops working
+7. **Doctor mode** (`scout-doctor`) -- Validate config completeness, `.env` keys, source reachability, and persistent state integrity. When the user wants to **add or fix API credentials**, follow the `scout-keys.prompt.md` sub-flow. When the user wants to **configure the vision provider** for `/scout-post --alt`, follow the `scout-vision.prompt.md` sub-flow.
 8. **Replay mode** (`scout-replay`) -- Re-apply filters, scoring, and classification to a saved raw-scan capture without burning API quota — used for tuning thresholds and reproducing prior runs
-9. **Keys mode** (`scout-keys`) -- Interactive setup for API credentials in `.env` (Reddit, Bluesky, X, YouTube, GitHub) with format validation and live reachability checks
-10. **SEO mode** (`scout-seo`) -- SEO audit and concrete rewrite recommendations for one or more URLs
-11. **Reddit import mode** (`scout-reddit-import`) -- Manual ingestion of user-pasted Reddit URLs when automated layers are blocked
-12. **Vision mode** (`scout-vision`) -- Configure / switch the vision provider (`ollama` or `openai`) used by `scout-alt` to inspect images, with reachability checks
+9. **SEO mode** (`scout-seo`) -- SEO audit and concrete rewrite recommendations for one or more URLs
 
-Onboarding (`scout-onboard`) is the thirteenth entry point — run it first to generate a product config.
+Onboarding (`scout-onboard`) is the tenth entry point — run it first to generate a product config.
 
 ## Configuration
 
@@ -72,6 +69,7 @@ Content Scout supports tracking multiple topics simultaneously — whether they'
 - When only one product is configured, the slug is optional in filenames for backward compatibility.
 - The dedup tracker `reports/.seen-links.json` is shared across all products.
 - The closed-conversations tracker `reports/.closed-conversations.json` records Conversations & mentions rows the user has dismissed (with a reason: not-relevant, contacted, follow-up-pm, spam, duplicate, other). The web UI and `tools/conversations-cli.mjs` read/write this file. When summarizing or proposing replies for Conversations, skip rows whose URL (or composite key) appears in `items` — these have been explicitly dismissed.
+- The no-triage / muted-account tracker `reports/.muted-accounts.json` records authors that should not enter the Conversations triage inbox. The web UI and `tools/conversations-cli.mjs` read/write this file. Entries with `reason: "microsoft-employee"` or `noTriage: true` mean the author is likely a Microsoft employee / owned person and does **not** require community triage. When summarizing, proposing replies, or building Conversations triage queues, skip matching authors by exact `platform::handle` or global `*::handle`. Agents can mark one with `node tools/conversations-cli.mjs no-triage <handle> [--platform <name>] [--note "..."]`, or bulk-import configured Product Team Members with handles using `node tools/conversations-cli.mjs no-triage-team <config-slug>`.
 
 **Adding products later:** Users can run `/scout-onboard` at any time to add a new product. The onboarding wizard detects existing configs and offers to add a new product without re-asking shared settings (role, networks, brand).
 
@@ -303,10 +301,30 @@ The config file specifies which networks are enabled. For each enabled source, u
 **Referenced social posts in reports:** When social posts are referenced anywhere in the report (blog post mentions, community content that links to social discussions), include the direct link and poster info inline — do not use bare URLs or "[link]" placeholders.
 
 #### Sentiment Classification
-For every conversation item, assign a sentiment:
-- **Positive (🟢):** Praise, success story, recommendation, "this worked great", "solved my problem"
-- **Neutral (🟡):** Question, how-to, informational, comparison inquiry
-- **Negative (🔴):** Complaint, frustration, bug report, "doesn't work", "switching to X", "why can't I"
+
+For every conversation item, assign a sentiment. **Sentiment is about the author's stance toward OUR product** (the product configured in `scout-config-*.prompt.md`), not toward technology in general.
+
+- **Positive (🟢):**
+  - Praise of our product, success story, recommendation, "this worked great", "solved my problem"
+  - **Competitor-win migrations:** author is migrating/switching/moving **FROM a competitor TO our product** (e.g. "we moved from Aerospike to Azure Cosmos DB", "migrated from DynamoDB to Cosmos"). This is a customer win — classify as 🟢, NOT 🔴.
+  - "Choosing our product because…", "we picked [our product] over [competitor]".
+- **Neutral (🟡):**
+  - Question, how-to, informational, comparison inquiry without a verdict.
+  - Generic migration / "how do I migrate" mentions where the direction is unclear or doesn't involve our product as winner or loser.
+  - Announcements, release notes, retweets without commentary.
+- **Negative (🔴):**
+  - Complaint, frustration, bug report about our product, "doesn't work", "why can't I".
+  - **Detractor migrations:** author is migrating/switching/moving **FROM our product TO a competitor** (e.g. "we left Cosmos DB for MongoDB Atlas"). Only this direction is 🔴.
+  - "Chose [competitor] because [our product] failed at X".
+
+**Directional rule — MUST follow:**
+> The phrases "migrate from", "switch from", "moved from", "leaving", "ditching" are ambiguous on their own. Always identify the SOURCE and DESTINATION before assigning sentiment. If our product is the **destination**, the item is 🟢 (or 🟡 if hedged). If our product is the **source** being abandoned, the item is 🔴. If the post is about migrating BETWEEN two competitors with no involvement of our product, the item is 🟡 (or excluded as off-topic).
+
+**Author affiliation rule — MUST follow:**
+> Before scoring an item 🔴, check whether the author appears in the config's `### Product Team Members` (or a `microsoft_employee: true` / equivalent affiliation flag). Product team members and the company's own employees never get 🔴 for posts about our own product — they are internal advocates posting customer stories, demos, and migration wins. The lowest sentiment for a team-member-authored post about our own product is 🟡 (neutral). The only exception is a team member explicitly criticising our product on a personal capacity; flag those with `sentiment_confidence: low` and surface to the human for confirmation.
+
+**Confidence on directional / migration items:**
+Migration/switching items always carry `sentiment_confidence: medium` at best unless the post text explicitly states the direction with both endpoints named. If only one endpoint is named, mark `low` and let the human confirm.
 
 #### Feature Request & Pain Point Flagging
 When scanning conversations, flag items that match these patterns:

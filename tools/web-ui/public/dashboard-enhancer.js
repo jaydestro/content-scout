@@ -147,7 +147,12 @@
     if (!ul) return;
     const items = (activity && activity.activity) || [];
     if (!items.length) {
-      ul.innerHTML = '<li class="hint">No activity yet — run a scan to get started.</li>';
+      ul.innerHTML = `<li><div class="empty-state" style="margin:0.5rem 0">
+        <div class="empty-icon" aria-hidden="true">✨</div>
+        <p class="empty-title">No activity yet</p>
+        <p class="empty-body">Run a scan to surface reports, social posts, and creator signals here.</p>
+        <div class="empty-actions"><button type="button" class="btn-primary" data-goto="run" data-run-cmd="scout-scan">Run a scan</button></div>
+      </div></li>`;
       if (meta) meta.textContent = '';
       return;
     }
@@ -202,7 +207,12 @@
     const ul = $('dash-subjects');
     if (!ul) return;
     if (!configs.length) {
-      ul.innerHTML = '<li class="hint">No subjects yet — open <a href="#" data-goto="setup">Setup</a> to add one.</li>';
+      ul.innerHTML = `<li><div class="empty-state" style="margin:0.5rem 0">
+        <div class="empty-icon" aria-hidden="true">🎯</div>
+        <p class="empty-title">No subjects yet</p>
+        <p class="empty-body">Add a product, technology, or project to start tracking.</p>
+        <div class="empty-actions"><button type="button" class="btn-primary" data-goto="setup">Open Setup</button></div>
+      </div></li>`;
       return;
     }
     // For each config, find the most recent report whose name contains the slug.
@@ -340,6 +350,43 @@
         '<p class="hint">No reports yet \u2014 run a scan to surface action items.</p>';
       if (meta) meta.textContent = '';
       return;
+    }
+    // Sanitize every external URL so we never put dead links in the
+    // dashboard. Falls back to a no-op if intel.js hasn't loaded the helper.
+    const check = window.csUrlCheck;
+    if (check && typeof check.checkUrlLive === 'function') {
+      const urls = new Set();
+      const collect = (u) => { if (check.isValidPostUrl(u)) urls.add(u); };
+      for (const g of groups) {
+        for (const it of g.topItems || []) collect(it.url);
+        for (const c of g.cfps || []) {
+          if (typeof c === 'string') continue;
+          collect(c.site); collect(c.cfp);
+          for (const ln of c.links || []) collect(ln.url);
+        }
+      }
+      const list = [...urls].slice(0, 80);
+      const live = new Map();
+      const CONC = 6;
+      let i = 0;
+      const worker = async () => {
+        while (i < list.length) {
+          const u = list[i++];
+          try { const r = await check.checkUrlLive(u); live.set(u, !!(r && r.ok)); }
+          catch { live.set(u, false); }
+        }
+      };
+      await Promise.all(Array.from({ length: CONC }, worker));
+      const sanitize = (u) => (check.isValidPostUrl(u) && live.get(u) === true ? u : '');
+      for (const g of groups) {
+        for (const it of g.topItems || []) it.url = sanitize(it.url);
+        for (const c of g.cfps || []) {
+          if (typeof c === 'string') continue;
+          c.site = sanitize(c.site);
+          c.cfp = sanitize(c.cfp);
+          c.links = (c.links || []).map((ln) => ({ ...ln, url: sanitize(ln.url) })).filter((ln) => ln.url);
+        }
+      }
     }
     if (meta) {
       const total = groups.reduce(
