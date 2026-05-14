@@ -6,7 +6,7 @@
 
 A content research agent that discovers, catalogs, and promotes public content about your product, technology, open-source project, or tool across the developer ecosystem. Scans 14+ public sources, filters for quality, generates reports with topic tags and trends, and drafts ready-to-post social media content — all configured through a single onboarding conversation.
 
-Run it **interactively in your editor** (VS Code, Claude Code, Cursor, and more) **or from a browser** with the built-in Web UI. Both paths produce the same `scout-config-{slug}.prompt.md` files in `.github/prompts/` and the same reports in `reports/`.
+Run it **interactively in your editor** (VS Code, Claude Code, Cursor, and more) **or from a browser** with the built-in Web UI. The agent handles all standard content work; the web UI adds dashboards, bulk operations, and visual triage. See [docs/SURFACES.md](docs/SURFACES.md) for which surface to use when.
 
 ## Quick start
 
