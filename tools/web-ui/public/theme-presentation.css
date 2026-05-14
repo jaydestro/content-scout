@@ -1,0 +1,405 @@
+/* theme-presentation.css
+ * Final cascade layer — presentation-grade polish for demo / first impression.
+ * Loaded LAST so it wins specificity ties. Targets only existing classes —
+ * does not require any HTML changes.
+ *
+ * Goals:
+ *   - Bigger, bolder dashboard hero with vibrant gradient
+ *   - Stat tiles that feel like KPIs (huge numbers, accent gradient, hover lift)
+ *   - Cleaner section headings with accent indicator
+ *   - Primary buttons with subtle glow + lift
+ *   - Cards with smoother elevation + subtle gradient on hover
+ *   - Polished report viewer + run output panel
+ *   - Refined active nav state
+ */
+
+/* ---------- Refined typography rhythm ---------- */
+:root {
+  --shadow-glow-accent: 0 8px 24px -8px rgba(122, 167, 255, 0.55);
+  --shadow-glow-success: 0 8px 24px -8px rgba(86, 211, 138, 0.45);
+  --gradient-accent: linear-gradient(135deg, #7aa7ff 0%, #56d38a 100%);
+  --gradient-accent-soft: linear-gradient(135deg, rgba(122,167,255,0.18) 0%, rgba(86,211,138,0.14) 100%);
+}
+
+/* ---------- Dashboard hero: command-center feel ---------- */
+.dash-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 1.75rem 2rem !important;
+  margin-bottom: 1.5rem !important;
+  border-radius: 18px !important;
+  background:
+    radial-gradient(ellipse 80% 100% at 0% 0%, rgba(122,167,255,0.20), transparent 60%),
+    radial-gradient(ellipse 60% 80% at 100% 100%, rgba(86,211,138,0.16), transparent 60%),
+    linear-gradient(135deg, #161a22 0%, #1e2230 100%) !important;
+  border: 1px solid rgba(122,167,255,0.30) !important;
+  box-shadow: 0 8px 32px -12px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.dash-hero::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--gradient-accent);
+  opacity: 0.7;
+}
+.dash-hero h2 {
+  font-size: 1.75rem !important;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.35rem !important;
+  background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.dash-hero #dash-hero-sub,
+.dash-hero .hint {
+  font-size: 0.95rem;
+  color: var(--muted-2);
+}
+.dash-hero-actions {
+  gap: 0.6rem !important;
+}
+.dash-hero-actions .btn-primary,
+.dash-hero-actions button:first-child {
+  padding: 0.65rem 1.25rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  background: var(--gradient-accent) !important;
+  color: #0b0d12 !important;
+  border: 0;
+  border-radius: 10px;
+  box-shadow: var(--shadow-glow-accent);
+  transition: transform 150ms cubic-bezier(0.2,0.8,0.2,1), box-shadow 200ms ease, filter 200ms ease;
+}
+.dash-hero-actions .btn-primary:hover,
+.dash-hero-actions button:first-child:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+  box-shadow: 0 12px 32px -10px rgba(122, 167, 255, 0.7);
+}
+.dash-hero-actions button:not(.btn-primary):not(:first-child) {
+  background: rgba(255,255,255,0.06);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  font-weight: 500;
+}
+.dash-hero-actions button:not(.btn-primary):not(:first-child):hover {
+  background: rgba(255,255,255,0.10);
+  border-color: var(--accent);
+}
+
+/* ---------- Stat tiles: KPI-grade ---------- */
+.dash-stats {
+  gap: 1rem !important;
+  margin-bottom: 1.5rem !important;
+}
+.dash-stats .stat {
+  position: relative;
+  padding: 1.1rem 1.25rem !important;
+  background: linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 100%), var(--panel) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 14px !important;
+  overflow: hidden;
+  transition: transform 200ms cubic-bezier(0.2,0.8,0.2,1), border-color 200ms, box-shadow 200ms;
+}
+.dash-stats .stat::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--gradient-accent);
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.dash-stats .stat:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-strong) !important;
+  box-shadow: 0 8px 24px -12px rgba(0,0,0,0.5);
+  cursor: pointer;
+}
+.dash-stats .stat:hover::before { opacity: 1; }
+.dash-stats .stat-num {
+  font-size: 2rem !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em;
+  background: var(--gradient-accent);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+}
+.dash-stats .stat-label {
+  font-size: 0.72rem !important;
+  font-weight: 600 !important;
+  margin-top: 0.35rem !important;
+  color: var(--muted) !important;
+}
+
+/* ---------- Section headings: accent dot ---------- */
+.dash-section-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.82rem !important;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5rem;
+  margin: 2rem 0 1rem !important;
+  color: var(--muted-2) !important;
+}
+.dash-section-head::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gradient-accent);
+  box-shadow: 0 0 8px rgba(122, 167, 255, 0.6);
+}
+
+/* ---------- Cards: smoother elevation ---------- */
+.card {
+  background: linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0)) , var(--panel);
+  border-radius: 14px !important;
+  padding: 1.4rem !important;
+  transition: transform 180ms cubic-bezier(0.2,0.8,0.2,1), border-color 200ms, box-shadow 200ms;
+}
+.card:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 6px 20px -12px rgba(0,0,0,0.5);
+}
+.card h3 {
+  font-size: 0.78rem !important;
+  letter-spacing: 0.08em;
+  color: var(--muted-2) !important;
+  margin: 0 0 0.85rem !important;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ---------- Primary buttons: glow on hover ---------- */
+button.btn-primary,
+button[type="submit"]:not(.secondary) {
+  background: var(--gradient-accent);
+  color: #0b0d12;
+  border: 0;
+  font-weight: 600;
+  box-shadow: var(--shadow-glow-accent);
+}
+button.btn-primary:hover:not(:disabled),
+button[type="submit"]:not(.secondary):hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 32px -10px rgba(122, 167, 255, 0.7);
+  filter: brightness(1.08);
+}
+
+/* ---------- Active nav: subtle inner highlight ---------- */
+nav button.active {
+  box-shadow: var(--shadow-glow-accent), inset 0 1px 0 rgba(255,255,255,0.25);
+}
+nav button {
+  position: relative;
+}
+nav button:not(.active):hover {
+  background: rgba(255,255,255,0.05);
+  border-color: var(--border);
+}
+
+/* ---------- Skeleton: refined shimmer ---------- */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(122, 167, 255, 0.06) 0%,
+    rgba(122, 167, 255, 0.18) 50%,
+    rgba(122, 167, 255, 0.06) 100%
+  ) !important;
+  background-size: 200% 100% !important;
+  animation: scout-shimmer 1.4s ease-in-out infinite !important;
+  border-radius: 6px;
+  display: inline-block;
+  height: 0.9em;
+  vertical-align: middle;
+}
+
+/* ---------- Empty banner: more inviting ---------- */
+.empty-banner {
+  background:
+    radial-gradient(ellipse 60% 80% at 30% 0%, rgba(122,167,255,0.14), transparent 60%),
+    radial-gradient(ellipse 60% 80% at 70% 100%, rgba(86,211,138,0.10), transparent 60%),
+    linear-gradient(135deg, rgba(122,167,255,0.10), rgba(86,211,138,0.06)) !important;
+  border: 1px solid rgba(122,167,255,0.35) !important;
+  border-radius: 16px !important;
+  padding: 2.5rem 2rem !important;
+  box-shadow: 0 8px 32px -16px rgba(0,0,0,0.5);
+}
+.empty-banner h3 {
+  font-size: 1.5rem !important;
+  font-weight: 700;
+  background: linear-gradient(135deg, #fff 0%, #cbd5e1 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ---------- Reports markdown: presentation polish ---------- */
+.markdown {
+  padding: 2rem 2.25rem !important;
+  border-radius: 16px !important;
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+.markdown h1 {
+  font-size: 1.75rem;
+  letter-spacing: -0.02em;
+  margin-top: 0;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid var(--border);
+}
+.markdown h2 {
+  font-size: 1.35rem;
+  letter-spacing: -0.01em;
+  margin-top: 2rem;
+  color: var(--text);
+}
+.markdown h3 {
+  font-size: 1.1rem;
+  color: var(--accent);
+  margin-top: 1.5rem;
+}
+.markdown blockquote {
+  border-left: 3px solid var(--accent);
+  margin: 1em 0;
+  padding: 0.4em 1em;
+  background: rgba(122,167,255,0.06);
+  border-radius: 0 8px 8px 0;
+  color: var(--muted-2);
+}
+.markdown code {
+  background: rgba(122, 167, 255, 0.12) !important;
+  color: #b9d3ff;
+  font-size: 0.88em;
+  padding: 0.15em 0.4em !important;
+  border-radius: 5px !important;
+}
+.markdown pre {
+  background: #050810 !important;
+  border: 1px solid var(--border);
+  padding: 1.1em !important;
+  border-radius: 10px !important;
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.4);
+}
+.markdown pre code {
+  background: transparent !important;
+  color: #cfe;
+}
+.markdown a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(122,167,255,0.3);
+  transition: border-color 150ms ease;
+}
+.markdown a:hover {
+  border-bottom-color: var(--accent);
+}
+
+/* ---------- Run output panel: terminal feel ---------- */
+#run-output {
+  background: linear-gradient(180deg, #060912 0%, #03050a 100%) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 12px !important;
+  padding: 1.25rem !important;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  box-shadow:
+    inset 0 2px 12px rgba(0,0,0,0.6),
+    0 0 0 1px rgba(122,167,255,0.05);
+  position: relative;
+}
+#run-output::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(122,167,255,0.3), transparent);
+}
+
+/* ---------- Run form: more form-card feel ---------- */
+.run-form {
+  border-radius: 14px !important;
+  padding: 1.5rem !important;
+  background: linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0)), var(--panel) !important;
+  box-shadow: 0 4px 16px -8px rgba(0,0,0,0.4);
+}
+.run-form label {
+  font-weight: 600 !important;
+  color: var(--muted-2) !important;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  font-size: 0.72rem !important;
+}
+
+/* ---------- Toolbar: refined spacing ---------- */
+.toolbar {
+  margin-bottom: 1rem !important;
+  gap: 0.5rem !important;
+}
+
+/* ---------- Sticky header: stronger glass ---------- */
+.site-header {
+  background: linear-gradient(180deg, rgba(15, 18, 24, 0.85), rgba(11, 13, 18, 0.92)) !important;
+  backdrop-filter: blur(18px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(140%) !important;
+  box-shadow: 0 4px 20px -8px rgba(0,0,0,0.45), 0 1px 0 rgba(122,167,255,0.08);
+}
+
+/* ---------- Light mode adjustments ---------- */
+html[data-theme="light"] .dash-stats .stat-num,
+html[data-theme="light"] .dash-hero h2,
+html[data-theme="light"] .empty-banner h3 {
+  -webkit-text-fill-color: initial;
+  color: var(--text);
+  background: none;
+}
+
+/* ---------- Activity / list rows: cleaner ---------- */
+.dash-activity li,
+#dash-suggestions li,
+#dash-subjects li {
+  padding: 0.55rem 0.25rem;
+  border-bottom: 1px dashed rgba(127,127,127,0.18);
+  transition: background-color 150ms ease, padding-left 150ms ease;
+  border-radius: 4px;
+}
+.dash-activity li:hover,
+#dash-suggestions li:hover,
+#dash-subjects li:hover {
+  background: rgba(122,167,255,0.04);
+  padding-left: 0.5rem;
+}
+.dash-activity li:last-child,
+#dash-suggestions li:last-child,
+#dash-subjects li:last-child {
+  border-bottom: none;
+}
+
+/* ---------- Pills: status colors with subtle bg ---------- */
+.pill {
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.pill[data-state="ok"], .pill.ok {
+  background: rgba(86, 211, 138, 0.12);
+  color: #7bdfa3;
+  border-color: rgba(86, 211, 138, 0.35);
+}
+.pill[data-state="warn"], .pill.warn {
+  background: rgba(240, 195, 109, 0.12);
+  color: #f0c36d;
+  border-color: rgba(240, 195, 109, 0.35);
+}
+.pill[data-state="err"], .pill.err {
+  background: rgba(255, 107, 107, 0.12);
+  color: #ff8b8b;
+  border-color: rgba(255, 107, 107, 0.35);
+}

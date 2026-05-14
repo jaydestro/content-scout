@@ -23,6 +23,12 @@
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="theme-modern.css" />
     <link rel="stylesheet" href="theme-polish.css" />
+    <!-- Additive polish layer: skeletons, focus rings, responsive fixes, motion. -->
+    <link rel="stylesheet" href="theme-refresh.css" />
+    <!-- Presentation-grade polish (loaded last, wins specificity ties). -->
+    <link rel="stylesheet" href="theme-presentation.css" />
+    <!-- Density & organization pass: dashboard tabs, nav grouping, responsive. -->
+    <link rel="stylesheet" href="theme-compact.css" />
     <script>
       // Apply saved theme before first paint to avoid FOUC.
       (function () {
@@ -751,11 +757,7 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
               <option value="scout-creators">/scout-creators — creator trajectories &amp; interventions</option>
               <option value="scout-doctor">/scout-doctor — validate config, keys, sources</option>
               <option value="scout-replay">/scout-replay — re-run filters on a saved scan (no API calls)</option>
-              <option value="scout-reddit-import">/scout-reddit-import — manually ingest Reddit URLs</option>
               <option value="scout-seo">/scout-seo — SEO audit &amp; rewrite recommendations</option>
-              <option value="scout-alt">/scout-alt — generate accessibility alt text for an image</option>
-              <option value="scout-keys">/scout-keys — interactive API credential setup</option>
-              <option value="scout-vision">/scout-vision — configure the vision provider for /scout-alt</option>
               <option value="custom">Custom prompt</option>
             </select>
           </label>
@@ -790,19 +792,18 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
           </fieldset>
           <fieldset id="run-range-wrap" class="run-range">
             <legend>Date range</legend>
-            <div class="run-range-choices">
-              <label class="field-inline"><input type="radio" name="run-range" value="default" checked /><span>Last 30 days <span class="hint">(default)</span></span></label>
-              <label class="field-inline"><input type="radio" name="run-range" value="current-month" /><span>Current month</span></label>
-              <label class="field-inline"><input type="radio" name="run-range" value="last-month" /><span>Last month</span></label>
-              <label class="field-inline"><input type="radio" name="run-range" value="month" /><span>Specific month</span></label>
-              <label class="field-inline"><input type="radio" name="run-range" value="custom" /><span>Custom range</span></label>
-            </div>
-            <div id="run-range-month-wrap" class="run-range-detail" hidden>
-              <label class="field">
-                <span>Month</span>
-                <input id="run-range-month" type="month" />
-              </label>
-            </div>
+            <label class="field">
+              <span>Time frame</span>
+              <select id="run-range-preset">
+                <option value="default" selected>Last 30 days (default)</option>
+                <option value="today">Today</option>
+                <option value="this-week">This week (since Monday)</option>
+                <option value="this-month">This month so far</option>
+                <option value="last-month">Last month</option>
+                <option value="custom">Custom range…</option>
+              </select>
+            </label>
+            <p id="run-range-summary" class="hint" style="margin:0.4rem 0 0;">Rolling 30-day window ending now.</p>
             <div id="run-range-custom-wrap" class="run-range-detail" hidden>
               <label class="field">
                 <span>From</span>
@@ -843,6 +844,7 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
         <h2>Reports</h2>
         <div class="split">
           <aside>
+            <input type="search" id="reports-filter" class="list-filter" placeholder="Filter reports (name or content)…" autocomplete="off" />
             <ul id="reports-list"></ul>
           </aside>
           <article id="reports-body" class="markdown">Select a report.</article>
@@ -1025,6 +1027,7 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
 
         <div class="split">
           <aside>
+            <input type="search" id="social-filter" class="list-filter" placeholder="Filter posts (name or content)…" autocomplete="off" />
             <ul id="social-list"></ul>
           </aside>
           <article id="social-body" class="markdown">Select a file.</article>
@@ -1065,23 +1068,81 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             <option value="all">Show all (incl. closed &amp; muted)</option>
             <option value="closed">Only closed</option>
             <option value="muted">Only muted</option>
+            <option value="no-triage">Only no-triage people</option>
           </select>
-          <button type="button" id="conv-manage-muted" class="secondary" title="Manage muted accounts">Muted accounts…</button>
+          <button type="button" id="conv-manage-muted" class="secondary" title="Manage muted accounts">
+            🔇 Muted <span id="conv-muted-count-pill" class="cs-count-pill" aria-hidden="true">0</span>
+          </button>
           <span class="hint" id="conv-meta"></span>
         </div>
-        <div id="conv-muted-panel" class="conv-muted-panel" hidden>
-          <div class="conv-muted-head">
-            <strong>Muted accounts</strong>
-            <button type="button" id="conv-muted-close" class="secondary" aria-label="Close panel">×</button>
+        <dialog id="conv-muted-panel" class="cs-modal cs-muted-modal">
+          <div class="cs-modal-form">
+            <header class="cs-modal-head">
+              <h3>Muted accounts <span id="conv-muted-count" class="cs-count">0</span></h3>
+              <button type="button" id="conv-muted-close" class="cs-modal-close" aria-label="Close panel">×</button>
+            </header>
+            <div class="cs-modal-body">
+              <div class="cs-muted-toolbar">
+                <input id="conv-muted-search" type="search" placeholder="Filter by handle, platform, reason…" autocomplete="off" />
+              </div>
+              <details class="cs-muted-add">
+                <summary>+ Add account manually</summary>
+                <div class="cs-muted-add-grid">
+                  <label class="cs-field">
+                    <span>Handle</span>
+                    <input type="text" id="conv-add-handle" placeholder="e.g. nirav-mungara" autocomplete="off" />
+                  </label>
+                  <label class="cs-field">
+                    <span>Platform</span>
+                    <select id="conv-add-platform">
+                      <option value="">All platforms</option>
+                      <option value="linkedin">LinkedIn</option>
+                      <option value="x">X / Twitter</option>
+                      <option value="reddit">Reddit</option>
+                      <option value="bluesky">Bluesky</option>
+                      <option value="youtube">YouTube</option>
+                      <option value="github">GitHub</option>
+                    </select>
+                  </label>
+                  <label class="cs-field">
+                    <span>Reason</span>
+                    <select id="conv-add-reason">
+                      <option value="">— None —</option>
+                      <option value="recruiter">Recruiter / job post</option>
+                      <option value="spam">Spam</option>
+                      <option value="irrelevant">Irrelevant</option>
+                      <option value="competitor">Competitor</option>
+                      <option value="microsoft-employee">Microsoft employee / no triage</option>
+                      <option value="microsoft-employee">Microsoft employee / no triage</option>
+                      <option value="owned">Owned account</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </label>
+                  <label class="cs-field cs-field-wide">
+                    <span>Note <span class="hint">(optional)</span></span>
+                    <input type="text" id="conv-add-note" maxlength="200" />
+                  </label>
+                  <div class="cs-muted-add-actions">
+                    <button type="button" id="conv-add-mute" class="primary">Mute account</button>
+                    <span id="conv-add-status" class="hint"></span>
+                  </div>
+                </div>
+              </details>
+              <details class="cs-muted-add">
+                <summary>📥 Import accounts from config</summary>
+                <div class="cs-muted-tools">
+                  <label class="hint" for="conv-owned-slug">Subject config:</label>
+                  <select id="conv-owned-slug" aria-label="Choose subject config"></select>
+                  <button type="button" id="conv-owned-import" class="secondary">Import owned</button>
+                  <button type="button" id="conv-team-import" class="secondary">Import team as no triage</button>
+                  <span id="conv-owned-status" class="hint"></span>
+                  <span id="conv-team-status" class="hint"></span>
+                </div>
+              </details>
+              <div id="conv-muted-list" class="cs-muted-list"><p class="hint">Loading…</p></div>
+            </div>
           </div>
-          <div class="conv-muted-tools">
-            <label class="hint" for="conv-owned-slug">Mute owned accounts from config:</label>
-            <select id="conv-owned-slug" aria-label="Choose subject config"></select>
-            <button type="button" id="conv-owned-import" class="secondary">Import owned</button>
-            <span id="conv-owned-status" class="hint"></span>
-          </div>
-          <div id="conv-muted-list"><p class="hint">Loading…</p></div>
-        </div>
+        </dialog>
         <div id="conv-bulk-bar" class="conv-bulk-bar" hidden>
           <span id="conv-bulk-count">0 selected</span>
           <select id="conv-bulk-reason" aria-label="Close reason">
@@ -1156,12 +1217,17 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
       </form>
     </dialog>
 
+    <!-- Shared utilities. Loaded before everything so window.scout is ready. -->
+    <script src="lib/utils.js"></script>
     <script src="app.js" type="module"></script>
     <script src="toasts.js" defer></script>
+    <!-- Auto-trap focus + Escape close for any dialog/modal. -->
+    <script src="lib/modal-a11y.js" defer></script>
     <script src="runs-queue.js" defer></script>
     <script src="run-enhancer.js" defer></script>
     <script src="bulk-urls.js" defer></script>
     <script src="dashboard-enhancer.js" defer></script>
+    <script src="dashboard-tabs.js" defer></script>
     <script src="help.js" defer></script>
     <script src="command-palette.js" defer></script>
     <script src="theme.js" defer></script>

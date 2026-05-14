@@ -15,19 +15,22 @@ Before any operation, read config files from `.github/prompts/scout-config-*.pro
 | Request | Prompt file | Description |
 |---------|-------------|-------------|
 | scout onboard | `.github/prompts/scout-onboard.prompt.md` | Interactive setup wizard |
-| scout scan | `.github/prompts/scout-scan.prompt.md` | Search sources, filter, generate report |
-| scout post | `.github/prompts/scout-post.prompt.md` | Generate social posts from URL or report item |
+| scout post | `.github/prompts/scout-post.prompt.md` | Generate social posts from URL or report item. Includes the alt-text sub-flow (`scout-alt.prompt.md`) when an image needs accessible alt text. |
+| scout scan | `.github/prompts/scout-scan.prompt.md` | Search sources, filter, generate report. Includes the Reddit manual-import sub-flow (`scout-reddit-import.prompt.md`) when automated Reddit layers are blocked. |
 | scout calendar | `.github/prompts/scout-calendar.prompt.md` | Weekly posting schedule |
 | scout gaps | `.github/prompts/scout-gaps.prompt.md` | Topics with no recent coverage |
 | scout trends | `.github/prompts/scout-trends.prompt.md` | Month-over-month comparison |
 | scout creators | `.github/prompts/scout-creators.prompt.md` | View creator trajectories, log interventions, track sentiment outcomes |
-| scout doctor | `.github/prompts/scout-doctor.prompt.md` | Validate config, `.env` keys, source reachability, state integrity |
-| scout keys | `.github/prompts/scout-keys.prompt.md` | Interactive setup for API credentials in `.env` (Reddit, Bluesky, X, YouTube, GitHub) |
+| scout doctor | `.github/prompts/scout-doctor.prompt.md` | Validate config, `.env` keys, source reachability, state integrity. Also routes to `scout-keys.prompt.md` (add/fix API credentials) and `scout-vision.prompt.md` (configure vision provider for alt text). |
 | scout replay | `.github/prompts/scout-replay.prompt.md` | Re-run filters/scoring against a saved scan with no API calls |
 | scout seo | `.github/prompts/scout-seo.prompt.md` | SEO audit + recommendations for one or more URLs |
-| scout reddit-import | `.github/prompts/scout-reddit-import.prompt.md` | Manually ingest Reddit URLs when automated layers are blocked |
-| scout alt | `.github/prompts/scout-alt.prompt.md` | Generate accessibility-quality alt text for an image |
-| scout vision | `.github/prompts/scout-vision.prompt.md` | Configure / switch the vision provider used by `/scout-alt` |
+
+## Full-text search
+
+Grep across `reports/*.md` and `social-posts/*.md` from either surface (shared indexer at `tools/lib/corpus-search.mjs`):
+
+- **CLI:** `node tools/search.mjs "<query>"` — supports `--regex`, `--kind reports|social-posts`, `--json`.
+- **Web UI:** command palette (⌘/Ctrl-K) **In files** section — click a hit to open the Reports or Social posts view with that file selected.
 
 Read the corresponding prompt file for each command's detailed flow. Ignore VS Code frontmatter and `${{input:...}}` placeholders — ask users for inputs conversationally.
 

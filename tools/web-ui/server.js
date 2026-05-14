@@ -13,6 +13,7 @@ import createSuggestionsRouter from './routes/suggestions.js';
 import { ROLE_PRESETS, renderConfigTemplate } from './lib/config-template.js';
 import { findMissingPrompts, findUnreferencedPrompts } from './lib/prompt-health.js';
 import { describeImage, formatVisionReport, probeVision, getVisionProvider } from './lib/vision.js';
+import { searchCorpus } from '../lib/corpus-search.mjs';
 import {
   ALLOWED_REASONS,
   convoKey,
@@ -25,10 +26,14 @@ import {
   muteAccount,
   unmuteMany,
   isMutedConv,
+  mutedInfoForConv,
+  isNoTriageInfo,
   muteKey,
   normHandle,
   normPlatform,
+  NO_TRIAGE_REASON,
   parseOwnedAccountsFromConfig,
+  parseTeamMemberAccountsFromConfig,
 } from './lib/muted-accounts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1879,17 +1884,22 @@ app.get('/api/conversations', async (req, res) => {
     const includeMutedFlag = String(req.query.includeMuted || '').toLowerCase();
     const includeMuted = includeMutedFlag === '1' || includeMutedFlag === 'true' || include === 'muted';
     const onlyMuted = include === 'muted';
+    const onlyNoTriage = include === 'no-triage';
     const closed = await loadClosed(REPORTS_DIR);
     const muted = await loadMuted(REPORTS_DIR);
     let convs = idx.conversations.map((c) => {
       const key = convoKey(c);
       const closedInfo = key && closed.items[key] ? closed.items[key] : null;
-      const isMuted = isMutedConv(muted, c);
-      const base = { ...c, key, isClosed: !!closedInfo, isMuted };
+      const mutedInfo = mutedInfoForConv(muted, c);
+      const isMuted = !!mutedInfo || isMutedConv(muted, c);
+      const isNoTriage = isNoTriageInfo(mutedInfo);
+      const base = { ...c, key, isClosed: !!closedInfo, isMuted, isNoTriage };
       if (closedInfo) base.closedInfo = closedInfo;
+      if (mutedInfo) base.mutedInfo = mutedInfo;
       return base;
     });
-    if (onlyMuted) convs = convs.filter((c) => c.isMuted);
+    if (onlyNoTriage) convs = convs.filter((c) => c.isNoTriage);
+    else if (onlyMuted) convs = convs.filter((c) => c.isMuted);
     else if (!includeMuted) convs = convs.filter((c) => !c.isMuted);
     if (include === 'open') convs = convs.filter((c) => !c.isClosed);
     else if (include === 'closed') convs = convs.filter((c) => c.isClosed);
@@ -1909,14 +1919,14 @@ app.get('/api/conversations', async (req, res) => {
     convs = convs
       .slice()
       .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    // Dedupe by key — the same conversation often appears in multiple
-    // report files. Keep the newest occurrence (already first after sort)
-    // and collect the other report names in `dupReports` for context.
+    // Pass 1: dedupe by exact key (URL or composite). Same conversation
+    // appears in multiple report files — keep the newest occurrence and
+    // collect the other report names in `dupReports`.
     const seen = new Map();
     for (const c of convs) {
       const k = c.key || c.url || `${c.platform}::${c.author}::${c.summary}`;
       if (!seen.has(k)) {
-        seen.set(k, { ...c, dupReports: [] });
+        seen.set(k, { ...c, dupReports: [], dupUrls: [] });
       } else {
         const first = seen.get(k);
         if (c.report && c.report !== first.report && !first.dupReports.includes(c.report)) {
@@ -1924,8 +1934,43 @@ app.get('/api/conversations', async (req, res) => {
         }
       }
     }
-    const dedupedConvs = Array.from(seen.values());
-    const dupesRemoved = convs.length - dedupedConvs.length;
+    let dedupedConvs = Array.from(seen.values());
+    // Pass 2: collapse near-duplicate posts from the same author whose
+    // bodies are virtually identical (e.g. recruiter/spam accounts that
+    // re-post the same blurb daily with a fresh activity URN). Signature
+    // is platform + author + first 120 chars of normalized summary.
+    // Skip when author/summary is empty — those would over-collapse.
+    const sigSeen = new Map();
+    const collapsed = [];
+    for (const c of dedupedConvs) {
+      const author = (c.author || '').toString().toLowerCase().trim();
+      const summary = (c.summary || '')
+        .toString()
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120);
+      if (!author || summary.length < 40) {
+        collapsed.push(c);
+        continue;
+      }
+      const platform = (c.platform || '').toString().toLowerCase().trim();
+      const sig = `sig::${platform}|${author}|${summary}`;
+      if (!sigSeen.has(sig)) {
+        sigSeen.set(sig, c);
+        collapsed.push(c);
+      } else {
+        const first = sigSeen.get(sig);
+        if (c.url && c.url !== first.url && !first.dupUrls.includes(c.url)) {
+          first.dupUrls.push(c.url);
+        }
+        if (c.report && c.report !== first.report && !first.dupReports.includes(c.report)) {
+          first.dupReports.push(c.report);
+        }
+      }
+    }
+    const dupesRemoved = convs.length - collapsed.length;
+    dedupedConvs = collapsed;
     res.json({
       conversations: dedupedConvs,
       total: dedupedConvs.length,
@@ -2039,6 +2084,52 @@ app.post('/api/muted-accounts/import-owned', express.json({ limit: '32kb' }), as
   }
 });
 
+// Import configured product-team handles as no-triage accounts. These are
+// likely Microsoft employees / owned people whose posts should be tracked
+// separately but should not clutter community triage.
+// Body: { slug: string }.
+app.post('/api/muted-accounts/import-team-members', express.json({ limit: '32kb' }), async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const slug = String(body.slug || '').trim();
+    if (!slug) return res.status(400).json({ error: 'slug: required' });
+    let cfg;
+    try {
+      cfg = await readConfig(slug);
+    } catch (err) {
+      return res.status(404).json({ error: `config not found for slug "${slug}"` });
+    }
+    const team = parseTeamMemberAccountsFromConfig(cfg.raw || '');
+    const added = [];
+    const skipped = [];
+    for (const acct of team) {
+      try {
+        const { key } = await muteAccount(REPORTS_DIR, {
+          platform: acct.platform,
+          handle: acct.handle,
+          reason: NO_TRIAGE_REASON,
+          note: acct.name ? `Product team member from ${cfg.file}: ${acct.name}` : `Product team member from ${cfg.file}`,
+        });
+        added.push({ key, platform: acct.platform, handle: acct.handle, name: acct.name || '' });
+      } catch (err) {
+        skipped.push({ platform: acct.platform, handle: acct.handle, name: acct.name || '', error: String(err.message || err) });
+      }
+    }
+    const state = await loadMuted(REPORTS_DIR);
+    res.json({
+      ok: true,
+      slug,
+      file: cfg.file,
+      parsed: team.length,
+      added,
+      skipped,
+      total: Object.keys(state.items).length,
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
 // --- Conversation close / reopen --------------------------------
 // Persistent "dismissed" state lives in reports/.closed-conversations.json
 // and is consumed by both the web UI and tools/conversations-cli.mjs so
@@ -2046,6 +2137,65 @@ app.post('/api/muted-accounts/import-owned', express.json({ limit: '32kb' }), as
 
 app.get('/api/conversations/reasons', (_req, res) => {
   res.json({ reasons: ALLOWED_REASONS });
+});
+
+// URL liveness probe — used by the dashboard to hide/flag dead post links.
+// In-memory cache; HEAD with GET fallback (many sites 405 HEAD). Treats
+// 2xx / 3xx / 401 / 403 / 429 as "reachable" (the page exists; we just can't
+// see it anonymously). Aggressively short timeout so we never block the UI.
+const _urlCheckCache = new Map(); // url -> { at, ok, status }
+const URL_CHECK_TTL_MS = 60 * 60 * 1000; // 1h
+const URL_CHECK_TIMEOUT_MS = 6000;
+async function probeUrl(url) {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), URL_CHECK_TIMEOUT_MS);
+  const ua = 'Mozilla/5.0 (compatible; ContentScout-LinkCheck/1.0)';
+  try {
+    let r = await fetch(url, {
+      method: 'HEAD',
+      redirect: 'follow',
+      signal: ac.signal,
+      headers: { 'user-agent': ua, accept: '*/*' },
+    });
+    if (r.status === 405 || r.status === 501 || r.status === 403) {
+      // Try GET — some hosts block HEAD or return 403 to it.
+      r = await fetch(url, {
+        method: 'GET',
+        redirect: 'follow',
+        signal: ac.signal,
+        headers: { 'user-agent': ua, accept: 'text/html,*/*' },
+      });
+    }
+    const s = r.status;
+    const ok = (s >= 200 && s < 400) || s === 401 || s === 403 || s === 429;
+    return { ok, status: s };
+  } catch (err) {
+    return { ok: false, status: 0, error: String(err && err.message || err) };
+  } finally {
+    clearTimeout(t);
+  }
+}
+app.get('/api/check-url', async (req, res) => {
+  const raw = String(req.query.u || '').trim();
+  if (!raw) return res.status(400).json({ error: 'u: required' });
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return res.json({ ok: false, status: 0, reason: 'malformed' });
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return res.json({ ok: false, status: 0, reason: 'bad-protocol' });
+  }
+  const key = parsed.toString();
+  const now = Date.now();
+  const hit = _urlCheckCache.get(key);
+  if (hit && now - hit.at < URL_CHECK_TTL_MS) {
+    return res.json({ ok: hit.ok, status: hit.status, cached: true });
+  }
+  const result = await probeUrl(key);
+  _urlCheckCache.set(key, { at: now, ok: result.ok, status: result.status });
+  res.json({ ...result, cached: false });
 });
 
 app.get('/api/conversations/closed', async (_req, res) => {
@@ -2188,16 +2338,31 @@ app.get('/api/search', async (req, res) => {
       .map((c) => ({ ...c, key: convoKey(c) }))
       .filter((c) => !closed.items[c.key])
       .slice(0, 20);
-    const reportHits = idx.reports.filter((r) => r.name.toLowerCase().includes(needle)).slice(0, 10);
+    const reportHits = idx.reports.filter((r) => r.name.toLowerCase().includes(needle)).slice(0, 25);
     const authorHits = idx.authors
       .filter((a) => a.name.toLowerCase().includes(needle))
       .slice(0, 10);
+    // Full-text grep over reports/*.md + social-posts/*.md so the search
+    // also surfaces matches that live in item bodies, blockquotes, social
+    // post drafts, and posting-calendar files. Shared with tools/search.mjs.
+    let fileHits = [];
+    try {
+      const corpus = await searchCorpus({
+        repoRoot: REPO_ROOT,
+        query: q,
+        options: { maxFiles: 50, maxSnippetsPerFile: 3 },
+      });
+      fileHits = corpus.results;
+    } catch {
+      fileHits = [];
+    }
     res.json({
       q,
       items: itemHits,
       conversations: convoHits,
       reports: reportHits,
       authors: authorHits,
+      files: fileHits,
       builtAt: idx.builtAt,
     });
   } catch (err) {

@@ -25,7 +25,7 @@ import { scanX, openXLogin } from './platforms/x.mjs';
 import { scanLinkedIn, openLinkedInLogin } from './platforms/linkedin.mjs';
 import { scanReddit, openRedditLogin } from './platforms/reddit.mjs';
 import { loadConfig } from './lib/config.mjs';
-import { ensureProfileDir, launchEdge, attachEdge } from './lib/browser.mjs';
+import { ensureProfileDir, launchEdge, attachEdge, newPage } from './lib/browser.mjs';
 import { filterHiring } from './lib/hiring-filter.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -154,10 +154,20 @@ if (command === 'launch') {
   // In CDP mode, attach ONCE and reuse the same context for all platforms —
   // the user is already logged in to all three in one Edge window.
   let sharedHandle = null;
+  let sharedPage = null;
   if (mode === 'cdp') {
     try {
       sharedHandle = await attachEdge({ port });
       console.log(`[browser-scan] Attached to Edge over CDP at http://127.0.0.1:${port}`);
+      // Open ONE tab and reuse it across all platforms / queries. This
+      // replaces the old behaviour where each platform opened + closed its
+      // own tab — the user used to see 3 tabs flicker in and out of their
+      // attached browser per scan, which felt like the agent was thrashing
+      // their session. With a shared tab we open once at the start and
+      // close once at the end (or leave it open between scans — see
+      // SCOUT_KEEP_SCAN_TAB).
+      sharedPage = await newPage(sharedHandle);
+      console.log('[browser-scan] Opened shared scan tab — will navigate in place across all platforms.');
     } catch (e) {
       console.error(`[browser-scan] ${e.message}`);
       process.exit(1);
@@ -180,7 +190,17 @@ if (command === 'launch') {
 
     let items = [];
     try {
-      const ctx = { searchTerms: config.searchTerms, sinceMs, maxPerTerm, slug };
+      const ctx = {
+        searchTerms: config.searchTerms,
+        sinceMs,
+        maxPerTerm,
+        slug,
+        // In CDP mode, hand the shared tab to the platform so it navigates
+        // in place instead of opening + closing its own tab. In launch
+        // mode each platform still owns its tab (separate Playwright
+        // browser per platform).
+        page: mode === 'cdp' ? sharedPage : undefined,
+      };
       if (platform === 'x') items = await scanX(handle, ctx);
       else if (platform === 'linkedin') items = await scanLinkedIn(handle, ctx);
       else if (platform === 'reddit') items = await scanReddit(handle, ctx);
@@ -224,7 +244,13 @@ if (command === 'launch') {
     hiringDroppedByMonth,
   }, null, 2));
 
-  // In CDP mode we do NOT close the user's Edge — they own it. Just disconnect.
+  // In CDP mode we do NOT close the user's Edge — they own it. Just
+  // disconnect. Close the shared scan tab unless the user asked us to keep
+  // it (SCOUT_KEEP_SCAN_TAB=1) — handy when iterating so the cookies and
+  // any half-loaded results stay around for inspection.
+  if (sharedPage && !process.env.SCOUT_KEEP_SCAN_TAB) {
+    await sharedPage.close().catch(() => {});
+  }
   if (sharedHandle) await sharedHandle.browser.close().catch(() => {});
 
   console.log(`[browser-scan] Done. scout scan will pick up results from reports/.browser-scan/${slug}/ on its next run.`);

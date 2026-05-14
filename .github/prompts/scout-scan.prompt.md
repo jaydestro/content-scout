@@ -8,6 +8,8 @@ description: "Scan for public content about your product, technology, or project
 
 Run a content scan using the Content Scout agent.
 
+> **Sub-flow — manual Reddit import.** If the user pastes a list of Reddit URLs and asks to ingest them (or automated Reddit Layers 0–3 are blocked and the user wants the manual fallback), follow `.github/prompts/scout-reddit-import.prompt.md` end-to-end instead of the full multi-source scan below.
+
 > **Do the work in this session.** Only delegate to subagents if you have a
 > real dispatch tool that returns the child's results back to you. Otherwise
 > scan every source yourself, sequentially, using your own `web/fetch` and
@@ -15,6 +17,24 @@ Run a content scan using the Content Scout agent.
 > phrases like "I'll notify you when the report is ready", and never end the
 > run before a report file has been written to `reports/` (a stub report is
 > required even if zero items qualify).
+
+> **Speed — batch independent calls.** Per-source fetches are independent.
+> Inside a single tool turn, issue them in **parallel** (multiple
+> `fetch_webpage` / `run_in_terminal` calls in the same response) whenever
+> the next step doesn't depend on the previous result. Concretely, you can
+> fan out in parallel: Brave search per source, RSS feed pulls, GitHub API
+> queries, HN Algolia, DEV/Medium tags, Bluesky `app.bsky.feed.searchPosts`,
+> Stack Overflow, YouTube. Sequential is only required when you actually
+> need a previous result (e.g., reading a sidecar produced by a terminal
+> call). This typically cuts scan wall-clock by 4–8×.
+
+> **Subagent dispatch (if available).** If your runtime exposes a
+> `runSubagent`-style tool that returns the child's full output back to
+> the caller, you may fan out one subagent per source family (e.g., one
+> for "social: Bluesky+X+LinkedIn+Reddit", one for "blogs: DEV+Medium+RSS",
+> one for "code: GitHub+HN+Stack Overflow") and merge their findings.
+> Never fire-and-forget — only use subagents when their result text comes
+> back to you for inclusion in the final report.
 
 ## Instructions
 
@@ -26,6 +46,9 @@ Run a content scan using the Content Scout agent.
    - If no config exists, tell the user to run `/scout-onboard` first and stop.
 2. For each topic being scanned, determine the **time window**:
    - If the user specified a month/year (e.g., "March 2026"), scan that calendar month.
+   - If the user said **"today only"** (optionally with a date), scan only items posted on that calendar date (apply the timezone rule below — accept items whose UTC date is the same as, or one day after, the local date).
+   - If the user said **"this week so far"** or gave a phrase like `from YYYY-MM-DD to YYYY-MM-DD`, scan that explicit window inclusive of both endpoints.
+   - If the user said **"{Month} {Year} so far"** (e.g., "May 2026 so far"), scan from the 1st of that month through *now*.
    - Otherwise, use a **rolling 30-day window** ending at *now* (the moment the scan runs), **not** "the current calendar month". The window must always include items posted earlier today, including ones posted within the last few hours.
    - **Source-specific timezone rule:** Hacker News, Reddit, Bluesky, and X timestamps are UTC. The user's local time is likely behind UTC. When computing "today", treat any item with a UTC timestamp on the same calendar date as the user's local date *or* the next UTC date as in-window. Never reject an item solely because its UTC date is "tomorrow" relative to local time.
    - **Hacker News specifically:** use Algolia `search_by_date` with `numericFilters=created_at_i>{epoch_30_days_ago}` rather than a calendar-month query. Do NOT phrase HN queries as "stories from {Month Year}" — that pattern has historically produced false negatives near month boundaries.
