@@ -187,7 +187,7 @@
           },
         });
       });
-      (data.reports || []).slice(0, 4).forEach((rep) => {
+      (data.reports || []).slice(0, 12).forEach((rep) => {
         out.push({
           section: 'Reports',
           label: rep.name,
@@ -208,7 +208,7 @@
       // File-content matches from reports/*.md and social-posts/*.md
       // (full-text grep — surfaces hits inside item bodies, social drafts,
       // posting calendars, etc.). Up to 8 files; first snippet shown inline.
-      (data.files || []).slice(0, 8).forEach((f) => {
+      (data.files || []).slice(0, 20).forEach((f) => {
         const firstSnippet = (f.snippets && f.snippets[0]) || null;
         const subParts = [
           f.kind,
