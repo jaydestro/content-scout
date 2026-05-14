@@ -2338,7 +2338,7 @@ app.get('/api/search', async (req, res) => {
       .map((c) => ({ ...c, key: convoKey(c) }))
       .filter((c) => !closed.items[c.key])
       .slice(0, 20);
-    const reportHits = idx.reports.filter((r) => r.name.toLowerCase().includes(needle)).slice(0, 10);
+    const reportHits = idx.reports.filter((r) => r.name.toLowerCase().includes(needle)).slice(0, 25);
     const authorHits = idx.authors
       .filter((a) => a.name.toLowerCase().includes(needle))
       .slice(0, 10);
@@ -2350,7 +2350,7 @@ app.get('/api/search', async (req, res) => {
       const corpus = await searchCorpus({
         repoRoot: REPO_ROOT,
         query: q,
-        options: { maxFiles: 25, maxSnippetsPerFile: 3 },
+        options: { maxFiles: 50, maxSnippetsPerFile: 3 },
       });
       fileHits = corpus.results;
     } catch {

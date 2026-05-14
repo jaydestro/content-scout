@@ -120,9 +120,15 @@
     panel.style.marginBottom = '1rem';
     panel.innerHTML = `
       <div class="bs-head" style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
-        <button type="button" id="bs-collapse-btn" class="link-btn" aria-expanded="false"
-          title="Show / hide configuration" style="font-size:1.1rem;line-height:1;">▸</button>
-        <h3 style="margin:0;flex:1;">🌐 Browser scan <span class="hint" style="font-weight:normal;">(Layer 0 — X / LinkedIn / Reddit)</span></h3>
+        <button type="button" id="bs-collapse-btn" class="bs-collapse-btn" aria-expanded="false" aria-controls="bs-config"
+          title="Show / hide configuration">
+          <span class="bs-chevron" aria-hidden="true">▸</span>
+          <span style="font-size:1.05rem;">🌐</span>
+          <span class="bs-collapse-label">Browser scan</span>
+          <span class="hint" style="font-weight:normal;">(Layer 0 — X / LinkedIn / Reddit)</span>
+          <span id="bs-collapse-hint" class="hint bs-collapse-hint">Click to show details</span>
+        </button>
+        <span style="flex:1;"></span>
         <span id="bs-status-pill" class="hint" aria-live="polite">checking…</span>
         <button type="button" id="bs-dismiss-btn" class="link-btn" aria-label="Hide browser scan controls"
           title="Hide this panel (use the Skip option in the form to actually skip the preflight)"
@@ -173,11 +179,15 @@
   function applyCollapsed(panel, collapsed) {
     const cfg = panel.querySelector('#bs-config');
     const btn = panel.querySelector('#bs-collapse-btn');
+    const chev = panel.querySelector('.bs-chevron');
+    const hint = panel.querySelector('#bs-collapse-hint');
     if (cfg) cfg.hidden = collapsed;
+    if (chev) chev.textContent = collapsed ? '▸' : '▾';
     if (btn) {
-      btn.textContent = collapsed ? '▸' : '▾';
       btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      btn.classList.toggle('is-collapsed', collapsed);
     }
+    if (hint) hint.textContent = collapsed ? 'Click to show details' : 'Click to hide details';
   }
 
   async function wireRunPanel(panel) {

@@ -896,7 +896,64 @@ legend .link-btn { margin-left: 0.4rem; font-weight: 500; }
 }
 .bs-auth-row .bs-chip:hover { background: var(--bg-hover, #eef2f6); }
 .bs-auth-row .bs-chip-dot { font-size: 0.95em; line-height: 1; }
+
+/* Browser-scan collapse toggle (Run view) */
+.bs-collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--bg-subtle, #f6f8fa);
+  border: 1px solid var(--border, #d1d9e0);
+  border-radius: 6px;
+  padding: 0.35rem 0.65rem;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  text-align: left;
+  line-height: 1.2;
+}
+.bs-collapse-btn:hover { background: var(--bg-hover, #eef2f6); border-color: var(--accent, #3b6fd1); }
+.bs-collapse-btn:focus-visible { outline: 2px solid var(--accent, #3b6fd1); outline-offset: 2px; }
+.bs-collapse-btn .bs-chevron {
+  display: inline-block;
+  font-size: 0.95rem;
+  width: 1em;
+  text-align: center;
+  transition: transform 120ms ease;
+  color: var(--accent, #3b6fd1);
+}
+.bs-collapse-btn:not(.is-collapsed) .bs-chevron { /* down chevron already rotated via glyph swap */ }
+.bs-collapse-btn .bs-collapse-label { font-weight: 600; }
+.bs-collapse-btn .bs-collapse-hint {
+  margin-left: 0.35rem;
+  font-weight: normal;
+  font-style: italic;
+  opacity: 0.85;
+}
+
 .sep { color: var(--muted, #888); font-size: 0.85em; }
+
+/* Reports / Social sidebar filter */
+.list-filter {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 0.5rem 0;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border, #d1d9e0);
+  border-radius: 6px;
+  font: inherit;
+  background: var(--bg, #fff);
+}
+.list-filter:focus { outline: 2px solid var(--accent, #3b6fd1); outline-offset: 1px; }
+li.content-match .entry-name::after {
+  content: " · content match";
+  font-size: 0.75em;
+  color: var(--accent, #3b6fd1);
+  font-style: italic;
+  margin-left: 0.25rem;
+}
 .chip-bulk-bar {
   margin: 0.25rem 0;
   font-size: 0.85em;

@@ -2644,6 +2644,67 @@ function streamRun(id) {
 }
 
 // --- Reports / Social ---------------------------------------------
+
+// Wire a list-filter input that hides <li> rows whose text doesn't match,
+// and (for queries >= 2 chars) calls /api/search to mark/show files whose
+// CONTENT matches even when the name doesn't. Idempotent: safe to call
+// every time the list is rebuilt.
+function wireListFilter({ inputId, listId, kind }) {
+  const input = $(inputId);
+  const list = $(listId);
+  if (!input || !list) return;
+  let timer = null;
+  let lastSeq = 0;
+  const apply = async () => {
+    const q = (input.value || '').trim().toLowerCase();
+    const items = list.querySelectorAll('li[data-name]');
+    let visible = 0;
+    items.forEach((li) => {
+      const name = (li.dataset.name || '').toLowerCase();
+      const matchName = !q || name.includes(q);
+      li.hidden = !matchName;
+      li.classList.remove('content-match');
+      if (matchName) visible++;
+    });
+    // Existing "no matches" placeholder cleanup
+    const ph = list.querySelector('li.filter-empty');
+    if (ph) ph.remove();
+    if (q.length >= 2) {
+      const seq = ++lastSeq;
+      try {
+        const r = await fetch('/api/search?q=' + encodeURIComponent(q));
+        if (!r.ok) return;
+        const data = await r.json();
+        if (seq !== lastSeq) return;
+        const files = (data.files || []).filter((f) => f.kind === kind);
+        files.forEach((f) => {
+          const li = list.querySelector(`li[data-name="${CSS.escape(f.name)}"]`);
+          if (!li) return;
+          if (li.hidden) {
+            li.hidden = false;
+            visible++;
+          }
+          li.classList.add('content-match');
+          const firstSnippet = (f.snippets && f.snippets[0]) || null;
+          li.title = firstSnippet ? `Content match — L${firstSnippet.line}: ${firstSnippet.text}` : 'Content match';
+        });
+      } catch { /* ignore */ }
+    }
+    if (q && visible === 0) {
+      const li = document.createElement('li');
+      li.className = 'hint filter-empty';
+      li.textContent = 'No matches.';
+      list.appendChild(li);
+    }
+  };
+  input.addEventListener('input', () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(apply, 140);
+  });
+  // Re-apply on every list rebuild.
+  if (input.value) apply();
+}
+
 async function loadReports() {
   const { reports } = await api('/api/reports');
   $('reports-list').innerHTML = reports
@@ -2668,6 +2729,7 @@ async function loadReports() {
   const body = $('reports-body');
   const first = $('reports-list').querySelector('li[data-name]');
   if (first && body && !body.dataset.name) first.click();
+  wireListFilter({ inputId: 'reports-filter', listId: 'reports-list', kind: 'reports' });
 }
 async function loadSocial() {
   const { social } = await api('/api/reports');
@@ -2694,6 +2756,7 @@ async function loadSocial() {
   const body = $('social-body');
   const first = $('social-list').querySelector('li[data-name]');
   if (first && body && !body.dataset.name) first.click();
+  wireListFilter({ inputId: 'social-filter', listId: 'social-list', kind: 'social-posts' });
 }
 
 // Render a markdown doc into the inline article view, with a toolbar that
