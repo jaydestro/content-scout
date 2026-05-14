@@ -2480,17 +2480,40 @@ $('run-extra').addEventListener('input', updateRunPreview);
 
 // --- Date range helper ---------------------------------------------
 // Produces a natural-language phrase the prompts already understand
-// (e.g., "March 2026" or "from 2026-01-15 to 2026-02-10"). Emits empty
-// string for the default (agent uses last 30 days).
+// (e.g., "March 2026", "today only", "from 2026-01-15 to 2026-02-10").
+// Emits empty string for the default (agent uses last 30 days).
 const COMMANDS_WITH_RANGE = new Set(['scout-scan', 'scout-gaps', 'scout-trends']);
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const RANGE_LS_KEY = 'cs.run.range.preset';
+function fmtDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function startOfWeek(now) {
+  // Monday as week start.
+  const d = new Date(now);
+  const day = d.getDay(); // 0=Sun..6=Sat
+  const diff = (day === 0 ? -6 : 1 - day);
+  d.setDate(d.getDate() + diff);
+  d.setHours(0,0,0,0);
+  return d;
+}
+function rangePreset() {
+  return $('run-range-preset')?.value || 'default';
+}
 function dateRangePhrase() {
   const wrap = $('run-range-wrap');
   if (!wrap || wrap.hidden) return '';
-  const choice = wrap.querySelector('input[name="run-range"]:checked')?.value || 'default';
+  const choice = rangePreset();
   const now = new Date();
   if (choice === 'default') return '';
-  if (choice === 'current-month') return `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}`;
+  if (choice === 'today') return `today only (${fmtDate(now)})`;
+  if (choice === 'this-week') {
+    const start = startOfWeek(now);
+    return `this week so far (from ${fmtDate(start)} to ${fmtDate(now)})`;
+  }
+  if (choice === 'this-month') {
+    return `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()} so far (from ${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01 to ${fmtDate(now)})`;
+  }
   if (choice === 'last-month') {
     const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
@@ -2511,17 +2534,43 @@ function dateRangePhrase() {
   }
   return '';
 }
-document.querySelectorAll('input[name="run-range"]').forEach((r) => {
-  r.addEventListener('change', () => {
-    const choice = document.querySelector('input[name="run-range"]:checked')?.value;
+function updateRangeSummary() {
+  const el = $('run-range-summary');
+  if (!el) return;
+  const choice = rangePreset();
+  if (choice === 'default') {
+    el.textContent = 'Rolling 30-day window ending now.';
+    return;
+  }
+  const phrase = dateRangePhrase();
+  el.textContent = phrase ? `Agent will scan: ${phrase}.` : 'Pick a date to continue.';
+}
+const presetEl = $('run-range-preset');
+if (presetEl) {
+  // Restore last choice.
+  try {
+    const saved = localStorage.getItem(RANGE_LS_KEY);
+    if (saved && presetEl.querySelector(`option[value="${saved}"]`)) {
+      presetEl.value = saved;
+    }
+  } catch {}
+  const syncDetailVisibility = () => {
+    const choice = rangePreset();
     $('run-range-month-wrap').hidden = choice !== 'month';
     $('run-range-custom-wrap').hidden = choice !== 'custom';
+  };
+  syncDetailVisibility();
+  presetEl.addEventListener('change', () => {
+    try { localStorage.setItem(RANGE_LS_KEY, rangePreset()); } catch {}
+    syncDetailVisibility();
+    updateRangeSummary();
     updateRunPreview();
   });
-});
+}
 ['run-range-month', 'run-range-from', 'run-range-to'].forEach((id) => {
-  $(id)?.addEventListener('input', updateRunPreview);
+  $(id)?.addEventListener('input', () => { updateRangeSummary(); updateRunPreview(); });
 });
+updateRangeSummary();
 const runPromptEl = $('run-prompt');
 if (runPromptEl) runPromptEl.addEventListener('input', updateRunPreview);
 $('run-copy').addEventListener('click', async () => {
