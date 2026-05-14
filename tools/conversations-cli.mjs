@@ -20,6 +20,7 @@
 //   node tools/conversations-cli.mjs no-triage <handle> [--platform <name>] [--note "..."]
 //   node tools/conversations-cli.mjs list-no-triage
 //   node tools/conversations-cli.mjs is-no-triage <handle> [--platform <name>]
+//   node tools/conversations-cli.mjs no-triage-team <config-slug>
 //   node tools/conversations-cli.mjs mute-owned <config-slug>
 //
 // Notes:
@@ -49,6 +50,7 @@ import {
   NO_TRIAGE_REASON,
   isNoTriageInfo,
   parseOwnedAccountsFromConfig,
+  parseTeamMemberAccountsFromConfig,
 } from './web-ui/lib/muted-accounts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -100,6 +102,7 @@ Usage:
   node tools/conversations-cli.mjs no-triage <handle> [--platform <name>] [--note "..."]
   node tools/conversations-cli.mjs list-no-triage
   node tools/conversations-cli.mjs is-no-triage <handle> [--platform <name>]
+  node tools/conversations-cli.mjs no-triage-team <config-slug>
 
 Reasons: ${ALLOWED_REASONS.map((r) => r.id).join(' | ')}
 "other" requires --note.
@@ -337,6 +340,42 @@ async function main() {
       console.log('triage required');
       process.exit(1);
     }
+  }
+
+  if (cmd === 'no-triage-team' || cmd === 'import-team-no-triage') {
+    const slug = positional[1];
+    if (!slug) {
+      console.error(`${cmd} requires <config-slug> (e.g. azure-cosmos-db)`);
+      process.exit(2);
+    }
+    const { promises: fs } = await import('node:fs');
+    const cfgFile = path.join(REPO_ROOT, '.github', 'prompts', `scout-config-${slug}.prompt.md`);
+    let raw;
+    try {
+      raw = await fs.readFile(cfgFile, 'utf8');
+    } catch (err) {
+      console.error(`Could not read config: ${cfgFile}`);
+      process.exit(1);
+    }
+    const team = parseTeamMemberAccountsFromConfig(raw);
+    if (!team.length) {
+      console.log('No product-team handles found in config. Name-only entries cannot be matched to conversation authors.');
+      return;
+    }
+    console.log(`Found ${team.length} product-team handle(s) in ${path.basename(cfgFile)}:`);
+    for (const acct of team) {
+      const { key } = await muteAccount(REPORTS_DIR, {
+        platform: acct.platform,
+        handle: acct.handle,
+        reason: NO_TRIAGE_REASON,
+        note: acct.name ? `Product team member from scout-config-${slug}.prompt.md: ${acct.name}` : `Product team member from scout-config-${slug}.prompt.md`,
+      });
+      const name = acct.name ? ` (${acct.name})` : '';
+      console.log(`  no-triage @${acct.handle} on ${normPlatform(acct.platform)}${name} (key=${key})`);
+    }
+    const state = await loadMuted(REPORTS_DIR);
+    console.log(`(${noTriageItems(state).length} total no-triage)`);
+    return;
   }
 
   if (cmd === 'mute-owned') {
