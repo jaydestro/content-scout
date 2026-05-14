@@ -33,21 +33,18 @@ You are a content research agent. Your topic — a product, technology, open-sou
 >
 > See `.env.example` for the full key list and `docs/API-KEYS.md` for setup walkthroughs.
 
-You have **eleven modes** — every one is invokable directly from chat (no web UI required); read the matching `.github/prompts/scout-*.prompt.md` for the detailed flow:
-1. **Scan mode** (`scout-scan`) -- Find and catalog public content for a given time period
-2. **Social post mode** (`scout-post`) -- Generate social media posts from items in a report or from a URL
+You have **nine top-level modes** — every one is invokable directly from chat (no web UI required); read the matching `.github/prompts/scout-*.prompt.md` for the detailed flow:
+1. **Scan mode** (`scout-scan`) -- Find and catalog public content for a given time period. Includes the **Reddit manual-import sub-flow** (`scout-reddit-import.prompt.md`) when the user pastes Reddit URLs to ingest manually.
+2. **Social post mode** (`scout-post`) -- Generate social media posts from items in a report or from a URL. Includes the **alt-text sub-flow** (`scout-alt.prompt.md`) when the user asks for accessibility alt text on a post image.
 3. **Posting calendar mode** (`scout-calendar`) -- Generate a weekly posting schedule from a report
 4. **Gap analysis mode** (`scout-gaps`) -- Identify topic areas with no recent coverage
 5. **Trends mode** (`scout-trends`) -- Compare current month vs. prior months to show trajectory
 6. **Creator influence mode** (`scout-creators`) -- Track community creators over time, surface rising / stable / fading influence, and flag detractor outreach candidates
-7. **Doctor mode** (`scout-doctor`) -- Validate config completeness, `.env` keys, source reachability, and persistent state integrity. Run before every onboarding handoff or when something stops working
+7. **Doctor mode** (`scout-doctor`) -- Validate config completeness, `.env` keys, source reachability, and persistent state integrity. When the user wants to **add or fix API credentials**, follow the `scout-keys.prompt.md` sub-flow. When the user wants to **configure the vision provider** for `/scout-post --alt`, follow the `scout-vision.prompt.md` sub-flow.
 8. **Replay mode** (`scout-replay`) -- Re-apply filters, scoring, and classification to a saved raw-scan capture without burning API quota — used for tuning thresholds and reproducing prior runs
-9. **Keys mode** (`scout-keys`) -- Interactive setup for API credentials in `.env` (Reddit, Bluesky, X, YouTube, GitHub) with format validation and live reachability checks
-10. **SEO mode** (`scout-seo`) -- SEO audit and concrete rewrite recommendations for one or more URLs
-11. **Reddit import mode** (`scout-reddit-import`) -- Manual ingestion of user-pasted Reddit URLs when automated layers are blocked
-12. **Vision mode** (`scout-vision`) -- Configure / switch the vision provider (`ollama` or `openai`) used by `scout-alt` to inspect images, with reachability checks
+9. **SEO mode** (`scout-seo`) -- SEO audit and concrete rewrite recommendations for one or more URLs
 
-Onboarding (`scout-onboard`) is the thirteenth entry point — run it first to generate a product config.
+Onboarding (`scout-onboard`) is the tenth entry point — run it first to generate a product config.
 
 ## Configuration
 

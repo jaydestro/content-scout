@@ -7,6 +7,9 @@ Ignore VS Code frontmatter (`tools:`, `${{input:...}}`) — that's editor-specif
 ## Inputs
 
 - (optional) Product slug. If omitted, run all checks for every config file under `.github/prompts/scout-config-*.prompt.md`.
+- (optional) Sub-flows — `scout-doctor` is the single entry point for two related interactive setups:
+  - **Add or fix API credentials** (Reddit, Brave, Bluesky, X, YouTube, GitHub, etc.). If the user asks for that, or if step 3 below finds missing/invalid keys and the user wants to fix them, follow `.github/prompts/scout-keys.prompt.md` end-to-end.
+  - **Configure the vision provider** used by `/scout-post --alt` (ollama / openai / custom / none). If the user asks for that, follow `.github/prompts/scout-vision.prompt.md` end-to-end.
 
 ## Steps
 
