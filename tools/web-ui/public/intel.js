@@ -1119,12 +1119,16 @@
     return true;
   }
   const _urlLiveCache = new Map(); // url -> Promise<{ok,status}>
-  function checkUrlLive(u) {
+  const URL_CHECK_TIMEOUT_MS = 1500;
+  function checkUrlLive(u, timeoutMs = URL_CHECK_TIMEOUT_MS) {
     if (!isValidPostUrl(u)) return Promise.resolve({ ok: false, status: 0, reason: 'malformed' });
     if (_urlLiveCache.has(u)) return _urlLiveCache.get(u);
-    const p = fetch(`/api/check-url?u=${encodeURIComponent(u)}`)
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), timeoutMs);
+    const p = fetch(`/api/check-url?u=${encodeURIComponent(u)}`, { signal: ac.signal })
       .then((r) => r.json())
-      .catch(() => ({ ok: false, status: 0, reason: 'fetch-failed' }));
+      .catch((err) => ({ ok: false, status: 0, reason: err?.name === 'AbortError' ? 'timeout' : 'fetch-failed' }))
+      .finally(() => clearTimeout(t));
     _urlLiveCache.set(u, p);
     return p;
   }
@@ -1203,12 +1207,15 @@
       for (const c of all) {
         if (c && isValidPostUrl(c.url)) urlSet.add(c.url);
       }
-      const urls = [...urlSet].slice(0, 80); // hard cap on per-load probes
+      const urls = [...urlSet].slice(0, 24); // hard cap on per-load probes
       const liveMap = new Map();
       const PROBE_CONC = 6;
+      const PROBE_BUDGET_MS = 4000;
+      const deadline = Date.now() + PROBE_BUDGET_MS;
       let pi = 0;
       async function probeWorker() {
         while (pi < urls.length) {
+          if (Date.now() > deadline) break;
           const u = urls[pi++];
           try {
             const r = await checkUrlLive(u);
