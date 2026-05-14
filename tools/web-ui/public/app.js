@@ -2518,12 +2518,6 @@ function dateRangePhrase() {
     const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
   }
-  if (choice === 'month') {
-    const v = $('run-range-month')?.value; // "YYYY-MM"
-    if (!v) return '';
-    const [y, m] = v.split('-').map(Number);
-    return `${MONTH_NAMES[m - 1]} ${y}`;
-  }
   if (choice === 'custom') {
     const from = $('run-range-from')?.value;
     const to = $('run-range-to')?.value;
@@ -2556,7 +2550,6 @@ if (presetEl) {
   } catch {}
   const syncDetailVisibility = () => {
     const choice = rangePreset();
-    $('run-range-month-wrap').hidden = choice !== 'month';
     $('run-range-custom-wrap').hidden = choice !== 'custom';
   };
   syncDetailVisibility();
@@ -2567,7 +2560,7 @@ if (presetEl) {
     updateRunPreview();
   });
 }
-['run-range-month', 'run-range-from', 'run-range-to'].forEach((id) => {
+['run-range-from', 'run-range-to'].forEach((id) => {
   $(id)?.addEventListener('input', () => { updateRangeSummary(); updateRunPreview(); });
 });
 updateRangeSummary();
