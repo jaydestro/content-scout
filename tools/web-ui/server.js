@@ -13,6 +13,7 @@ import createSuggestionsRouter from './routes/suggestions.js';
 import { ROLE_PRESETS, renderConfigTemplate } from './lib/config-template.js';
 import { findMissingPrompts, findUnreferencedPrompts } from './lib/prompt-health.js';
 import { describeImage, formatVisionReport, probeVision, getVisionProvider } from './lib/vision.js';
+import { searchCorpus } from '../lib/corpus-search.mjs';
 import {
   ALLOWED_REASONS,
   convoKey,
@@ -2341,12 +2342,27 @@ app.get('/api/search', async (req, res) => {
     const authorHits = idx.authors
       .filter((a) => a.name.toLowerCase().includes(needle))
       .slice(0, 10);
+    // Full-text grep over reports/*.md + social-posts/*.md so the search
+    // also surfaces matches that live in item bodies, blockquotes, social
+    // post drafts, and posting-calendar files. Shared with tools/search.mjs.
+    let fileHits = [];
+    try {
+      const corpus = await searchCorpus({
+        repoRoot: REPO_ROOT,
+        query: q,
+        options: { maxFiles: 25, maxSnippetsPerFile: 3 },
+      });
+      fileHits = corpus.results;
+    } catch {
+      fileHits = [];
+    }
     res.json({
       q,
       items: itemHits,
       conversations: convoHits,
       reports: reportHits,
       authors: authorHits,
+      files: fileHits,
       builtAt: idx.builtAt,
     });
   } catch (err) {
