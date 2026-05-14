@@ -1821,10 +1821,11 @@ function parseReport(raw, fileName) {
 function normalizeSentiment(cell) {
   if (!cell) return 'unknown';
   const lower = cell.toLowerCase();
+  if (/mixed|cautious|confus/i.test(lower)) return 'mixed';
+  if (/neutral/i.test(lower)) return 'neutral';
   if (cell.includes('🟢') || /positive|advoc/i.test(lower)) return 'positive';
   if (cell.includes('🔴') || /negative|critic|frustrat/i.test(lower)) return 'negative';
-  if (cell.includes('🟡') || /mixed|cautious|confus/i.test(lower)) return 'mixed';
-  if (/neutral/i.test(lower)) return 'neutral';
+  if (cell.includes('🟡')) return 'neutral';
   return 'unknown';
 }
 
