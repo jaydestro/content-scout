@@ -37,6 +37,7 @@
   // Persisted UI prefs (panel collapsed / hidden) ----------------------
   const LS_HIDDEN = 'browser-scan-panel-hidden';
   const LS_COLLAPSED = 'browser-scan-panel-collapsed';
+  const LS_USE_DEFAULT = 'browser-scan-use-default-profile';
   const isHidden = () => { try { return localStorage.getItem(LS_HIDDEN) === '1'; } catch { return false; } };
   const setHidden = (v) => { try { localStorage.setItem(LS_HIDDEN, v ? '1' : '0'); } catch { /* ignore */ } };
   const isCollapsed = () => {
@@ -48,6 +49,12 @@
     } catch { return true; }
   };
   const setCollapsed = (v) => { try { localStorage.setItem(LS_COLLAPSED, v ? '1' : '0'); } catch { /* ignore */ } };
+  const isUseDefaultProfile = () => {
+    try { return localStorage.getItem(LS_USE_DEFAULT) === '1'; } catch { return false; }
+  };
+  const setUseDefaultProfile = (v) => {
+    try { localStorage.setItem(LS_USE_DEFAULT, v ? '1' : '0'); } catch { /* ignore */ }
+  };
 
   const PLATFORM_LABEL = { x: 'X', linkedin: 'LinkedIn', reddit: 'Reddit' };
   const PLATFORM_LOGIN_URL = {
@@ -159,6 +166,10 @@
           <button type="button" id="bs-scan-btn" class="secondary">Force-rescan active subject</button>
           <button type="button" id="bs-refresh-btn" class="link-btn" title="Refresh CDP + sidecar status">↻</button>
         </div>
+        <label class="field-inline" style="margin-top:0.5rem;display:flex;align-items:center;gap:0.5rem;">
+          <input type="checkbox" id="bs-use-default-profile" />
+          <span>Use my default browser profile (reuses existing logins; close other browser windows first).</span>
+        </label>
         <div id="bs-sidecars" class="hint" style="margin-top:0.5rem;"></div>
       </div>
       <div id="bs-message" class="hint" style="margin-top:0.5rem;" aria-live="polite"></div>
@@ -210,6 +221,12 @@
       );
     }
     sel.innerHTML = opts.join('');
+
+    const useDefault = panel.querySelector('#bs-use-default-profile');
+    if (useDefault) {
+      useDefault.checked = isUseDefaultProfile();
+      useDefault.addEventListener('change', () => setUseDefaultProfile(useDefault.checked));
+    }
 
     panel.querySelector('#bs-launch-btn').addEventListener('click', () => onLaunchClick(panel));
     panel.querySelector('#bs-scan-btn').addEventListener('click', () => onScanClick(panel));
@@ -365,6 +382,8 @@
       if (msg) {
         if (missing.length === 0) {
           msg.innerHTML = `<span style="color:var(--ok,#2ea043);">Signed in to X, LinkedIn, and Reddit. Layer 0 ready.</span>`;
+        } else if (missing.length === 3) {
+          msg.innerHTML = 'Sign-in check could not see any sessions. If you are logged in in your normal browser, click "Open browser & sign in" (CDP profile) or enable "Use my default browser profile" (close all other windows first), then check again.';
         } else {
           msg.innerHTML = `Sign in to ${esc(missing.join(', '))} in the controlled browser, then click "Check sign-in" again.`;
         }
@@ -382,13 +401,14 @@
     const btn = panel.querySelector('#bs-launch-btn');
     const msg = panel.querySelector('#bs-message');
     const browser = panel.querySelector('#bs-browser-select').value || undefined;
+    const useDefaultProfile = panel.querySelector('#bs-use-default-profile')?.checked || false;
     btn.disabled = true;
     msg.textContent = 'Opening browser…';
     try {
       const r = await fetch('/api/browser-scan/launch', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ browser }),
+        body: JSON.stringify({ browser, useDefaultProfile }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || `${r.status}`);
