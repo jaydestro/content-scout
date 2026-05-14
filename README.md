@@ -31,6 +31,17 @@ Open <http://localhost:4477>. Walks you through a 9-step onboarding wizard, save
 
 Open the repo in your AI tool and run `/scout-onboard` (VS Code) or say "scout onboard" (Claude Code, Cursor, Windsurf, Cline, Copilot CLI). See [docs/EDITORS.md](docs/EDITORS.md) for per-tool startup, slash-command list, and troubleshooting.
 
+### Headless CLI
+
+```
+node tools/scout-cli/index.mjs config agent claude     # one-time
+node tools/scout-cli/index.mjs scan azure-cosmos-db
+node tools/scout-cli/index.mjs post https://example.com/blog --extra "linkedin only"
+node tools/scout-cli/index.mjs --help
+```
+
+The CLI drives the **same `/scout-*` agent prompts** as the web UI and reads the same `tools/web-ui/.scout-web-settings.json`. Use `--print-prompt` to dry-run any command. See [tools/scout-cli/index.mjs](tools/scout-cli/index.mjs) for the full command list.
+
 ## Commands
 
 | Command | What it does |
