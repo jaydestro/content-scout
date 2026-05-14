@@ -205,6 +205,44 @@
           },
         });
       });
+      // File-content matches from reports/*.md and social-posts/*.md
+      // (full-text grep — surfaces hits inside item bodies, social drafts,
+      // posting calendars, etc.). Up to 8 files; first snippet shown inline.
+      (data.files || []).slice(0, 8).forEach((f) => {
+        const firstSnippet = (f.snippets && f.snippets[0]) || null;
+        const subParts = [
+          f.kind,
+          `${f.hits} hit${f.hits === 1 ? '' : 's'}`,
+          firstSnippet ? `L${firstSnippet.line}: ${firstSnippet.text}` : '',
+        ].filter(Boolean);
+        out.push({
+          section: 'In files',
+          label: f.name,
+          sub: subParts.join(' · '),
+          icon: f.kind === 'reports' ? 'report' : 'share',
+          run: () => {
+            if (f.kind === 'reports') {
+              navigate('reports');
+              setTimeout(() => {
+                document
+                  .querySelectorAll('#reports-list li')
+                  .forEach((el) => {
+                    if (el.textContent.includes(f.name)) el.click();
+                  });
+              }, 200);
+            } else {
+              navigate('social');
+              setTimeout(() => {
+                document
+                  .querySelectorAll('#social-list li')
+                  .forEach((el) => {
+                    if (el.textContent.includes(f.name)) el.click();
+                  });
+              }, 200);
+            }
+          },
+        });
+      });
       _liveResults = out;
       render(true);
     } catch {

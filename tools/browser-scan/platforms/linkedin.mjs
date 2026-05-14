@@ -31,13 +31,16 @@ export async function openLinkedInLogin(browser) {
 export async function scanLinkedIn(browser, ctx) {
   const { searchTerms, sinceMs, maxPerTerm } = ctx;
   const items = new Map();
-  const page = await newPage(browser);
+  // Reuse a caller-provided page when present so the whole scan can run
+  // inside a single Edge tab (less visible flicker for the user).
+  const page = ctx.page || (await newPage(browser));
+  const ownsPage = !ctx.page;
 
   await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
   await sleep(2500);
   if (/\/login|\/checkpoint|\/uas\/login|\/authwall/.test(page.url())) {
     console.warn('[browser-scan] linkedin: session expired — sign in to LinkedIn in the Edge tab and re-run.');
-    await page.close();
+    if (ownsPage) await page.close();
     return [];
   }
 
@@ -80,7 +83,7 @@ export async function scanLinkedIn(browser, ctx) {
     await sleep(3500); // polite delay between search terms
   }
 
-  await page.close();
+  if (ownsPage) await page.close();
   return [...items.values()];
 }
 

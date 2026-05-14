@@ -40,6 +40,13 @@ Users will request these operations using natural language. Map their requests t
 | "scout replay", "replay scan", "re-run filters" | `.github/prompts/scout-replay.prompt.md` | Re-apply filters/scoring/sentiment to a saved scan with no API calls |
 | "scout seo", "audit SEO", "optimize this page", "SEO check" | `.github/prompts/scout-seo.prompt.md` | SEO audit and concrete rewrite recommendations for one or more URLs |
 
+## Full-text search across reports + social posts
+
+Both surfaces share the same indexer (`tools/lib/corpus-search.mjs`) and grep `reports/*.md` + `social-posts/*.md`:
+
+- **CLI:** `node tools/search.mjs "vector search"` (add `--regex` for regex, `--kind reports` to scope, `--json` for machine output).
+- **Web UI:** the command palette (⌘/Ctrl-K) now has an **In files** section that surfaces matching files with the line number and a snippet preview. Clicking a hit jumps to the Reports or Social posts view with that file selected.
+
 When reading prompt files, the `${{input:...}}` placeholders are VS Code syntax. Instead, ask the user for those inputs conversationally.
 
 ## Output Locations
