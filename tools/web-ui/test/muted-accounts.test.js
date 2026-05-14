@@ -13,6 +13,7 @@ import {
   muteKey,
   normHandle,
   normPlatform,
+  parseTeamMemberAccountsFromConfig,
   unmuteMany,
 } from '../lib/muted-accounts.js';
 
@@ -73,4 +74,31 @@ test('unmuteMany removes a no-triage account', async () => {
   assert.equal(result.removed, 1);
   const state = await loadMuted(dir);
   assert.equal(Object.keys(state.items).length, 0);
+});
+
+test('parseTeamMemberAccountsFromConfig extracts only handle-backed team members', () => {
+  const raw = `
+## Exclusions
+
+### Product Team Members
+<!-- comments should be ignored -->
+- Name Only
+- James Codella (hn: jcodella, github: jcodella, x: @jcodella, devto: jcodella, linkedin: /in/jamescodella)
+- Pamela Fox (github: pamelafox, bluesky: pamelafox.bsky.social)
+
+## Posting Preferences
+- **Team members to tag:** @teamlead, linkedin: product-lead
+`;
+  const accounts = parseTeamMemberAccountsFromConfig(raw);
+  assert.deepEqual(accounts, [
+    { platform: 'hn', handle: 'jcodella', name: 'James Codella' },
+    { platform: 'github', handle: 'jcodella', name: 'James Codella' },
+    { platform: 'x', handle: 'jcodella', name: 'James Codella' },
+    { platform: 'devto', handle: 'jcodella', name: 'James Codella' },
+    { platform: 'linkedin', handle: 'jamescodella', name: 'James Codella' },
+    { platform: 'github', handle: 'pamelafox', name: 'Pamela Fox' },
+    { platform: 'bluesky', handle: 'pamelafox', name: 'Pamela Fox' },
+    { platform: 'linkedin', handle: 'product-lead', name: '' },
+    { platform: '', handle: 'teamlead', name: '' },
+  ]);
 });

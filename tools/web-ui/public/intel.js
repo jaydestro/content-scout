@@ -1012,6 +1012,11 @@
       ownedBtn.dataset.wired = '1';
       ownedBtn.addEventListener('click', _importOwnedAccounts);
     }
+    const teamBtn = document.getElementById('conv-team-import');
+    if (teamBtn && !teamBtn.dataset.wired) {
+      teamBtn.dataset.wired = '1';
+      teamBtn.addEventListener('click', _importTeamNoTriageAccounts);
+    }
   }
 
   async function _populateOwnedSlugSelect() {
@@ -1055,6 +1060,37 @@
         status.textContent = parsed
           ? `Muted ${added} of ${parsed} owned account(s).`
           : 'No owned accounts found in this config.';
+      }
+      await _refreshMutedPanel();
+      await loadConversations();
+    } catch (err) {
+      if (status) status.textContent = 'Import failed: ' + (err.message || err);
+    }
+  }
+
+  async function _importTeamNoTriageAccounts() {
+    const sel = document.getElementById('conv-owned-slug');
+    const status = document.getElementById('conv-team-status') || document.getElementById('conv-owned-status');
+    const slug = sel && sel.value;
+    if (!slug) {
+      if (status) status.textContent = 'Pick a config first.';
+      return;
+    }
+    if (status) status.textContent = 'Importing team…';
+    try {
+      const res = await fetch('/api/muted-accounts/import-team-members', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ slug }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      const added = (data.added || []).length;
+      const parsed = data.parsed || 0;
+      if (status) {
+        status.textContent = parsed
+          ? `Marked ${added} of ${parsed} team handle(s) no-triage.`
+          : 'No team handles found. Add platform aliases like (linkedin: name) to Product Team Members.';
       }
       await _refreshMutedPanel();
       await loadConversations();

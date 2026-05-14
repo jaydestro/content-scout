@@ -30,7 +30,9 @@ import {
   muteKey,
   normHandle,
   normPlatform,
+  NO_TRIAGE_REASON,
   parseOwnedAccountsFromConfig,
+  parseTeamMemberAccountsFromConfig,
 } from './lib/muted-accounts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -2072,6 +2074,52 @@ app.post('/api/muted-accounts/import-owned', express.json({ limit: '32kb' }), as
       slug,
       file: cfg.file,
       parsed: owned.length,
+      added,
+      skipped,
+      total: Object.keys(state.items).length,
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+// Import configured product-team handles as no-triage accounts. These are
+// likely Microsoft employees / owned people whose posts should be tracked
+// separately but should not clutter community triage.
+// Body: { slug: string }.
+app.post('/api/muted-accounts/import-team-members', express.json({ limit: '32kb' }), async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const slug = String(body.slug || '').trim();
+    if (!slug) return res.status(400).json({ error: 'slug: required' });
+    let cfg;
+    try {
+      cfg = await readConfig(slug);
+    } catch (err) {
+      return res.status(404).json({ error: `config not found for slug "${slug}"` });
+    }
+    const team = parseTeamMemberAccountsFromConfig(cfg.raw || '');
+    const added = [];
+    const skipped = [];
+    for (const acct of team) {
+      try {
+        const { key } = await muteAccount(REPORTS_DIR, {
+          platform: acct.platform,
+          handle: acct.handle,
+          reason: NO_TRIAGE_REASON,
+          note: acct.name ? `Product team member from ${cfg.file}: ${acct.name}` : `Product team member from ${cfg.file}`,
+        });
+        added.push({ key, platform: acct.platform, handle: acct.handle, name: acct.name || '' });
+      } catch (err) {
+        skipped.push({ platform: acct.platform, handle: acct.handle, name: acct.name || '', error: String(err.message || err) });
+      }
+    }
+    const state = await loadMuted(REPORTS_DIR);
+    res.json({
+      ok: true,
+      slug,
+      file: cfg.file,
+      parsed: team.length,
       added,
       skipped,
       total: Object.keys(state.items).length,
