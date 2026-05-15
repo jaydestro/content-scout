@@ -6,9 +6,13 @@ Content Scout has **two surfaces** by design. There is no separate CLI tool.
 
 - **Standard operations → agent.** If it produces a report, social post, or
   config — use a `/scout-*` slash command in your editor (VS Code, Claude Code,
-  Cursor, Windsurf, Cline, Copilot CLI).
-- **Advanced / visual operations → web UI.** If it's a dashboard, a bulk
+  Cursor, Windsurf, Cline, Copilot CLI). **The agent works fully without the web UI.**
+- **Advanced / visual operations → web UI (optional).** If it's a dashboard, a bulk
   operation, or needs drag-drop — use `tools/web-ui` at <http://localhost:4477>.
+
+The web UI is **supplemental**. You never need it to run a scan, generate posts, manage
+creators, or check config health. It is an optional visual layer for power users who want
+dashboards and bulk operations.
 
 That's it. Pick the surface that fits the task.
 

@@ -1422,7 +1422,7 @@
             const dp = (t.positive || 0) - (prior.positive || 0);
             const dn = (t.negative || 0) - (prior.negative || 0);
             if (dp || dn) {
-              delta = `<span class="sent-delta">Δ +${dp >= 0 ? dp : dp} 🟢, ${
+              delta = `<span class="sent-delta">Δ ${dp >= 0 ? '+' + dp : dp} 🟢, ${
                 dn >= 0 ? '+' + dn : dn
               } 🔴</span>`;
             }
