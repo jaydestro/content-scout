@@ -15,6 +15,13 @@ import { findMissingPrompts, findUnreferencedPrompts } from './lib/prompt-health
 import { describeImage, formatVisionReport, probeVision, getVisionProvider } from './lib/vision.js';
 import { searchCorpus } from '../lib/corpus-search.mjs';
 import {
+  loadReport,
+  parseReport,
+  parseReportFromJson,
+  normalizeSentiment,
+  classifyItem,
+} from '../lib/report-index.mjs';
+import {
   ALLOWED_REASONS,
   convoKey,
   loadClosed,
@@ -1546,21 +1553,40 @@ app.get('/view/social/:name', async (req, res) => {
 // =====================================================================
 // Item / conversation / author / source index
 // ---------------------------------------------------------------------
-// Lazily builds an in-memory index by parsing every *-content.md report.
+// Lazily builds an in-memory index by reading every *-content.md report
+// (or, when available, its *-content.json sidecar — the agent writes a
+// structured sidecar with sentiment/score/author already classified, so
+// the JSON path avoids re-deriving anything from markdown emoji cells).
+//
 // Cached for 30s (or until reports/ mtime changes) so /api/items,
 // /api/conversations, /api/authors, /api/search, /api/source-health all
 // share the same scan. Read-only; never writes back to disk.
+//
+// All parsing/classification lives in tools/lib/report-index.mjs so the
+// agent surface and the web UI surface stay in lock-step.
 // =====================================================================
 
-let _indexCache = null; // { builtAt, signature, items, conversations, authors, sources, reports }
+let _indexCache = null;// { builtAt, signature, items, conversations, authors, sources, reports }
 const INDEX_TTL_MS = 30_000;
 
 async function getIndex() {
   const reports = (await listMarkdownFiles(REPORTS_DIR)).filter((r) =>
     /-content\.md$/.test(r.name)
   );
+  // Cache signature also hashes sidecar mtime so a fresh JSON write (e.g. an
+  // agent rerun that updates sentiment without touching the .md) invalidates.
+  const sidecarMtimes = await Promise.all(
+    reports.map(async (r) => {
+      try {
+        const st = await fs.stat(path.join(REPORTS_DIR, r.name.replace(/\.md$/, '.json')));
+        return st.mtimeMs;
+      } catch {
+        return '';
+      }
+    })
+  );
   const signature = reports
-    .map((r) => `${r.name}@${r.mtime || ''}`)
+    .map((r, idx) => `${r.name}@${r.mtime || ''}#${sidecarMtimes[idx] || ''}`)
     .sort()
     .join('|');
   if (
@@ -1577,18 +1603,13 @@ async function getIndex() {
   const sources = new Map(); // sourceKey -> aggregate
   const reportsMeta = [];
 
-  // Read + parse all reports in parallel. The aggregation loop below still
-  // runs serially so Map/Array ordering stays deterministic, but the I/O +
-  // markdown parse (the slow parts) overlap. On a workspace with ~30 reports
-  // this dropped /api/conversations cold time from ~600ms to ~120ms.
+  // Read + parse all reports in parallel via the shared lib. loadReport()
+  // prefers the JSON sidecar (the agent's structured output) and falls back
+  // to markdown for legacy reports.
   const parsedReports = await Promise.all(
     reports.map(async (r) => {
-      try {
-        const raw = await fs.readFile(path.join(REPORTS_DIR, r.name), 'utf8');
-        return { r, parsed: parseReport(raw, r.name) };
-      } catch {
-        return null;
-      }
+      const parsed = await loadReport(REPORTS_DIR, r.name);
+      return parsed ? { r, parsed } : null;
     })
   );
 
@@ -1600,6 +1621,7 @@ async function getIndex() {
       mtime: r.mtime,
       slug: parsed.slug,
       generatedAt: parsed.generatedAt,
+      source: parsed.source || 'md',
       itemCount: parsed.items.length,
       convoCount: parsed.conversations.length,
       sentimentTotals: parsed.sentimentTotals,
@@ -1677,169 +1699,6 @@ async function getIndex() {
     reports: reportsMeta,
   };
   return _indexCache;
-}
-
-// Parse a single content report into structured items + conversations + meta.
-function parseReport(raw, fileName) {
-  const lines = raw.split(/\r?\n/);
-  const slugMatch = fileName.match(/^\d{4}-\d{2}-\d{2}-\d{4}-(.+)-content\.md$/);
-  const slug = slugMatch ? slugMatch[1] : '';
-  const genMatch = raw.match(/\*\*Generated:\*\*\s*([^\n]+)/);
-  const generatedAt = genMatch ? genMatch[1].trim() : '';
-
-  const items = [];
-  const conversations = [];
-  let currentSection = '';
-  const seenItems = new Set();
-  const sentimentTotals = { positive: 0, neutral: 0, negative: 0, mixed: 0, unknown: 0 };
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const headerMatch = line.match(/^##+\s+(.+)$/);
-    if (headerMatch) {
-      currentSection = headerMatch[1].trim();
-      continue;
-    }
-    if (!/^\s*\|/.test(line)) continue;
-    const next = lines[i + 1] || '';
-    if (!/^\s*\|[\s:|-]+\|\s*$/.test(next)) continue;
-    const headers = line
-      .split('|')
-      .slice(1, -1)
-      .map((s) => s.trim().toLowerCase());
-    const idx = (names) => headers.findIndex((h) => names.includes(h));
-    const titleIdx = idx(['title', 'topic', 'session', 'summary', 'post', 'thread', 'discussion', 'mention']);
-    const linkIdx = idx(['link', 'url']);
-    const dateIdx = idx(['date']);
-    const epIdx = idx(['ep', 'score']);
-    const authorIdx = idx(['speaker', 'author']);
-    const sourceIdx = idx(['source', 'channel', 'platform']);
-    const tagsIdx = idx(['tags']);
-    const sentimentIdx = idx(['sentiment']);
-    const summaryIdx = idx(['summary']);
-    const communityIdx = idx(['community']);
-    const engagementIdx = idx(['engagement']);
-    const isConversation = sentimentIdx >= 0 || /conversations|mentions/i.test(currentSection);
-
-    let j = i + 2;
-    while (j < lines.length && /^\s*\|/.test(lines[j])) {
-      const cells = lines[j]
-        .split('|')
-        .slice(1, -1)
-        .map((s) => s.trim());
-      const titleCell = titleIdx >= 0 ? cells[titleIdx] || '' : '';
-      const linkCell = linkIdx >= 0 ? cells[linkIdx] || '' : '';
-      const dateCell = dateIdx >= 0 ? cells[dateIdx] || '' : '';
-      const epRaw = epIdx >= 0 ? cells[epIdx] || '' : '';
-      const authorCell = authorIdx >= 0 ? cells[authorIdx] || '' : '';
-      const sourceCell = sourceIdx >= 0 ? cells[sourceIdx] || '' : '';
-      const tagsCell = tagsIdx >= 0 ? cells[tagsIdx] || '' : '';
-      const sentimentCell = sentimentIdx >= 0 ? cells[sentimentIdx] || '' : '';
-      const summaryCell = summaryIdx >= 0 ? cells[summaryIdx] || '' : '';
-      const communityCell = communityIdx >= 0 ? cells[communityIdx] || '' : '';
-      const engagementCell = engagementIdx >= 0 ? cells[engagementIdx] || '' : '';
-
-      const linkMatch = linkCell.match(/\((https?:\/\/[^\s)]+)\)/);
-      const url = linkMatch ? linkMatch[1] : '';
-      const title = titleCell
-        .replace(/\\\|/g, '|')
-        .replace(/\s+/g, ' ')
-        .trim();
-      const ep = parseInt(epRaw, 10);
-
-      if (!title || title.length < 3) {
-        j++;
-        continue;
-      }
-      const sentiment = normalizeSentiment(sentimentCell);
-      const tags = tagsCell
-        .split(/[,;]/)
-        .map((t) => t.replace(/[`*_]/g, '').trim())
-        .filter(Boolean);
-
-      if (isConversation) {
-        sentimentTotals[sentiment] = (sentimentTotals[sentiment] || 0) + 1;
-        const community = (communityCell || '').replace(/[`*_]/g, '').trim().toLowerCase();
-        // Heuristic: rows tagged "official", "product", "first-party", or matching
-        // a known Microsoft/official handle pattern get classified as product.
-        // Everything else (including blanks, "community", "third-party", "story",
-        // "user", "mvp") is community-generated.
-        const isProduct =
-          /^(official|product|first[\s-]?party|microsoft|brand|company)$/.test(community) ||
-          /microsoft|@msft|@azure/i.test(authorCell);
-        conversations.push({
-          date: dateCell,
-          platform: sourceCell || 'Unknown',
-          author: authorCell || '',
-          summary: summaryCell || title,
-          sentiment,
-          community: isProduct ? 'product' : 'community',
-          communityRaw: community || '',
-          engagement: engagementCell.replace(/[`*_]/g, '').trim(),
-          url,
-          section: currentSection,
-        });
-      } else {
-        const dedupKey = url || `${title}::${authorCell}`;
-        if (!seenItems.has(dedupKey)) {
-          seenItems.add(dedupKey);
-          items.push({
-            title,
-            url,
-            date: dateCell,
-            ep: Number.isFinite(ep) ? ep : null,
-            author: authorCell || '',
-            source: sourceCell || '',
-            tags,
-            section: currentSection,
-            kind: classifyItem(currentSection, sourceCell, url),
-          });
-        }
-      }
-      j++;
-    }
-    i = j - 1;
-  }
-
-  // Skipped sources from "Sources That Could Not Be Reached" or "Skipped Sources" sections.
-  const skippedSources = [];
-  const skipStart = lines.findIndex((l) =>
-    /^##\s+(Sources That Could Not Be Reached|Skipped Sources|Sources Skipped)/i.test(l)
-  );
-  if (skipStart >= 0) {
-    for (let k = skipStart + 1; k < lines.length; k++) {
-      const l = lines[k];
-      if (/^##\s+/.test(l)) break;
-      const m = l.match(/^\s*[-*]\s+\*\*([^*]+)\*\*\s*[—:-]\s*(.+)$/);
-      if (m) skippedSources.push({ name: m[1].trim(), reason: m[2].trim() });
-    }
-  }
-
-  return { slug, generatedAt, items, conversations, sentimentTotals, skippedSources };
-}
-
-function normalizeSentiment(cell) {
-  if (!cell) return 'unknown';
-  const lower = cell.toLowerCase();
-  if (cell.includes('🟢') || /positive|advoc/i.test(lower)) return 'positive';
-  if (cell.includes('🔴') || /negative|critic|frustrat/i.test(lower)) return 'negative';
-  if (cell.includes('🟡') || /mixed|cautious|confus/i.test(lower)) return 'mixed';
-  if (/neutral/i.test(lower)) return 'neutral';
-  return 'unknown';
-}
-
-function classifyItem(section, source, url) {
-  const s = (section + ' ' + source + ' ' + url).toLowerCase();
-  if (/youtube\.com|youtu\.be|video/i.test(s)) return 'video';
-  if (/dev\.to|medium\.com|hashnode|dzone|infoq|blog|article/i.test(s)) return 'blog';
-  if (/github\.com|repo|project/i.test(s)) return 'repo';
-  if (/reddit/i.test(s)) return 'reddit';
-  if (/hacker news|news\.ycombinator/i.test(s)) return 'hn';
-  if (/bluesky|bsky/i.test(s)) return 'bluesky';
-  if (/twitter|^x$|\bx\/|x\.com/i.test(s)) return 'x';
-  if (/stack overflow|stackoverflow/i.test(s)) return 'stackoverflow';
-  if (/conf|talk|session|stream/i.test(s)) return 'video';
-  return 'other';
 }
 
 app.get('/api/items', async (req, res) => {
