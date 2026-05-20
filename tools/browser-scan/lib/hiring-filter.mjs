@@ -14,8 +14,8 @@
 // Notes on choices:
 //   * "hiring" alone is broad enough to catch ~95% of recruiter posts on
 //     LinkedIn; the false-positive rate against actual technical content
-//     is acceptable because legitimate Cosmos DB content rarely includes
-//     the literal word "hiring".
+//     is acceptable because legitimate product / technology content
+//     rarely includes the literal word "hiring".
 //   * Email contact tokens like `hr@`, `careers@`, `recruiting@`,
 //     `talent@` are near-perfect classifiers for job ads.
 //   * Indian-market and US-contracting jargon (`c2c`, `c2h`, `w2 only`,
@@ -193,9 +193,9 @@ const HIRING_FIELD_MARKERS = [
 
 // Subreddits whose entire purpose is recruiting / job-search.
 // r/cscareerquestions has a narrow exception in the agent doc (technical
-// retros where Cosmos DB is non-trivially central) — the safer default in
-// code is to drop, then let the agent's manual review re-add specific
-// items via /scout-reddit-import if needed.
+// retros where the subject technology is non-trivially central) — the
+// safer default in code is to drop, then let the agent's manual review
+// re-add specific items via /scout-reddit-import if needed.
 const HIRING_SUBREDDITS = new Set([
   'r/indiajobs',
   'r/forhire',

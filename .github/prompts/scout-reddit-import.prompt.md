@@ -1,6 +1,5 @@
 ---
 mode: agent
-agent: content-scout
 description: "Manually import Reddit threads when automated layers are blocked"
 ---
 

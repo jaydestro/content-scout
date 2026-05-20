@@ -28,13 +28,13 @@ test('normHandle and normPlatform normalize account identity', () => {
   assert.equal(muteKey('LinkedIn', '@Alice'), 'linkedin::alice');
 });
 
-test('muteAccount marks Microsoft employees as no-triage', async () => {
+test('muteAccount marks verified Microsoft employees as no-triage', async () => {
   const dir = await tmpReportsDir();
   const { key } = await muteAccount(dir, {
     platform: 'linkedin',
     handle: '@Jane-Doe',
     reason: NO_TRIAGE_REASON,
-    note: 'Likely Microsoft employee; no community triage needed.',
+    note: 'Verified Microsoft employee or owned account; no community triage needed.',
   });
 
   const state = await loadMuted(dir);
@@ -45,7 +45,7 @@ test('muteAccount marks Microsoft employees as no-triage', async () => {
   const conv = { platform: 'LinkedIn', author: 'jane-doe' };
   assert.equal(isMutedConv(state, conv), true);
   assert.equal(isNoTriageConv(state, conv), true);
-  assert.equal(mutedInfoForConv(state, conv).note, 'Likely Microsoft employee; no community triage needed.');
+  assert.equal(mutedInfoForConv(state, conv).note, 'Verified Microsoft employee or owned account; no community triage needed.');
 });
 
 test('global no-triage entries match any platform', async () => {

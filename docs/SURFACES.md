@@ -6,7 +6,7 @@ Content Scout has **two surfaces** by design. There is no separate CLI tool.
 
 - **Standard operations → agent.** If it produces a report, social post, or
   config — use a `/scout-*` slash command in your editor (VS Code, Claude Code,
-  Cursor, Windsurf, Cline, Copilot CLI). **The agent works fully without the web UI.**
+  Cursor, Windsurf, Cline, or another AI chat runner). **The agent works fully without the web UI.**
 - **Advanced / visual operations → web UI (optional).** If it's a dashboard, a bulk
   operation, or needs drag-drop — use `tools/web-ui` at <http://localhost:4477>.
 
@@ -69,19 +69,19 @@ chat can't do well:
 These exist in the web UI **on purpose**. Don't try to port them to the
 agent — they'd be worse there.
 
-## Power-user CLIs (kept narrow)
+## Power-user Helper Scripts (kept narrow)
 
 A small handful of standalone scripts exist for power users and CI. They
 are **not** a CLI surface; they're focused tools that the agent and the
 web UI both delegate to:
 
 - `node tools/browser-scan/index.mjs ...` — Layer 0 browser scan
-- `node tools/conversations-cli.mjs ...` — close/reopen mentions
+- `node tools/conversations-cli.mjs ...` — close/reopen mentions helper
 - `node tools/search.mjs <query>` — full-text grep across reports + posts
 - `node tools/probe-sources.mjs` — source health probe
 - `node tools/render-thumbnails/index.js` — image rendering for posts
 
-If you find yourself wanting an umbrella CLI, that's a sign you should
+If you find yourself wanting an umbrella command-line surface, that's a sign you should
 either be in the agent (for content work) or the web UI (for triage and
 dashboards).
 

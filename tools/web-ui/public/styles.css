@@ -915,8 +915,63 @@ code, pre { overflow-wrap: anywhere; }
 .link-btn:hover { color: var(--accent-hover, #2e5cb5); }
 legend .link-btn { margin-left: 0.4rem; font-weight: 500; }
 
-/* Browser-scan auth chips (Run view) */
-.bs-auth-row .bs-chip {
+/* Sign-in scan — visually emphasized fieldset inside the Run form */
+.run-browser-scan {
+  border: 1px solid var(--accent, #4178d4);
+  border-left: 4px solid var(--accent, #4178d4);
+  border-radius: 6px;
+  padding: 0.75rem 0.9rem;
+  margin: 0;
+  background: color-mix(in srgb, var(--accent, #4178d4) 6%, transparent);
+}
+.run-browser-scan legend {
+  padding: 0 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--accent, #4178d4);
+}
+.run-browser-scan legend .bs-recommended-badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--accent, #4178d4);
+  border-radius: 3px;
+  vertical-align: middle;
+}
+.run-browser-scan #run-browser-scan-intro { margin: 0 0 0.6rem; }
+.run-browser-scan-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  margin-bottom: 0.6rem;
+}
+.run-browser-scan-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+.run-browser-scan-controls .bs-browser-label { margin: 0; display: inline-flex; align-items: center; gap: 0.35rem; }
+.run-browser-scan-controls .bs-browser-label select { min-width: 170px; }
+.run-browser-scan-mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.9rem;
+  margin-bottom: 0.4rem;
+}
+.run-browser-scan-mode-label { font-size: 0.9rem; color: var(--muted); margin-right: 0.25rem; }
+#bs-sidecars, #bs-message { margin-top: 0.35rem; }
+
+/* Browser-scan auth chips — used inside .run-browser-scan-status */
+.bs-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
@@ -928,58 +983,8 @@ legend .link-btn { margin-left: 0.4rem; font-weight: 500; }
   cursor: pointer;
   user-select: none;
 }
-.bs-auth-row .bs-chip:hover { background: var(--bg-hover, #eef2f6); }
-.bs-auth-row .bs-chip-dot { font-size: 0.95em; line-height: 1; }
-
-/* Browser-scan collapse toggle (Run view) */
-.bs-collapse-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  background: var(--bg-subtle, #f6f8fa);
-  border: 1px solid var(--border, #d1d9e0);
-  border-radius: var(--radius-sm);
-  padding: var(--space-2) var(--space-3);
-  cursor: pointer;
-  font: inherit;
-  font-weight: 600;
-  color: inherit;
-  text-align: left;
-  line-height: 1.2;
-  transition: background var(--dur-fast) var(--ease-out),
-              border-color var(--dur-fast) var(--ease-out),
-              transform var(--dur-fast) var(--ease-out);
-}
-.bs-collapse-btn:hover {
-  background: var(--bg-hover, #eef2f6);
-  border-color: var(--accent, #3b6fd1);
-}
-.bs-collapse-btn:active { transform: translateY(1px); }
-.bs-collapse-btn .bs-chevron {
-  display: inline-block;
-  font-size: 0.95rem;
-  width: 1em;
-  text-align: center;
-  color: var(--accent, #3b6fd1);
-  transition: transform var(--dur-base) var(--ease-out);
-}
-.bs-collapse-btn:not(.is-collapsed) .bs-chevron { transform: rotate(0deg); }
-.bs-collapse-btn.is-collapsed .bs-chevron { transform: rotate(0deg); }
-.bs-collapse-btn .bs-collapse-label { font-weight: 600; }
-.bs-collapse-btn .bs-collapse-hint {
-  margin-left: var(--space-1);
-  font-weight: normal;
-  font-style: italic;
-  opacity: 0.85;
-}
-#bs-config[hidden] { display: none; }
-#bs-config:not([hidden]) {
-  animation: bs-reveal var(--dur-slow) var(--ease-out);
-}
-@keyframes bs-reveal {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
+.bs-chip:hover { background: var(--bg-hover, #eef2f6); }
+.bs-chip-dot { font-size: 0.95em; line-height: 1; }
 
 .sep { color: var(--muted, #888); font-size: 0.85em; }
 

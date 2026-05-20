@@ -1,6 +1,5 @@
 ---
 mode: agent
-agent: content-scout
 description: "Configure the vision provider used by /scout-alt to inspect images"
 ---
 

@@ -1,7 +1,7 @@
 // Persistent "closed / dismissed" state for Conversations & mentions.
 //
 // Storage lives at <repo>/reports/.closed-conversations.json so both the
-// web UI and the CLI helper (tools/conversations-cli.mjs) share the same
+// web UI and the local helper command (tools/conversations-cli.mjs) share the same
 // truth. Schema:
 //
 //   {

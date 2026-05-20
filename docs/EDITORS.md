@@ -8,7 +8,7 @@ Content Scout works in any AI coding tool that supports custom instructions. The
 |------|-----------------|-------------|
 | **VS Code Copilot** | `.github/agents/content-scout.agent.md` | Switch to Content Scout agent mode |
 | **Claude Code** | `CLAUDE.md` | Auto-loaded when you open the repo |
-| **GitHub Copilot CLI** | `.github/copilot-instructions.md` | Auto-loaded by Copilot CLI |
+| **GitHub Copilot terminal chat** | `.github/copilot-instructions.md` | Auto-loaded by the Copilot chat runner |
 | **Cursor** | `.cursor/rules/content-scout.mdc` | Auto-loaded as project rules |
 | **Windsurf** | `.windsurfrules` | Auto-loaded when you open the repo |
 | **Cline** | `.clinerules` | Auto-loaded when you open the repo |
@@ -62,7 +62,7 @@ Run from inside the `content-scout` folder. Say "scout onboard". `CLAUDE.md` loa
 
 Open the `content-scout` folder as the workspace root, then say "scout onboard". The matching rules file loads automatically.
 
-### GitHub Copilot CLI
+### GitHub Copilot terminal chat
 
 ```
 gh copilot
@@ -103,7 +103,7 @@ If `/scout-onboard` doesn't appear when you type `/` in Copilot Chat:
 - `.clinerules` only loads for the workspace root — open `content-scout` itself, not a subfolder.
 - In the Cline side panel, verify it shows the rules file as active.
 
-### GitHub Copilot CLI
+### GitHub Copilot terminal chat
 
 - Sign in: `gh auth status` — if not authenticated, run `gh auth login`.
 - Install the extension if needed: `gh extension install github/gh-copilot`.

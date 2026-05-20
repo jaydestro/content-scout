@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Content Scout — Conversations close/reopen CLI
+// Content Scout — Conversations close/reopen helper command
 //
 // Manage the persistent "dismissed / closed" state for Conversations &
 // mentions rows that the web UI also reads. The state lives at
-// reports/.closed-conversations.json. Both the web UI and any CLI agent
+// reports/.closed-conversations.json. Both the web UI and any chat/headless agent
 // (the /scout-* slash commands) should consult this file so dismissed
 // rows don't reappear in new outputs.
 //
@@ -110,7 +110,7 @@ Reasons: ${ALLOWED_REASONS.map((r) => r.id).join(' | ')}
 Mute notes:
   - <handle> may include a leading @ (it's stripped automatically).
   - Omit --platform to mute the handle across every platform.
-  - no-triage is for likely Microsoft employees / owned people who should not enter the triage inbox.`);
+  - no-triage is for verified Microsoft employees / owned people who should not enter the triage inbox. Microsoft MVP/MCT status alone is community, not employee.`);
 }
 
 function noTriageItems(state) {
@@ -273,7 +273,7 @@ async function main() {
       process.exit(2);
     }
     const platform = typeof flags.platform === 'string' ? flags.platform : '';
-    const note = typeof flags.note === 'string' ? flags.note : 'Likely Microsoft employee; no community triage needed.';
+    const note = typeof flags.note === 'string' ? flags.note : 'Verified Microsoft employee or owned account; no community triage needed.';
     try {
       const { key, state } = await muteAccount(REPORTS_DIR, {
         platform,
@@ -334,7 +334,7 @@ async function main() {
     const globalKey = muteKey('', handle);
     const info = state.items[key] || state.items[globalKey];
     if (isNoTriageInfo(info)) {
-      console.log(`NO_TRIAGE (${info.note || 'likely Microsoft employee'})`);
+      console.log(`NO_TRIAGE (${info.note || 'verified Microsoft employee / owned account'})`);
       process.exit(0);
     } else {
       console.log('triage required');

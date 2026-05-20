@@ -1,6 +1,6 @@
 ---
 description: Generate accessibility-quality alt text for images attached to social posts
-mode: content-scout
+mode: agent
 ---
 
 # scout-alt

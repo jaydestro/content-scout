@@ -13,6 +13,7 @@ import createSuggestionsRouter from './routes/suggestions.js';
 import { ROLE_PRESETS, renderConfigTemplate } from './lib/config-template.js';
 import { findMissingPrompts, findUnreferencedPrompts } from './lib/prompt-health.js';
 import { describeImage, formatVisionReport, probeVision, getVisionProvider } from './lib/vision.js';
+import { reviewSentiment, probeSentiment, getSentimentProvider } from './lib/sentiment-review.js';
 import { searchCorpus } from '../lib/corpus-search.mjs';
 import {
   loadReport,
@@ -74,41 +75,41 @@ const AGENT_PRESETS = {
     label: 'Claude Code',
     runner: 'claude -p "{prompt}"',
     install: 'https://docs.anthropic.com/en/docs/claude-code/overview',
-    note: 'Runs /scout-* commands non-interactively via the Claude Code CLI.',
+    note: 'Runs /scout-* prompts non-interactively via Claude Code.',
   },
   copilot: {
     id: 'copilot',
-    label: 'GitHub Copilot CLI',
+    label: 'GitHub Copilot runner',
     runner: 'copilot --allow-all-tools --allow-all-paths --allow-all-urls -p "{prompt}"',
     install: 'https://docs.github.com/en/copilot/github-copilot-in-the-cli',
-    note: 'Requires the newer `copilot` CLI (not `gh copilot`). Runs with --allow-all-tools/paths/urls so the agent can fetch web content and execute shell commands without an interactive permission prompt (there is no TTY when spawned by the server). Tighten the runner string in Settings if you want to scope it.',
+    note: 'Requires the newer `copilot` headless runner (not `gh copilot`). Runs with --allow-all-tools/paths/urls so the agent can fetch web content and execute shell commands without an interactive permission prompt (there is no TTY when spawned by the server). Tighten the runner string in Settings if you want to scope it.',
   },
   codex: {
     id: 'codex',
-    label: 'OpenAI Codex CLI',
+    label: 'OpenAI Codex runner',
     runner: 'codex exec "{prompt}"',
     install: 'https://github.com/openai/codex',
     note: 'Non-interactive exec mode. Reads repo context automatically.',
   },
   cursor: {
     id: 'cursor',
-    label: 'Cursor Agent CLI',
+    label: 'Cursor agent runner',
     runner: 'cursor-agent -p "{prompt}"',
     install: 'https://docs.cursor.com/en/cli/overview',
     note: 'Headless Cursor agent. Reads `.cursor/rules/content-scout.mdc` automatically.',
   },
   gemini: {
     id: 'gemini',
-    label: 'Gemini CLI',
+    label: 'Gemini runner',
     runner: 'gemini -p "{prompt}"',
     install: 'https://github.com/google-gemini/gemini-cli',
-    note: 'Google Gemini CLI in non-interactive prompt mode.',
+    note: 'Google Gemini in non-interactive prompt mode.',
   },
   none: {
     id: 'none',
     label: 'In-editor only (VS Code Copilot / Windsurf / Cline) — copy prompts manually',
     runner: '',
-    note: 'For editor-embedded agents without a headless CLI. The Run view will show the prompt text so you can paste it into your editor\'s chat panel.',
+    note: 'For editor-embedded agents without a headless runner. The Run view will show the prompt text so you can paste it into your editor\'s chat panel.',
   },
 };
 
@@ -357,7 +358,7 @@ function slugifyForAnchor(s) {
 
 function pushRunOutput(run, chunk) {
   // Always run terminal output through the secret redactor before storing
-  // or streaming. Defense-in-depth: even if a CLI prints a key, the UI and
+  // or streaming. Defense-in-depth: even if a runner prints a key, the UI and
   // the persisted in-memory log will only ever see [REDACTED:KEY].
   const safe = redactSecrets(chunk);
   run.output += safe;
@@ -581,7 +582,7 @@ function serializeEnv(entries) {
 // --- API -----------------------------------------------------------
 
 // Detect whether some external agent (e.g. Copilot Chat in VS Code, or a
-// `claude` CLI session) has been writing into the workspace recently. We
+// headless runner session) has been writing into the workspace recently. We
 // can't see their processes, but we can see their side-effects:
 //   - a new/updated file under reports/ or social-posts/
 //   - mtime changes in .scout-state/
@@ -1742,6 +1743,8 @@ app.get('/api/conversations', async (req, res) => {
     // conversations from muted accounts. Default is to hide them entirely.
     const includeMutedFlag = String(req.query.includeMuted || '').toLowerCase();
     const includeMuted = includeMutedFlag === '1' || includeMutedFlag === 'true' || include === 'muted';
+    const includeProductFlag = String(req.query.includeProduct || '').toLowerCase();
+    const includeProduct = includeProductFlag === '1' || includeProductFlag === 'true' || include === 'all';
     const onlyMuted = include === 'muted';
     const onlyNoTriage = include === 'no-triage';
     const closed = await loadClosed(REPORTS_DIR);
@@ -1757,6 +1760,7 @@ app.get('/api/conversations', async (req, res) => {
       if (mutedInfo) base.mutedInfo = mutedInfo;
       return base;
     });
+    if (!includeProduct) convs = convs.filter((c) => c.community !== 'product');
     if (onlyNoTriage) convs = convs.filter((c) => c.isNoTriage);
     else if (onlyMuted) convs = convs.filter((c) => c.isMuted);
     else if (!includeMuted) convs = convs.filter((c) => !c.isMuted);
@@ -1944,7 +1948,7 @@ app.post('/api/muted-accounts/import-owned', express.json({ limit: '32kb' }), as
 });
 
 // Import configured product-team handles as no-triage accounts. These are
-// likely Microsoft employees / owned people whose posts should be tracked
+// verified employees / owned people whose posts should be tracked
 // separately but should not clutter community triage.
 // Body: { slug: string }.
 app.post('/api/muted-accounts/import-team-members', express.json({ limit: '32kb' }), async (req, res) => {
@@ -1992,7 +1996,7 @@ app.post('/api/muted-accounts/import-team-members', express.json({ limit: '32kb'
 // --- Conversation close / reopen --------------------------------
 // Persistent "dismissed" state lives in reports/.closed-conversations.json
 // and is consumed by both the web UI and tools/conversations-cli.mjs so
-// the CLI agent and the browser see the same view.
+// the chat/headless agent and the browser see the same view.
 
 app.get('/api/conversations/reasons', (_req, res) => {
   res.json({ reasons: ALLOWED_REASONS });
@@ -2523,7 +2527,7 @@ app.post('/api/vision/ollama-pull', express.json(), async (req, res) => {
   const host = (process.env.OLLAMA_HOST || 'http://localhost:11434').replace(/\/+$/, '');
   const state = { lines: [], done: false, startedAt: Date.now() };
   ollamaPulls.set(model, state);
-  // Use Ollama's HTTP API (no shell) so we don't depend on the CLI being on PATH.
+  // Use Ollama's HTTP API (no shell) so we don't depend on an executable being on PATH.
   (async () => {
     try {
       const r = await fetch(`${host}/api/pull`, {
@@ -2602,6 +2606,81 @@ app.post('/api/alt/describe', express.json({ limit: '256kb' }), async (req, res)
     }
     const report = await describeImage(abs, env);
     res.json({ report, formatted: formatVisionReport(report) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Sentiment review (local-LLM second opinion) -----------------
+// Used by the Conversations triage inbox: a human clicks "🤖 Re-check"
+// on a row and we ask the configured agent LLM what it thinks the
+// sentiment is, given the same rules the agent uses at report-generation
+// time. Default provider is `agent` — it reuses the CLI runner the user
+// configured for /scout-scan (Claude Code, Copilot CLI, Codex, …).
+
+app.get('/api/sentiment/status', async (_req, res) => {
+  try {
+    const env = await readEnvObject();
+    const { runner } = await getRunner();
+    const status = await probeSentiment(env, { runner });
+    res.json(status);
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+// Derive a human-friendly product name for prompt context. Prefers the
+// "**Name:**" line from the scout-config prompt for the slug; falls back
+// to title-casing the slug.
+async function resolveProductName(slug) {
+  const s = String(slug || '').trim();
+  if (!s) return '';
+  try {
+    if (!isValidSlug(s)) return _titleCaseSlug(s);
+    const configPath = path.join(PROMPTS_DIR, `scout-config-${s}.prompt.md`);
+    const raw = await fs.readFile(configPath, 'utf8');
+    const m = raw.match(/^[-*]?\s*\*\*Name:\*\*\s*(.+)$/m);
+    if (m) return m[1].trim();
+  } catch {}
+  return _titleCaseSlug(s);
+}
+function _titleCaseSlug(slug) {
+  return String(slug)
+    .split('-')
+    .map((w) => (w.length <= 2 ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1)))
+    .join(' ');
+}
+
+app.post('/api/sentiment/review', express.json({ limit: '64kb' }), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const summary = String(body.summary || '').trim();
+    if (!summary) return res.status(400).json({ error: 'summary required' });
+    const env = await readEnvObject();
+    if (getSentimentProvider(env) === 'none') {
+      return res.status(400).json({
+        error: 'No sentiment provider configured. Set SENTIMENT_PROVIDER=agent|ollama|openai|custom in .env.',
+      });
+    }
+    const productName = body.productName
+      ? String(body.productName).trim()
+      : await resolveProductName(body.slug || '');
+    const { runner } = await getRunner();
+    const result = await reviewSentiment(
+      {
+        summary,
+        author: String(body.author || '').slice(0, 200),
+        platform: String(body.platform || '').slice(0, 80),
+        productName,
+        currentSentiment: String(body.currentSentiment || 'unknown').toLowerCase(),
+      },
+      env,
+      { runner, cwd: REPO_ROOT },
+    );
+    if (result?.error) {
+      return res.status(502).json({ ...result, ok: false });
+    }
+    res.json({ ok: true, ...result });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -2715,6 +2794,15 @@ async function startRunInternal(command, args, opts = {}) {
   // agent always sees fresh logged-in results. Opt-out via
   // options.browserScan === 'skip'; force-refresh via 'force'.
   const browserScanOpt = (opts.options && opts.options.browserScan) || 'auto';
+  // Optional rangeDays from the Run form — used to scope the
+  // browser-scan preflight to the same date window the agent will use.
+  // Clamp to 1..365 to keep the CLI happy; missing/invalid → leave 0
+  // so the preflight uses its default (30d).
+  const rangeDaysRaw = Number(opts.options && opts.options.rangeDays);
+  const preflightDays =
+    Number.isFinite(rangeDaysRaw) && rangeDaysRaw >= 1
+      ? Math.min(365, Math.floor(rangeDaysRaw))
+      : 0;
   const preflightSlugs =
     command === 'scout-scan' && browserScanOpt !== 'skip'
       ? await computePreflightSlugs(args)
@@ -2725,7 +2813,7 @@ async function startRunInternal(command, args, opts = {}) {
     BROWSER_SCAN_INSTALLED &&
     preflightSlugs.length > 0
   ) {
-    runBrowserScanPreflight(run, preflightSlugs, browserScanOpt === 'force')
+    runBrowserScanPreflight(run, preflightSlugs, browserScanOpt === 'force', preflightDays)
       .catch((err) => {
         pushRunOutput(run, `\n[browser-scan preflight] error: ${err.message} — continuing without it\n`);
       })
@@ -2765,17 +2853,18 @@ async function computePreflightSlugs(args) {
 // Streams stdout/stderr into the parent run so the user sees progress.
 // Resolves when every needed slug has finished (or been skipped). Never
 // rejects — failures are logged into the run output.
-async function runBrowserScanPreflight(run, slugs, force = false) {
+async function runBrowserScanPreflight(run, slugs, force = false, days = 0) {
+  const windowLine = days > 0 ? ` (date window: last ${days} day${days === 1 ? '' : 's'})` : '';
   pushRunOutput(
     run,
-    `[browser-scan] Preflight starting for ${slugs.length} subject${slugs.length === 1 ? '' : 's'}: ${slugs.join(', ')}\n`,
+    `[browser-scan] Preflight starting for ${slugs.length} subject${slugs.length === 1 ? '' : 's'}${windowLine}: ${slugs.join(', ')}\n`,
   );
   const probe = await probeCdpPort(9222);
   if (!probe.up) {
     pushRunOutput(
       run,
       `[browser-scan] No browser is running on CDP port 9222 — skipping preflight.\n` +
-      `[browser-scan]   Open the Run view's "🌐 Browser scan" panel and click "Open browser & sign in" to enable Layer-0 coverage.\n` +
+      `[browser-scan]   In the Run view, expand "Browser scan (Layer 0)" and click "Open browser & sign in" to enable Layer-0 coverage.\n` +
       `[browser-scan]   Or run: node tools/browser-scan/launch-edge.mjs (one-time login per platform).\n` +
       `[browser-scan] Continuing with API/RSS layers only.\n`,
     );
@@ -2806,13 +2895,14 @@ async function runBrowserScanPreflight(run, slugs, force = false) {
         continue;
       }
     }
-    pushRunOutput(run, `[browser-scan] ${slug}: scanning X / LinkedIn / Reddit…\n`);
+    pushRunOutput(
+      run,
+      `[browser-scan] ${slug}: scanning X / LinkedIn / Reddit${days > 0 ? ` (last ${days}d)` : ''}…\n`,
+    );
+    const scanArgs = [path.join(BROWSER_SCAN_DIR, 'index.mjs'), 'scan', '--slug', slug];
+    if (days > 0) scanArgs.push('--days', String(days));
     await new Promise((resolve) => {
-      const child = spawn(
-        process.execPath,
-        [path.join(BROWSER_SCAN_DIR, 'index.mjs'), 'scan', '--slug', slug],
-        { cwd: REPO_ROOT, env: process.env },
-      );
+      const child = spawn(process.execPath, scanArgs, { cwd: REPO_ROOT, env: process.env });
       // Track on run so a stop request can kill the preflight too.
       run.child = child;
       child.stdout.on('data', (d) => pushRunOutput(run, d.toString()));
@@ -3319,7 +3409,7 @@ app.post('/api/browser-scan/auth-check', async (req, res) => {
 // surface used by other commands.
 app.post('/api/browser-scan/scan', async (req, res) => {
   if (!BROWSER_SCAN_INSTALLED) return res.status(404).json({ error: 'browser-scan not installed' });
-  const { slug, platforms, port } = req.body || {};
+  const { slug, platforms, port, days } = req.body || {};
   if (!slug || !isValidSlug(slug)) return res.status(400).json({ error: 'valid slug required' });
   // Make sure CDP is reachable before spawning — friendlier error than the
   // child failing 8 seconds in.
@@ -3335,6 +3425,11 @@ app.post('/api/browser-scan/scan', async (req, res) => {
   if (Array.isArray(platforms) && platforms.length) {
     const valid = platforms.filter((p) => ['x', 'linkedin', 'reddit'].includes(p));
     if (valid.length) args.push('--platforms', valid.join(','));
+  }
+  // Optional date-range scope. Clamp to a sane 1..365 day window.
+  const daysNum = Number(days);
+  if (Number.isFinite(daysNum) && daysNum >= 1) {
+    args.push('--days', String(Math.min(365, Math.floor(daysNum))));
   }
   // Reuse the existing run plumbing so the operations queue + output
   // streaming Just Work.

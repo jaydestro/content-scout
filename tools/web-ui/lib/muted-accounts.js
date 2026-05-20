@@ -3,7 +3,7 @@
 // Hides every conversation row authored by a muted handle so noisy
 // accounts (recruiters, spammers, off-topic creators) don't clutter the
 // inbox. State lives at <repo>/reports/.muted-accounts.json and is
-// shared by the web UI and the CLI helper (tools/conversations-cli.mjs).
+// shared by the web UI and the local helper command (tools/conversations-cli.mjs).
 //
 // Schema:
 //

@@ -1,6 +1,6 @@
 ---
 description: Show topic areas with no recent content coverage
-mode: content-scout
+mode: agent
 ---
 
 # Content Gap Analysis

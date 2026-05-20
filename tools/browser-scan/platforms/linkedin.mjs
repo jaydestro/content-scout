@@ -38,10 +38,34 @@ export async function scanLinkedIn(browser, ctx) {
 
   await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
   await sleep(2500);
-  if (/\/login|\/checkpoint|\/uas\/login|\/authwall/.test(page.url())) {
+  const finalUrl = page.url();
+  // Truly signed-out states (cookies missing/invalid).
+  if (/\/(?:login|uas\/login|authwall)(?:[/?#]|$)/.test(finalUrl)) {
     console.warn('[browser-scan] linkedin: session expired — sign in to LinkedIn in the Edge tab and re-run.');
     if (ownsPage) await page.close();
     return [];
+  }
+  // Signed-in-but-blocked state: LinkedIn is challenging the device /
+  // 2FA and won't let scans through until the human completes it. Treat
+  // it as a soft skip with a distinct message so the user knows the fix
+  // is "complete the prompt", not "log in again".
+  if (/\/checkpoint(?:[/?#]|$)/.test(finalUrl)) {
+    console.warn('[browser-scan] linkedin: device/2FA verification required — open the LinkedIn tab in the CDP browser, complete the prompt, and re-run.');
+    if (ownsPage) await page.close();
+    return [];
+  }
+  // Fallback: if we're somewhere unexpected but the signed-in nav
+  // element is present, treat the session as valid and keep going.
+  if (!/linkedin\.com\/feed/.test(finalUrl)) {
+    let domSignedIn = false;
+    try {
+      domSignedIn = await page.locator('.global-nav__me, [data-control-name="identity_welcome_message"]').first().isVisible({ timeout: 1500 });
+    } catch { /* stays false */ }
+    if (!domSignedIn) {
+      console.warn(`[browser-scan] linkedin: unexpected landing URL (${finalUrl}) and no signed-in nav element — skipping.`);
+      if (ownsPage) await page.close();
+      return [];
+    }
   }
 
   for (const term of searchTerms) {

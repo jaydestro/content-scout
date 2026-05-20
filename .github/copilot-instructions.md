@@ -33,7 +33,7 @@ Before any operation, read config files from `.github/prompts/scout-config-*.pro
 
 Grep across `reports/*.md` and `social-posts/*.md` from either surface (shared indexer at `tools/lib/corpus-search.mjs`):
 
-- **CLI:** `node tools/search.mjs "<query>"` — supports `--regex`, `--kind reports|social-posts`, `--json`.
+- **Local helper command:** `node tools/search.mjs "<query>"` — supports `--regex`, `--kind reports|social-posts`, `--json`.
 - **Web UI:** command palette (⌘/Ctrl-K) **In files** section — click a hit to open the Reports or Social posts view with that file selected.
 
 Read the corresponding prompt file for each command's detailed flow. Ignore VS Code frontmatter and `${{input:...}}` placeholders — ask users for inputs conversationally.

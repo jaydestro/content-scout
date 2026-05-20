@@ -53,7 +53,7 @@ function usageAndExit(code = 1) {
 Content Scout — Browser Scan
 
 Usage:
-  node index.mjs launch [--port 9222] [--use-default-profile]
+  node index.mjs launch [--port 9222] [--browser "Name"] [--use-default-profile] [--list]
       Spawn Edge with --remote-debugging-port enabled and open the three
       login tabs. Sign in once; leave Edge running.
 
@@ -67,9 +67,11 @@ Usage:
 
 Examples:
   node index.mjs launch
-  node index.mjs scan --slug azure-cosmos-db
-  node index.mjs scan --slug azure-cosmos-db --platforms linkedin
-  node index.mjs scan --slug azure-cosmos-db --mode launch --headed
+  node index.mjs launch --browser "Google Chrome"
+  node index.mjs launch --list
+  node index.mjs scan --slug <your-subject-slug>
+  node index.mjs scan --slug <your-subject-slug> --platforms linkedin
+  node index.mjs scan --slug <your-subject-slug> --mode launch --headed
 `);
   process.exit(code);
 }
@@ -81,7 +83,9 @@ if (command === 'launch') {
   const launcherPath = path.join(__dirname, 'launch-edge.mjs');
   const childArgs = [launcherPath];
   if (flags.port) { childArgs.push('--port', String(flags.port)); }
+  if (flags.browser) { childArgs.push('--browser', String(flags.browser)); }
   if (flags['use-default-profile']) { childArgs.push('--use-default-profile'); }
+  if (flags.list) { childArgs.push('--list'); }
   const child = spawn(process.execPath, childArgs, { stdio: 'inherit' });
   child.on('exit', (c) => process.exit(c ?? 0));
 } else if (command === 'login') {

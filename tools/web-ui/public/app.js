@@ -121,7 +121,7 @@ async function loadStatus() {
   const s = await api('/api/status');
   cachedStatus = s;
   const pill = $('status-pill');
-  // External activity from another agent (Copilot Chat / `claude` CLI / etc.)
+  // External activity from another agent chat or headless runner
   // takes precedence over the static "agent: …" label so the user can see
   // at a glance that something is happening outside the web UI.
   if (s.externalActivity && s.externalActivity.active) {
@@ -130,7 +130,7 @@ async function loadStatus() {
       ? `${a.ageSeconds}s ago`
       : `${Math.round(a.ageSeconds / 60)}m ago`;
     pill.textContent = `🟢 agent active — wrote ${a.kind} ${ago}`;
-    pill.title = `Detected external activity: ${a.file} (${ago}). This is from a CLI / Copilot Chat session, not the web UI.`;
+    pill.title = `Detected external activity: ${a.file} (${ago}). This is from an agent chat/headless runner session, not the web UI.`;
     pill.classList.add('agent-active');
     pill.classList.remove('warn');
     return s;
@@ -148,8 +148,8 @@ async function loadStatus() {
   return s;
 }
 
-// Poll status periodically so external-agent activity (Copilot Chat /
-// `claude` CLI) is reflected in the pill within ~10s without a refresh.
+// Poll status periodically so external-agent activity is reflected in the
+// pill within ~10s without a refresh.
 // Skip the poll when the tab is hidden.
 setInterval(() => {
   if (document.hidden) return;
@@ -284,7 +284,7 @@ const ENV_KEY_META = {
     anchor: 'google-pse',
   },
   BRAVE_SEARCH_API_KEY: {
-    tip: 'Brave Search API key (free tier: 2,000 queries/month, 1 query/sec). RECOMMENDED — the primary free path for Reddit Layer 3 + LinkedIn Layer 1 + X/Twitter Layer 2. Sign up at brave.com/search/api and create a key at api.search.brave.com/app/keys.',
+    tip: 'Brave Search API key. RECOMMENDED — this is the free public-search path for Reddit, LinkedIn, and X/Twitter (covers what anyone could see while logged out). Pairs nicely with the optional sign-in scan in the Run view, which adds logged-in fidelity on top. Free AI plan: $5/mo auto-credits (~1,000 requests/mo) at 50 req/sec, no card required. Paid plans use the same key at higher usage. Sign up at brave.com/search/api and create a key at api.search.brave.com/app/keys.',
     anchor: 'brave-search',
   },
   BLUESKY_HANDLE: {
@@ -482,7 +482,7 @@ $('setup-run-onboard').addEventListener('click', async () => {
   $('run-command').dispatchEvent(new Event('change'));
 });
 
-// --- Embedded scout-onboard CLI (inside the "Prefer guided chat wizard?" disclosure) ---
+// --- Embedded scout-onboard chat runner (inside the "Prefer guided chat wizard?" disclosure) ---
 (() => {
   const details = $('onboard-cli-details');
   const startBtn = $('onboard-cli-start');
@@ -2500,6 +2500,38 @@ function startOfWeek(now) {
 function rangePreset() {
   return $('run-range-preset')?.value || 'default';
 }
+// Whole-number "days" lookback derived from the date-range preset.
+// Mirrors dateRangePhrase() above but returns an integer the
+// browser-scan CLI can pass to --days. Default (rolling 30d) → 30.
+function rangeDaysFromPreset() {
+  const wrap = $('run-range-wrap');
+  if (!wrap || wrap.hidden) return 30;
+  const choice = rangePreset();
+  const now = new Date();
+  if (choice === 'default') return 30;
+  if (choice === 'today') return 1;
+  if (choice === 'this-week') {
+    const start = startOfWeek(now);
+    const days = Math.ceil((now.getTime() - start.getTime()) / 86400000) + 1;
+    return Math.max(1, days);
+  }
+  if (choice === 'this-month') {
+    return now.getDate();
+  }
+  if (choice === 'last-month') {
+    const last = new Date(now.getFullYear(), now.getMonth(), 0);
+    return last.getDate() + now.getDate();
+  }
+  if (choice === 'custom') {
+    const from = $('run-range-from')?.value;
+    const to = $('run-range-to')?.value;
+    if (!from && !to) return 30;
+    const start = from ? new Date(from) : new Date(now.getTime() - 30 * 86400000);
+    const days = Math.ceil((now.getTime() - start.getTime()) / 86400000);
+    return Math.max(1, Math.min(365, days));
+  }
+  return 30;
+}
 function dateRangePhrase() {
   const wrap = $('run-range-wrap');
   if (!wrap || wrap.hidden) return '';
@@ -2604,11 +2636,21 @@ async function startRun() {
     cmd === 'scout-scan'
       ? (document.querySelector('input[name="run-browser-scan"]:checked')?.value || 'auto')
       : undefined;
+  // Scope the browser-scan preflight to the user's date-range pick so
+  // the logged-in scrapers stay in the same window the agent will use.
+  const rangeDays = COMMANDS_WITH_RANGE.has(cmd) ? rangeDaysFromPreset() : undefined;
+  const options = {};
+  if (browserScan) options.browserScan = browserScan;
+  if (rangeDays) options.rangeDays = rangeDays;
   try {
     const res = await fetch('/api/runs', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ command: cmd, args, options: browserScan ? { browserScan } : undefined }),
+      body: JSON.stringify({
+        command: cmd,
+        args,
+        options: Object.keys(options).length ? options : undefined,
+      }),
     });
     const data = await res.json();
     if (!res.ok) {

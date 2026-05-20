@@ -94,7 +94,7 @@ leading `#` stripped because Reddit's search treats `#` as punctuation.
 Each search term runs sequentially per platform; results are deduped by
 permalink across all terms before the sidecar is written.
 
-## CLI reference
+## Helper Command Reference
 
 | Command | Purpose |
 |---|---|
@@ -118,10 +118,10 @@ permalink across all terms before the sidecar is written.
 
 The Content Scout web UI surfaces browser-scan controls automatically:
 
-- **Run view** — a "🌐 Browser scan (Layer 0)" panel at the top with a browser dropdown, **Open browser & sign in** button, **Scan now** button, and live sidecar freshness per platform for the active subject.
+- **Run view** — a "Browser scan (Layer 0)" fieldset inside the /scout-scan form. One place for everything: sign-in status chips for X / LinkedIn / Reddit, a browser dropdown, **Open browser & sign in** and **Force-rescan active subject** buttons, and three preflight modes (**Auto** / **Force** / **Skip**) that fire automatically when you click Start run. The preflight always honors the date range you pick above, so a "this week" scan limits the browser scrape to the last 7 days.
 - **Dashboard** — a small "Browser scan" card showing whether the browser is currently running on the CDP port and how many subjects have sidecars on disk.
 
-No CLI required after the first launch.
+No command-line use is required after the first launch.
 
 ## Output schema
 

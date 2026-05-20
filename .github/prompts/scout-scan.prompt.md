@@ -1,6 +1,5 @@
 ---
 mode: agent
-agent: content-scout
 description: "Scan for public content about your product, technology, or project and generate a report with social posts"
 ---
 

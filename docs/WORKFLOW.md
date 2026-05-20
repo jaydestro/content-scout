@@ -28,7 +28,7 @@ Run once per topic. The onboarding wizard offers two modes:
 
 **Multiple topics:** The first question asks whether you're tracking one topic or several. If you choose multiple, onboarding collects shared settings (role, brand, networks) once, then loops topic-specific details (search terms, exclusions, topic tags) for each topic. Each topic gets its own config file. Run `/scout-onboard` again later to add more topics without re-entering shared settings.
 
-**Topic types:** Content Scout supports products (Azure Cosmos DB), technologies (Python), open-source projects (Ollama), and tools (Copilot CLI). The topic type shapes report sections and search strategy automatically.
+**Topic types:** Content Scout supports products (Azure Cosmos DB), technologies (Python), open-source projects (Ollama), and developer tools (GitHub Copilot). The topic type shapes report sections and search strategy automatically.
 
 ### What It Asks
 

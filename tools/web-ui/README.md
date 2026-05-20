@@ -8,8 +8,8 @@ keys, and launch scans / custom searches from a browser.
 
 - **Setup / onboarding wizard** — a 9-step in-browser wizard that creates a
   `scout-config-{slug}.prompt.md` directly. Steps:
-  1. **Agent** — pick which AI CLI executes Scout commands (Claude Code,
-     Copilot CLI, Codex, custom, or *None* / copy-paste).
+  1. **Agent** — pick which AI chat/headless runner executes Scout prompts
+     (Claude Code, Copilot, Codex, custom, or *None* / copy-paste).
   2. **Setup tier** — Quick (3 questions), Standard, or Full.
   3. **Subject** — name, slug, type (product / technology / project / tool).
      Existing subjects show at the top so you can add another or remove one.
@@ -72,11 +72,11 @@ Either way, API keys can be added on Step 8 of the wizard or by editing
 
 ## Agent presets
 
-| Agent | Built-in command | Install |
+| Agent runner | Built-in command | Install |
 |---|---|---|
 | Claude Code | `claude -p "{prompt}"` | https://docs.anthropic.com/en/docs/claude-code/overview |
-| GitHub Copilot CLI | `copilot -p "{prompt}"` | https://docs.github.com/en/copilot/github-copilot-in-the-cli |
-| OpenAI Codex CLI | `codex exec "{prompt}"` | https://github.com/openai/codex |
+| GitHub Copilot runner | `copilot -p "{prompt}"` | https://docs.github.com/en/copilot/github-copilot-in-the-cli |
+| OpenAI Codex runner | `codex exec "{prompt}"` | https://github.com/openai/codex |
 | Custom | any shell command with `{prompt}` placeholder | — |
 | None | (disabled — copy prompt manually) | — |
 

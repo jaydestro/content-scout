@@ -3,7 +3,7 @@
 // Single source of truth for converting Content Scout reports (the markdown
 // files the agent writes under reports/*-content.md and their structured JSON
 // sidecars) into the in-memory shape consumed by the web UI's API routes and
-// by command-line analytics scripts.
+// by local analytics helper scripts.
 //
 // Why this file exists: the web UI used to inline `parseReport()` /
 // `normalizeSentiment()` / `classifyItem()` inside server.js. The agent
@@ -31,6 +31,130 @@ const SENTIMENT_KEYS = ['positive', 'neutral', 'negative', 'mixed', 'unknown'];
 
 function emptySentimentTotals() {
   return { positive: 0, neutral: 0, negative: 0, mixed: 0, unknown: 0 };
+}
+
+function normalizeName(name) {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[`*_]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isTeamMemberSection(section) {
+  return /team\s+member\s+mentions/i.test(String(section || ''));
+}
+
+function isProductAuthorName(name) {
+  const text = String(name || '').trim();
+  if (!text) return false;
+  if (/\bmicrosoft\s+(mvp|most valuable professional|certified trainer)\b/i.test(text)) return false;
+  if (/\bmct\b|\bregional director\b/i.test(text)) return false;
+  return /^(microsoft|microsoft azure|azure cosmos db|cosmos db community|microsoft developer|microsoft reactor)(\b|\s|$)/i.test(text) || /@(msft|azure)(\b|[_-])/i.test(text);
+}
+
+function productTeamNameSet(names) {
+  return new Set((Array.isArray(names) ? names : []).map(normalizeName).filter(Boolean));
+}
+
+function isProductAuthor(authorName, options = {}) {
+  const normalized = normalizeName(authorName);
+  return isProductAuthorName(authorName) || (!!normalized && productTeamNameSet(options.productTeamNames).has(normalized));
+}
+
+export function parseProductTeamNamesFromConfig(raw) {
+  const text = String(raw || '').replace(/<!--[\s\S]*?-->/g, '');
+  const blockMatch = text.match(/(?:^|\r?\n)\s*#{1,6}\s*Product Team Members[^\n]*\r?\n([\s\S]*?)(?=\r?\n\s*#{1,6}\s|\r?\n-{3,}\s*\r?\n|$)/i);
+  const block = blockMatch ? blockMatch[1] : '';
+  const out = [];
+  const seen = new Set();
+  for (const rawLine of block.split(/\r?\n/)) {
+    const line = rawLine.replace(/^[-*\s]+/, '').trim();
+    if (!line || /^none$/i.test(line)) continue;
+    const name = line.replace(/\([^)]*\)/g, '').replace(/[—-].*$/, '').trim();
+    const key = normalizeName(name);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out;
+}
+
+function splitMarkdownTableRow(row) {
+  const cells = [];
+  let cell = '';
+  let escaped = false;
+  let started = false;
+  const text = String(row || '').trim();
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '|' && !escaped) {
+      if (started) cells.push(cell.trim());
+      started = true;
+      cell = '';
+      continue;
+    }
+    if (escaped) {
+      cell += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escaped = true;
+      continue;
+    }
+    cell += ch;
+  }
+  if (started) cells.push(cell.trim());
+  if (cells.length && cells[cells.length - 1] === '') cells.pop();
+  return cells;
+}
+
+function canonicalUrlKey(url) {
+  const raw = String(url || '').trim();
+  if (!/^https?:\/\//i.test(raw)) return '';
+  try {
+    const parsed = new URL(raw);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    if (host === 'youtu.be') {
+      const id = parsed.pathname.split('/').filter(Boolean)[0] || '';
+      return id ? `youtube::${id.toLowerCase()}` : '';
+    }
+    if (host === 'youtube.com' || host.endsWith('.youtube.com')) {
+      const videoId = parsed.searchParams.get('v');
+      if (videoId) return `youtube::${videoId.toLowerCase()}`;
+      const match = parsed.pathname.match(/\/(?:shorts|live|embed)\/([^/?#]+)/i);
+      if (match) return `youtube::${match[1].toLowerCase()}`;
+    }
+    return `${host}${parsed.pathname.replace(/\/+$/, '').toLowerCase()}`;
+  } catch {
+    return raw.toLowerCase().replace(/[#?].*$/, '').replace(/\/+$/, '');
+  }
+}
+
+function sentimentTotalsFor(conversations) {
+  const totals = emptySentimentTotals();
+  for (const conversation of conversations) {
+    const sentiment = SENTIMENT_KEYS.includes(conversation.sentiment)
+      ? conversation.sentiment
+      : 'unknown';
+    totals[sentiment] = (totals[sentiment] || 0) + 1;
+  }
+  return totals;
+}
+
+function filterContentDuplicateConversations(conversations, items) {
+  const itemUrlKeys = new Set(
+    items
+      .map((item) => canonicalUrlKey(item.url))
+      .filter(Boolean)
+  );
+  if (!itemUrlKeys.size) return conversations;
+  return conversations.filter((conversation) => {
+    const key = canonicalUrlKey(conversation.url);
+    return !key || !itemUrlKeys.has(key);
+  });
 }
 
 // Accepts either the agent's enum value ("positive"|"neutral"|"negative"|
@@ -75,7 +199,7 @@ export function classifyItem(section, source, url) {
 // normalization is needed for conversations. Items are split into the two
 // buckets by section name: 'mentions'/'conversations'/'social' -> conversations,
 // everything else -> items.
-export function parseReportFromJson(rawOrObj, fileName) {
+export function parseReportFromJson(rawOrObj, fileName, options = {}) {
   const data = typeof rawOrObj === 'string' ? JSON.parse(rawOrObj) : rawOrObj;
   const slugMatch = fileName.match(/^\d{4}-\d{2}-\d{2}-\d{4}-(.+)-content\.md$/);
   const slug = slugMatch ? slugMatch[1] : data.slug || '';
@@ -99,7 +223,7 @@ export function parseReportFromJson(rawOrObj, fileName) {
       ? it.engagement_potential
       : null;
 
-    const isConversation = /^(mentions|conversations|social)$/.test(section);
+    const isConversation = /^(mentions|conversations|social)$/.test(section) && !isTeamMemberSection(it.section || '');
 
     if (isConversation) {
       const sentiment = normalizeSentiment(it.sentiment);
@@ -107,7 +231,7 @@ export function parseReportFromJson(rawOrObj, fileName) {
       const community = (it.group || '').toLowerCase();
       const isProduct =
         /^(official|product|first[\s-]?party|microsoft|brand|company)$/.test(community) ||
-        /microsoft|@msft|@azure/i.test(authorName);
+        isProductAuthor(authorName, options);
       const engagement = it.engagement
         ? Object.entries(it.engagement)
             .filter(([, v]) => v != null && v !== '')
@@ -150,12 +274,20 @@ export function parseReportFromJson(rawOrObj, fileName) {
       )
     : [];
 
-  return { slug, generatedAt, items, conversations, sentimentTotals, skippedSources };
+  const filteredConversations = filterContentDuplicateConversations(conversations, items);
+  return {
+    slug,
+    generatedAt,
+    items,
+    conversations: filteredConversations,
+    sentimentTotals: sentimentTotalsFor(filteredConversations),
+    skippedSources,
+  };
 }
 
 // Legacy markdown parser. Retained for reports written before JSON sidecars
 // existed and as a fallback when the sidecar is missing or malformed.
-export function parseReport(raw, fileName) {
+export function parseReport(raw, fileName, options = {}) {
   const lines = raw.split(/\r?\n/);
   const slugMatch = fileName.match(/^\d{4}-\d{2}-\d{2}-\d{4}-(.+)-content\.md$/);
   const slug = slugMatch ? slugMatch[1] : '';
@@ -178,10 +310,7 @@ export function parseReport(raw, fileName) {
     if (!/^\s*\|/.test(line)) continue;
     const next = lines[i + 1] || '';
     if (!/^\s*\|[\s:|-]+\|\s*$/.test(next)) continue;
-    const headers = line
-      .split('|')
-      .slice(1, -1)
-      .map((s) => s.trim().toLowerCase());
+    const headers = splitMarkdownTableRow(line).map((s) => s.trim().toLowerCase());
     const idx = (names) => headers.findIndex((h) => names.includes(h));
     const titleIdx = idx(['title', 'topic', 'session', 'summary', 'post', 'thread', 'discussion', 'mention']);
     const linkIdx = idx(['link', 'url']);
@@ -194,14 +323,12 @@ export function parseReport(raw, fileName) {
     const summaryIdx = idx(['summary']);
     const communityIdx = idx(['community']);
     const engagementIdx = idx(['engagement']);
-    const isConversation = sentimentIdx >= 0 || /conversations|mentions/i.test(currentSection);
+    const isTeamMember = isTeamMemberSection(currentSection);
+    const isConversation = !isTeamMember && (sentimentIdx >= 0 || /conversations|community questions|mentions/i.test(currentSection));
 
     let j = i + 2;
     while (j < lines.length && /^\s*\|/.test(lines[j])) {
-      const cells = lines[j]
-        .split('|')
-        .slice(1, -1)
-        .map((s) => s.trim());
+      const cells = splitMarkdownTableRow(lines[j]);
       const titleCell = titleIdx >= 0 ? cells[titleIdx] || '' : '';
       const linkCell = linkIdx >= 0 ? cells[linkIdx] || '' : '';
       const dateCell = dateIdx >= 0 ? cells[dateIdx] || '' : '';
@@ -237,7 +364,7 @@ export function parseReport(raw, fileName) {
         const community = (communityCell || '').replace(/[`*_]/g, '').trim().toLowerCase();
         const isProduct =
           /^(official|product|first[\s-]?party|microsoft|brand|company)$/.test(community) ||
-          /microsoft|@msft|@azure/i.test(authorCell);
+          isProductAuthor(authorCell, options);
         conversations.push({
           date: dateCell,
           platform: sourceCell || 'Unknown',
@@ -250,7 +377,7 @@ export function parseReport(raw, fileName) {
           url,
           section: currentSection,
         });
-      } else {
+      } else if (!isTeamMember) {
         const dedupKey = url || `${title}::${authorCell}`;
         if (!seenItems.has(dedupKey)) {
           seenItems.add(dedupKey);
@@ -285,7 +412,15 @@ export function parseReport(raw, fileName) {
     }
   }
 
-  return { slug, generatedAt, items, conversations, sentimentTotals, skippedSources };
+  const filteredConversations = filterContentDuplicateConversations(conversations, items);
+  return {
+    slug,
+    generatedAt,
+    items,
+    conversations: filteredConversations,
+    sentimentTotals: sentimentTotalsFor(filteredConversations),
+    skippedSources,
+  };
 }
 
 // Load + parse a single report. Prefers the JSON sidecar (the agent's
@@ -293,17 +428,26 @@ export function parseReport(raw, fileName) {
 // parser otherwise. `fileName` is the *.md basename — the sidecar is the
 // same basename with `.json`.
 export async function loadReport(reportsDir, fileName) {
+  const slugMatch = fileName.match(/^\d{4}-\d{2}-\d{2}-\d{4}-(.+)-content\.md$/);
+  const slug = slugMatch ? slugMatch[1] : '';
+  const configPath = slug ? path.join(path.dirname(reportsDir), '.github', 'prompts', `scout-config-${slug}.prompt.md`) : '';
+  let parseOptions = {};
+  if (configPath) {
+    try {
+      parseOptions = { productTeamNames: parseProductTeamNamesFromConfig(await fs.readFile(configPath, 'utf8')) };
+    } catch {}
+  }
   const jsonName = fileName.replace(/\.md$/, '.json');
   const jsonPath = path.join(reportsDir, jsonName);
   try {
     const rawJson = await fs.readFile(jsonPath, 'utf8');
-    return { source: 'json', ...parseReportFromJson(rawJson, fileName) };
+    return { source: 'json', ...parseReportFromJson(rawJson, fileName, parseOptions) };
   } catch {
     // Sidecar missing or malformed — fall back to markdown.
   }
   try {
     const raw = await fs.readFile(path.join(reportsDir, fileName), 'utf8');
-    return { source: 'md', ...parseReport(raw, fileName) };
+    return { source: 'md', ...parseReport(raw, fileName, parseOptions) };
   } catch {
     return null;
   }

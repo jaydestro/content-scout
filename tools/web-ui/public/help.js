@@ -32,7 +32,7 @@
       what: 'Configure Content Scout: pick an AI agent to drive it, then set up subjects to track.',
     },
     'Pick an agent': {
-      what: 'Content Scout doesn\'t do AI itself — it sends prompts to an AI coding agent (Claude Code, Copilot CLI, Cursor, etc.). Pick which one you have installed.',
+      what: 'Content Scout doesn\'t do AI itself — it sends prompts to an AI coding agent/chat runner (Claude Code, Copilot, Cursor, etc.). Pick which one you have installed.',
       tips: ['You can change this any time. Custom runners use {prompt} as the placeholder.'],
     },
     'Configs': {

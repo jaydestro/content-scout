@@ -1449,6 +1449,49 @@ aside li[data-name] .entry-open:hover {
 }
 .conv-reply-btn:hover { filter: brightness(1.1); }
 
+/* Local-LLM sentiment re-check */
+.conv-recheck-btn {
+  background: transparent; color: var(--text, #e2e8f0);
+  border: 1px solid var(--border, #2a2e44); padding: 0.35rem 0.6rem;
+  border-radius: 6px; cursor: pointer; font-size: 0.85rem; margin-left: 0.35rem;
+}
+.conv-recheck-btn:hover { background: var(--surface-2, #1a1d2e); border-color: var(--accent, #818cf8); }
+.conv-recheck-btn:disabled { opacity: 0.6; cursor: progress; }
+.conv-sentiment-verdict {
+  margin-top: 0.6rem; padding: 0.55rem 0.75rem;
+  background: var(--surface-2, #1a1d2e);
+  border: 1px solid var(--border, #2a2e44); border-left: 3px solid var(--accent, #818cf8);
+  border-radius: 6px; font-size: 0.88rem; line-height: 1.5;
+}
+.conv-sentiment-verdict.is-loading { opacity: 0.7; }
+.conv-verdict-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.conv-verdict-agrees { color: #22c55e; font-weight: 600; }
+.conv-verdict-disagrees { color: #eab308; font-weight: 600; }
+.conv-verdict-row.conv-verdict-disagrees { /* hairline cue */ }
+.conv-sentiment-verdict.conv-verdict-disagrees,
+.conv-verdict-row.conv-verdict-disagrees { /* leave to inner styling */ }
+.conv-sentiment-verdict:has(.conv-verdict-disagrees) { border-left-color: #eab308; }
+.conv-verdict-compare { color: var(--muted, #94a3b8); }
+.conv-verdict-sent { text-transform: capitalize; color: var(--text, #e2e8f0); }
+.conv-verdict-rationale { margin-top: 0.35rem; color: var(--text, #e2e8f0); }
+.conv-verdict-meta { font-size: 0.78rem; }
+.conv-verdict-error { color: #ef4444; }
+
+/* Sentiment reviewer status pill in conv toolbar */
+.conv-sentiment-status {
+  font-size: 0.82rem; padding: 0.3rem 0.6rem;
+  border-radius: 999px; border: 1px solid var(--border, #2a2e44);
+  background: var(--surface-2, #1a1d2e); color: var(--text, #e2e8f0);
+  cursor: pointer;
+}
+.conv-sentiment-status[data-state="ok"] { border-color: #22c55e; }
+.conv-sentiment-status[data-state="ok"]::before { content: '🟢 '; }
+.conv-sentiment-status[data-state="fail"] { border-color: #ef4444; }
+.conv-sentiment-status[data-state="fail"]::before { content: '🔴 '; }
+.conv-sentiment-status[data-state="checking"] { opacity: 0.7; }
+.conv-sentiment-status[data-state="checking"]::before { content: '⌛ '; }
+.conv-sentiment-status[data-state="unknown"]::before { content: '⚪ '; }
+
 /* Close / reopen controls */
 .conv-row .conv-select { margin-right: 0.25rem; display: inline-flex; align-items: center; }
 .conv-row .conv-select input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }

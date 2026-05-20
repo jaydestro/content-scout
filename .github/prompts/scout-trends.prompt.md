@@ -1,5 +1,5 @@
 ---
-mode: content-scout
+mode: agent
 description: Compare content trends across months — show trajectory, rising/declining topics, and contributor patterns
 ---
 

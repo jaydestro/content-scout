@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// CLI: search reports/ and social-posts/ markdown for a query.
+// Helper command: search reports/ and social-posts/ markdown for a query.
 //
 // Usage:
 //   node tools/search.mjs "azure cosmos"

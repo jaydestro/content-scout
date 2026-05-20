@@ -29,7 +29,7 @@ Open <http://localhost:4477>. Walks you through a 9-step onboarding wizard, save
 
 ### Editor / chat
 
-Open the repo in your AI tool and run `/scout-onboard` (VS Code) or say "scout onboard" (Claude Code, Cursor, Windsurf, Cline, Copilot CLI). See [docs/EDITORS.md](docs/EDITORS.md) for per-tool startup, slash-command list, and troubleshooting.
+Open the repo in your AI chat tool and run `/scout-onboard` (VS Code) or say "scout onboard" (Claude Code, Cursor, Windsurf, Cline, Copilot terminal chat). See [docs/EDITORS.md](docs/EDITORS.md) for per-tool startup, slash-command list, and troubleshooting.
 
 ## Commands
 

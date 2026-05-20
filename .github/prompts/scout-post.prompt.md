@@ -1,6 +1,6 @@
 ---
 description: Generate social media posts for LinkedIn and X from a URL or report item
-mode: content-scout
+mode: agent
 ---
 
 # scout-post
@@ -58,7 +58,7 @@ When multiple products are configured, always include the product `{slug}`. If o
 
 ## Tuner Contract
 
-The web UI and CLI may append a tuner block to the input in this exact form (all fields optional, in any order):
+The web UI and chat/headless runner may append a tuner block to the input in this exact form (all fields optional, in any order):
 
 ```
 [tone: conversational|technical|enthusiastic|professional|playful|matter-of-fact]

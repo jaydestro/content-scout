@@ -287,7 +287,7 @@
     }
     const author = c.author || '';
     const noTriageBanner = c.isNoTriage
-      ? `<div class="conv-closed-banner conv-no-triage-banner">No triage: <strong>likely Microsoft employee</strong>${
+      ? `<div class="conv-closed-banner conv-no-triage-banner">No triage: <strong>verified Microsoft / owned account</strong>${
           c.mutedInfo?.note ? ` — ${esc(c.mutedInfo.note)}` : ''
         }</div>`
       : '';
@@ -297,13 +297,16 @@
         : `<div class="conv-closed-banner">Muted: <strong>@${esc(_cleanHandle(author))}</strong></div>`
       : '';
     const noTriageBtn = author && !c.isNoTriage
-      ? `<button type="button" class="conv-no-triage-btn" data-author="${esc(author)}" data-platform="${esc(c.platform || '')}" title="Hide this person from the triage inbox as likely Microsoft/owned">No triage</button>`
+      ? `<button type="button" class="conv-no-triage-btn" data-author="${esc(author)}" data-platform="${esc(c.platform || '')}" title="Hide this verified Microsoft employee or owned account from the triage inbox">No triage</button>`
       : '';
     const muteBtn = author && !c.isMuted
       ? `<button type="button" class="conv-mute-btn" data-author="${esc(author)}" data-platform="${esc(c.platform || '')}" title="Hide every conversation from this account">Mute @…</button>`
       : c.isMuted
         ? `<button type="button" class="conv-unmute-btn" data-author="${esc(author)}" data-platform="${esc(c.platform || '')}">Unmute</button>`
         : '';
+    const recheckBtn = !c.isClosed && (c.summary || '').trim()
+      ? `<button type="button" class="conv-recheck-btn" data-key="${esc(key)}" title="Ask the local agent LLM to re-classify this row's sentiment">🤖 Re-check sentiment</button>`
+      : '';
     const selectedClass = key && _selectedKeys.has(key) ? ' is-selected' : '';
     const rowAttrs = key ? ` data-key="${esc(key)}" tabindex="0" role="button" aria-pressed="${_selectedKeys.has(key) ? 'true' : 'false'}"` : '';
     return `<div class="conv-row sent-${esc(c.sentiment)}${closedClass}${c.isMuted ? ' conv-muted' : ''}${selectedClass}"${rowAttrs}>
@@ -318,7 +321,8 @@
       </div>
       <div class="conv-summary">${esc(c.summary || '')}</div>
       ${closedBanner}${noTriageBanner}${mutedBanner}
-      <div class="conv-actions">${replyBtn}${actionBtn}${noTriageBtn}${muteBtn}</div>
+      <div class="conv-actions">${replyBtn}${actionBtn}${noTriageBtn}${muteBtn}${recheckBtn}</div>
+      <div class="conv-sentiment-verdict" data-key="${esc(key)}" hidden></div>
     </div>`;
   }
 
@@ -503,7 +507,123 @@
     list.querySelectorAll('.conv-unmute-btn').forEach((btn) => {
       btn.addEventListener('click', () => _unmute(btn.dataset.platform, btn.dataset.author));
     });
+    list.querySelectorAll('.conv-recheck-btn').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        _recheckSentiment(btn.dataset.key, btn);
+      });
+    });
     _updateBulkBar();
+  }
+
+  // ----- Sentiment re-check (local-LLM second opinion) -----------
+
+  // Extract the slug from a report filename like
+  // "2026-05-11-2236-azure-cosmos-db-content.md" -> "azure-cosmos-db".
+  function _slugFromReport(reportName) {
+    if (!reportName) return '';
+    const m = String(reportName).match(/^\d{4}-\d{2}-\d{2}-\d{4}-(.+?)-(?:content|mindshare|supplemental|trends)\.(?:md|json)$/);
+    return m ? m[1] : '';
+  }
+
+  let _sentimentStatusCache = null;
+  async function _refreshSentimentStatus() {
+    const btn = document.getElementById('conv-sentiment-status');
+    if (!btn) return;
+    const lbl = btn.querySelector('.conv-sentiment-status-label');
+    btn.dataset.state = 'checking';
+    if (lbl) lbl.textContent = 'checking…';
+    try {
+      const data = await fetch('/api/sentiment/status').then((r) => r.json());
+      _sentimentStatusCache = data;
+      const ok = !!data?.ok;
+      const provider = data?.provider || 'none';
+      const model = data?.model || '';
+      btn.dataset.state = ok ? 'ok' : 'fail';
+      btn.title = data?.message || (ok ? 'Reviewer ready' : 'Reviewer not configured');
+      if (lbl) {
+        if (provider === 'none') lbl.textContent = 'not configured';
+        else if (provider === 'agent' && ok) lbl.textContent = `agent${model ? ' · ' + model : ''}`;
+        else if (provider === 'agent') lbl.textContent = 'agent (not configured)';
+        else if (ok && data?.modelInstalled === false) lbl.textContent = `${provider} (pull ${model})`;
+        else if (ok) lbl.textContent = `${provider}${model ? ' · ' + model : ''}`;
+        else lbl.textContent = `${provider} unreachable`;
+      }
+    } catch (err) {
+      _sentimentStatusCache = { ok: false, message: err.message };
+      btn.dataset.state = 'fail';
+      btn.title = err.message || 'status check failed';
+      if (lbl) lbl.textContent = 'status error';
+    }
+  }
+
+  async function _recheckSentiment(key, btn) {
+    if (!key) return;
+    const c = _findConvByKey(key);
+    if (!c) return;
+    const verdictEl = document.querySelector(`.conv-sentiment-verdict[data-key="${CSS.escape(key)}"]`);
+    if (!verdictEl) return;
+    const origLabel = btn?.textContent;
+    if (btn) { btn.disabled = true; btn.textContent = '🤖 Reviewing…'; }
+    verdictEl.hidden = false;
+    verdictEl.classList.add('is-loading');
+    const provider = _sentimentStatusCache?.provider || 'agent';
+    const waitMsg = provider === 'agent'
+      ? 'Asking your agent LLM… (this can take 10–30s on first call)'
+      : 'Asking the LLM…';
+    verdictEl.innerHTML = `<span class="hint">${esc(waitMsg)}</span>`;
+    try {
+      const slug = _slugFromReport(c.report);
+      const payload = {
+        summary: c.summary || '',
+        author: c.author || '',
+        platform: c.platform || '',
+        slug,
+        currentSentiment: c.sentiment || 'unknown',
+      };
+      const res = await fetch('/api/sentiment/review', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      verdictEl.classList.remove('is-loading');
+      if (!res.ok || data?.error) {
+        verdictEl.innerHTML = `<span class="conv-verdict-error">⚠️ ${esc(data?.error || data?.message || `HTTP ${res.status}`)}</span>`;
+        return;
+      }
+      _renderVerdict(verdictEl, c, data);
+    } catch (err) {
+      verdictEl.classList.remove('is-loading');
+      verdictEl.innerHTML = `<span class="conv-verdict-error">⚠️ ${esc(err.message || err)}</span>`;
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = origLabel || '🤖 Re-check sentiment'; }
+    }
+  }
+
+  function _renderVerdict(el, conv, data) {
+    const llmSent = (data.sentiment || 'unknown').toLowerCase();
+    const llmDot = SENTIMENT_DOT[llmSent] || '·';
+    const curSent = (conv.sentiment || 'unknown').toLowerCase();
+    const curDot = SENTIMENT_DOT[curSent] || '·';
+    const agrees = data.agrees === true || llmSent === curSent;
+    const confLabel = data.confidence ? `confidence: ${esc(data.confidence)}` : '';
+    const model = data.model ? ` · ${esc(data.provider)}/${esc(data.model)}` : data.provider ? ` · ${esc(data.provider)}` : '';
+    const verdictClass = agrees ? 'agrees' : 'disagrees';
+    const headline = agrees
+      ? `<span class="conv-verdict-agrees">✓ LLM agrees</span>`
+      : `<span class="conv-verdict-disagrees">⚠ LLM disagrees</span>`;
+    el.innerHTML = `
+      <div class="conv-verdict-row conv-verdict-${verdictClass}">
+        ${headline}
+        <span class="conv-verdict-compare">
+          report says <span class="conv-dot sent-${esc(curSent)}" title="${esc(curSent)}">${curDot}</span> <span class="conv-verdict-sent">${esc(curSent)}</span>
+          → LLM says <span class="conv-dot sent-${esc(llmSent)}" title="${esc(llmSent)}">${llmDot}</span> <span class="conv-verdict-sent">${esc(llmSent)}</span>
+        </span>
+        <span class="conv-verdict-meta hint">${confLabel}${model}</span>
+      </div>
+      ${data.rationale ? `<div class="conv-verdict-rationale">${esc(data.rationale)}</div>` : ''}
+    `;
   }
 
   // ----- Close / reopen plumbing ---------------------------------
@@ -749,10 +869,10 @@
       return;
     }
     const ok = window.confirm(
-      `Mark @${handle} as no-triage?\n\nUse this for likely Microsoft employees or owned people who should not enter community triage.`
+      `Mark @${handle} as no-triage?\n\nUse this only for verified Microsoft employees or owned accounts. Microsoft MVP/MCT status alone is community, not employee.`
     );
     if (!ok) return;
-    await _mute(platform || '', handle, NO_TRIAGE_REASON, 'Likely Microsoft employee; no community triage needed.');
+    await _mute(platform || '', handle, NO_TRIAGE_REASON, 'Verified Microsoft employee or owned account; no community triage needed.');
   }
 
   async function _unmute(platform, handle) {
@@ -943,6 +1063,13 @@
         }
         _refreshMutedPanel();
       });
+    }
+    // Sentiment reviewer status pill (click to re-probe).
+    const sentStatusBtn = document.getElementById('conv-sentiment-status');
+    if (sentStatusBtn && !sentStatusBtn.dataset.wired) {
+      sentStatusBtn.dataset.wired = '1';
+      sentStatusBtn.addEventListener('click', () => _refreshSentimentStatus());
+      _refreshSentimentStatus();
     }
     const mutedCloseBtn = document.getElementById('conv-muted-close');
     if (mutedCloseBtn && !mutedCloseBtn.dataset.wired) {
@@ -1164,7 +1291,7 @@
     if (!host) return;
     host.innerHTML = '<p class="hint">Loading…</p>';
     try {
-      const data = await fetch('/api/conversations').then((r) => r.json());
+      const data = await fetch('/api/conversations?includeProduct=1').then((r) => r.json());
       const allEver = Array.isArray(data.conversations) ? data.conversations : [];
       // Dashboard card is intentionally scoped to the most recent 30 days.
       // Anything older lives in the Conversations view, which has its own

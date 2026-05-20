@@ -1,5 +1,5 @@
 // Lightweight full-text search over report and social-post markdown files.
-// Shared by the web UI (`/api/search`) and the CLI (`tools/search.mjs`)
+// Shared by the web UI (`/api/search`) and the local helper command (`tools/search.mjs`)
 // so the same corpus + ranking is available in both surfaces.
 //
 // Pure Node, no deps. Case-insensitive substring match (no regex by default

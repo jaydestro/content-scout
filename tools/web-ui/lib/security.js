@@ -24,7 +24,7 @@ export function safeJoin(baseDir, name) {
 // =====================================================================
 // Secret redaction for terminal output streamed back to the UI.
 // ---------------------------------------------------------------------
-// Defense-in-depth: API keys can show up in CLI output (echoed env vars,
+// Defense-in-depth: API keys can show up in runner output (echoed env vars,
 // auth-failure error messages, curl traces, etc.). Before any chunk is
 // appended to a run's stored output or pushed to SSE listeners, we run
 // it through redactSecrets() so the UI never displays a live secret —

@@ -1,6 +1,6 @@
 // Build a search query from a config term.
 // Multi-word terms get wrapped in double quotes for phrase matching;
-// single tokens (incl. hashtags like "#AzureCosmosDB") pass through.
+// single tokens (incl. hashtags like "#MyProductName") pass through.
 //
 // Per-platform notes:
 //   - X / Twitter: phrase quotes work natively; hashtags too.

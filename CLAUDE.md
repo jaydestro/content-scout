@@ -48,7 +48,7 @@ Users will request these operations using natural language. Map their requests t
 
 Both surfaces share the same indexer (`tools/lib/corpus-search.mjs`) and grep `reports/*.md` + `social-posts/*.md`:
 
-- **CLI:** `node tools/search.mjs "vector search"` (add `--regex` for regex, `--kind reports` to scope, `--json` for machine output).
+- **Local helper command:** `node tools/search.mjs "vector search"` (add `--regex` for regex, `--kind reports` to scope, `--json` for machine output).
 - **Web UI:** the command palette (⌘/Ctrl-K) now has an **In files** section that surfaces matching files with the line number and a snippet preview. Clicking a hit jumps to the Reports or Social posts view with that file selected.
 
 When reading prompt files, the `${{input:...}}` placeholders are VS Code syntax. Instead, ask the user for those inputs conversationally.
@@ -88,16 +88,18 @@ falls back to whichever Chromium-family browser is installed.
 
 **Now wired into `/scout-scan` as Step 0 — not optional, not separate.**
 
-**From the web UI:** the Run view's /scout-scan form has a "Browser
-scan (Layer 0)" fieldset with three modes — **Auto** (refresh sidecars
-older than 6h, default), **Force** (always re-scan first), **Skip**
-(API/RSS layers only). When you click Start run, the server runs
-`node tools/browser-scan/index.mjs scan --slug {slug}` for every
+**From the web UI:** the Run view's /scout-scan form has a single
+"Browser scan (Layer 0)" fieldset that holds everything in one place:
+the per-platform sign-in chips, the "Open browser & sign in" /
+"Force-rescan" controls, and three preflight modes — **Auto** (refresh
+sidecars older than 6h, default), **Force** (always re-scan first),
+**Skip** (API/RSS layers only). When you click Start run, the server
+runs `node tools/browser-scan/index.mjs scan --slug {slug} --days N`
+(where N comes from the date range you picked above) for every
 selected subject before the agent kicks in and streams its output
-into the same run log. The 🌐 panel at the top of the Run view is
-now just for one-time browser launch + login + status indicators.
+into the same run log.
 
-**From the CLI / chat (`/scout-scan` slash command):** the agent
+**From chat (`/scout-scan` slash command):** the agent
 itself runs the preflight as Step 0 of Step 3 in
 `.github/prompts/scout-scan.prompt.md`. Re-running is idempotent.
 

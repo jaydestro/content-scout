@@ -1,6 +1,6 @@
 ---
 description: Generate a weekly posting calendar from a content report
-mode: content-scout
+mode: agent
 ---
 
 # Create Posting Calendar
