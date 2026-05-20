@@ -475,12 +475,10 @@ async function saveAgentChoice() {
   }
 }
 
-$('setup-run-onboard').addEventListener('click', async () => {
-  // Jump to Run view with scout-onboard preselected.
-  gotoView('run');
-  $('run-command').value = 'scout-onboard';
-  $('run-command').dispatchEvent(new Event('change'));
-});
+// Note: /scout-onboard is interactive — use the embedded chat runner in
+// the Setup wizard, or run it in your editor's chat. The old "open in Run
+// view" button has been removed as part of the IA refactor that scopes
+// the Run view to /scout-scan only.
 
 // --- Embedded scout-onboard chat runner (inside the "Prefer guided chat wizard?" disclosure) ---
 (() => {
@@ -2684,6 +2682,141 @@ function streamRun(id) {
   });
   src.onerror = () => { src.close(); };
 }
+
+// --- Modal command runner ------------------------------------------
+// Used by [data-launch-cmd] buttons sprinkled across owning views
+// (Setup, Reports, Social, Conversations) so each command lives in
+// its logical home instead of a single kitchen-drawer Run view.
+const cmdModal = {
+  active: null,        // EventSource
+  cmd: null,
+  needsExtra: false,
+  extraLabel: '',
+  withRange: false,
+  open({ cmd, title, desc, needsExtra, extraLabel, withRange, chatOnly }) {
+    this.cmd = cmd;
+    this.needsExtra = !!needsExtra;
+    this.extraLabel = extraLabel || 'Extra args';
+    this.withRange = !!withRange;
+    $('cmd-modal-title').textContent = title || `/${cmd}`;
+    $('cmd-modal-desc').textContent = desc || '';
+    $('cmd-modal-output').textContent = '';
+    $('cmd-modal-meta').textContent = '';
+    $('cmd-modal-stop').hidden = true;
+    $('cmd-modal-start').disabled = false;
+    const extraWrap = $('cmd-modal-extra-wrap');
+    extraWrap.hidden = !this.needsExtra;
+    if (this.needsExtra) {
+      $('cmd-modal-extra-label').textContent = this.extraLabel;
+      $('cmd-modal-extra').value = '';
+    }
+    const chat = $('cmd-modal-chat');
+    const form = $('cmd-modal-form');
+    if (chatOnly) {
+      chat.hidden = false;
+      form.hidden = true;
+      $('cmd-modal-prompt').textContent = `/${cmd}`;
+    } else {
+      chat.hidden = true;
+      form.hidden = false;
+    }
+    $('cmd-modal').hidden = false;
+    document.body.classList.add('cmd-modal-open');
+  },
+  close() {
+    if (this.active) { try { this.active.close(); } catch {} this.active = null; }
+    $('cmd-modal').hidden = true;
+    document.body.classList.remove('cmd-modal-open');
+  },
+  async start() {
+    if (!this.cmd) return;
+    const slug = (window.activeRoleSlug && window.activeRoleSlug()) || $('run-slug')?.value || '';
+    const extra = this.needsExtra ? $('cmd-modal-extra').value.trim() : '';
+    const range = this.withRange ? (typeof dateRangePhrase === 'function' ? dateRangePhrase() : '') : '';
+    const combinedExtra = [range, extra].filter(Boolean).join(' ');
+    const out = $('cmd-modal-output');
+    out.textContent = '';
+    $('cmd-modal-meta').textContent = 'Starting…';
+    $('cmd-modal-start').disabled = true;
+    try {
+      const res = await fetch('/api/runs', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          command: this.cmd,
+          args: { slug, extra: combinedExtra },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        $('cmd-modal-meta').textContent = data.error || 'error';
+        if (data.prompt) out.textContent = `Prompt: ${data.prompt}\n\nSet SCOUT_RUNNER env var to execute this command from the web UI, or copy the prompt into your AI chat.`;
+        $('cmd-modal-start').disabled = false;
+        return;
+      }
+      $('cmd-modal-meta').textContent = `Running: ${data.command}`;
+      $('cmd-modal-stop').hidden = false;
+      const src = new EventSource(`/api/runs/${data.id}/stream`);
+      this.active = src;
+      src.onmessage = (e) => {
+        try {
+          const { chunk } = JSON.parse(e.data);
+          out.textContent += chunk;
+          out.scrollTop = out.scrollHeight;
+        } catch {}
+      };
+      src.addEventListener('done', (e) => {
+        try {
+          const { status } = JSON.parse(e.data);
+          $('cmd-modal-meta').textContent = `Done: ${status}`;
+        } catch {}
+        $('cmd-modal-stop').hidden = true;
+        $('cmd-modal-start').disabled = false;
+        src.close();
+        this.active = null;
+      });
+      src.onerror = () => { src.close(); this.active = null; };
+    } catch (err) {
+      $('cmd-modal-meta').textContent = `error: ${err.message}`;
+      $('cmd-modal-start').disabled = false;
+    }
+  },
+};
+
+// Wire global launchers (event delegation so dynamic content works too).
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-launch-cmd]');
+  if (btn) {
+    e.preventDefault();
+    cmdModal.open({
+      cmd: btn.dataset.launchCmd,
+      title: btn.dataset.launchTitle,
+      desc: btn.dataset.launchDesc,
+      needsExtra: !!btn.dataset.launchNeedsExtra,
+      extraLabel: btn.dataset.launchNeedsExtra,
+      withRange: btn.dataset.launchRange === 'true',
+      chatOnly: btn.dataset.launchChatOnly === 'true',
+    });
+    return;
+  }
+  if (e.target.closest('[data-cmd-modal-close]')) {
+    cmdModal.close();
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('cmd-modal').hidden) cmdModal.close();
+});
+$('cmd-modal-start')?.addEventListener('click', () => cmdModal.start());
+$('cmd-modal-stop')?.addEventListener('click', () => cmdModal.close());
+$('cmd-modal-copy')?.addEventListener('click', async () => {
+  const text = $('cmd-modal-prompt').textContent || '';
+  try {
+    await navigator.clipboard.writeText(text);
+    $('cmd-modal-meta').textContent = 'Copied ✓';
+  } catch {
+    $('cmd-modal-meta').textContent = 'Copy failed — select and copy manually.';
+  }
+});
 
 // --- Reports / Social ---------------------------------------------
 

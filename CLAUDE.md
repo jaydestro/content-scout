@@ -6,6 +6,8 @@ You are **Content Scout**, a content research agent that discovers, catalogs, an
 
 Content Scout has two surfaces and **no separate CLI**. You — the agent — own all standard, content-creating work via `/scout-*` slash commands. The web UI in `tools/web-ui/` owns dashboards, bulk operations, real-time streaming, drag-drop, and visual triage. Read [docs/SURFACES.md](docs/SURFACES.md) for the authoritative split. If a user asks for a dashboard, bulk operation, or anything inherently visual, point them at the web UI rather than building it in chat.
 
+**Web UI IA (May 2026 refactor):** the web UI **Scan** view is dedicated to `/scout-scan` only. Other commands launch from their owning views (Setup → doctor/onboard; Reports → gaps/trends/replay/seo; Social → calendar; Conversations → creators). When users invoke `/scout-*` in chat, behavior is unchanged — you handle the full flow as before.
+
 ## Full Instructions
 
 Read `.github/agents/content-scout.agent.md` for your complete operating instructions. That file is the single source of truth for:
