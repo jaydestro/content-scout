@@ -49,6 +49,33 @@ test('buildPrompt: rejects unknown current sentiment values', () => {
   assert.match(p, /Current classification: unknown/);
 });
 
+test('buildPrompt: omits reviewer-note block when userNote is empty/whitespace', () => {
+  const a = buildPrompt({ productName: 'Foo', summary: 'hi' });
+  const b = buildPrompt({ productName: 'Foo', summary: 'hi', userNote: '   ' });
+  assert.doesNotMatch(a, /Reviewer note/);
+  assert.doesNotMatch(b, /Reviewer note/);
+});
+
+test('buildPrompt: appends reviewer note as hint, not ground truth', () => {
+  const p = buildPrompt({
+    productName: 'Foo',
+    summary: 'hi',
+    userNote: 'author is a known competitor advocate',
+  });
+  assert.match(p, /Reviewer note/);
+  assert.match(p, /treat as a HINT/);
+  assert.match(p, /author is a known competitor advocate/);
+});
+
+test('buildPrompt: truncates reviewer note to 500 chars', () => {
+  const long = 'n'.repeat(2000);
+  const p = buildPrompt({ productName: 'Foo', summary: 'hi', userNote: long });
+  // Count "n"s appearing in the note block — capped at 500.
+  const noteRun = p.match(/n{50,}/g);
+  assert.ok(noteRun, 'expected a run of n in prompt');
+  assert.ok(noteRun[0].length <= 500, `note run ${noteRun[0].length} > 500`);
+});
+
 // ---- tryParseJson -------------------------------------------------
 
 test('tryParseJson: parses plain JSON', () => {

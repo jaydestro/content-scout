@@ -2674,6 +2674,7 @@ app.post('/api/sentiment/review', express.json({ limit: '64kb' }), async (req, r
         platform: String(body.platform || '').slice(0, 80),
         productName,
         currentSentiment: String(body.currentSentiment || 'unknown').toLowerCase(),
+        userNote: String(body.userNote || '').slice(0, 500),
       },
       env,
       { runner, cwd: REPO_ROOT },

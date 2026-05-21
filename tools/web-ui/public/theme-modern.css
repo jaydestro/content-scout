@@ -1536,6 +1536,28 @@ aside li[data-name] .entry-open:hover {
 }
 .conv-recheck-btn:hover { background: var(--surface-2, #1a1d2e); border-color: var(--accent, #818cf8); }
 .conv-recheck-btn:disabled { opacity: 0.6; cursor: progress; }
+.conv-recheck-note-toggle {
+  background: transparent; color: var(--muted, #94a3b8);
+  border: 1px solid var(--border, #2a2e44); padding: 0.35rem 0.55rem;
+  border-radius: 6px; cursor: pointer; font-size: 0.82rem; margin-left: 0.25rem;
+}
+.conv-recheck-note-toggle:hover { background: var(--surface-2, #1a1d2e); color: var(--text, #e2e8f0); }
+.conv-recheck-note-toggle[aria-expanded="true"] { background: var(--surface-2, #1a1d2e); color: var(--text, #e2e8f0); border-color: var(--accent, #818cf8); }
+.conv-recheck-note {
+  margin-top: 0.5rem; padding: 0.5rem 0.65rem;
+  background: var(--surface-2, #1a1d2e);
+  border: 1px solid var(--border, #2a2e44); border-radius: 6px;
+}
+.conv-recheck-note-label { display: block; font-size: 0.82rem; color: var(--text, #e2e8f0); margin-bottom: 0.3rem; }
+.conv-recheck-note-input {
+  width: 100%; box-sizing: border-box;
+  background: var(--surface, #0f1220); color: var(--text, #e2e8f0);
+  border: 1px solid var(--border, #2a2e44); border-radius: 4px;
+  padding: 0.4rem 0.5rem; font-family: inherit; font-size: 0.85rem;
+  resize: vertical;
+}
+.conv-recheck-note-input:focus { outline: none; border-color: var(--accent, #818cf8); }
+.conv-verdict-note { margin-top: 0.35rem; font-style: italic; }
 .conv-sentiment-verdict {
   margin-top: 0.6rem; padding: 0.55rem 0.75rem;
   background: var(--surface-2, #1a1d2e);

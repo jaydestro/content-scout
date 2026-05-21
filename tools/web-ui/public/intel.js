@@ -386,7 +386,8 @@
         ? `<button type="button" class="conv-unmute-btn" data-author="${esc(author)}" data-platform="${esc(c.platform || '')}">Unmute</button>`
         : '';
     const recheckBtn = !c.isClosed && (c.summary || '').trim()
-      ? `<button type="button" class="conv-recheck-btn" data-key="${esc(key)}" title="Ask the local agent LLM to re-classify this row's sentiment">🤖 Re-check sentiment</button>`
+      ? `<button type="button" class="conv-recheck-btn" data-key="${esc(key)}" title="Ask the local agent LLM to re-classify this row's sentiment">🤖 Re-check sentiment</button>
+         <button type="button" class="conv-recheck-note-toggle" data-key="${esc(key)}" title="Add a short note the LLM should consider (e.g. 'author works for a competitor', 'this is satire')" aria-expanded="false">📝 Add note</button>`
       : '';
     const selectedClass = key && _selectedKeys.has(key) ? ' is-selected' : '';
     const rowAttrs = key ? ` data-key="${esc(key)}" tabindex="0" role="button" aria-pressed="${_selectedKeys.has(key) ? 'true' : 'false'}"` : '';
@@ -403,6 +404,18 @@
       <div class="conv-summary">${summaryHtml}</div>
       ${closedBanner}${noTriageBanner}${mutedBanner}
       <div class="conv-actions">${replyBtn}${actionBtn}${noTriageBtn}${muteBtn}${recheckBtn}</div>
+      <div class="conv-recheck-note" data-key="${esc(key)}" hidden>
+        <label class="conv-recheck-note-label" for="conv-recheck-note-input-${esc(key)}">
+          Note to LLM <span class="hint">(optional, max 500 chars — treated as a hint, not ground truth)</span>
+        </label>
+        <textarea
+          id="conv-recheck-note-input-${esc(key)}"
+          class="conv-recheck-note-input"
+          data-key="${esc(key)}"
+          rows="2"
+          maxlength="500"
+          placeholder="e.g. author is a known competitor advocate; this is satire; thread context says X"></textarea>
+      </div>
       <div class="conv-sentiment-verdict" data-key="${esc(key)}" hidden></div>
     </div>`;
   }
@@ -617,6 +630,21 @@
         _recheckSentiment(btn.dataset.key, btn);
       });
     });
+    list.querySelectorAll('.conv-recheck-note-toggle').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const key = btn.dataset.key;
+        const wrap = list.querySelector(`.conv-recheck-note[data-key="${CSS.escape(key)}"]`);
+        if (!wrap) return;
+        const willShow = wrap.hidden;
+        wrap.hidden = !willShow;
+        btn.setAttribute('aria-expanded', willShow ? 'true' : 'false');
+        if (willShow) {
+          const ta = wrap.querySelector('textarea');
+          if (ta) ta.focus();
+        }
+      });
+    });
     _updateBulkBar();
     _updateRecheckBulkButton();
   }
@@ -679,6 +707,8 @@
     verdictEl.innerHTML = `<span class="hint">${esc(waitMsg)}</span>`;
     try {
       const slug = _slugFromReport(c.report);
+      const noteEl = document.querySelector(`.conv-recheck-note-input[data-key="${CSS.escape(key)}"]`);
+      const userNote = noteEl ? String(noteEl.value || '').trim().slice(0, 500) : '';
       const payload = {
         summary: c.summary || '',
         author: c.author || '',
@@ -686,6 +716,7 @@
         slug,
         currentSentiment: c.sentiment || 'unknown',
       };
+      if (userNote) payload.userNote = userNote;
       const res = await fetch('/api/sentiment/review', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -697,7 +728,7 @@
         verdictEl.innerHTML = `<span class="conv-verdict-error">⚠️ ${esc(data?.error || data?.message || `HTTP ${res.status}`)}</span>`;
         return;
       }
-      _renderVerdict(verdictEl, c, data);
+      _renderVerdict(verdictEl, c, data, { userNote });
     } catch (err) {
       verdictEl.classList.remove('is-loading');
       verdictEl.innerHTML = `<span class="conv-verdict-error">⚠️ ${esc(err.message || err)}</span>`;
@@ -706,7 +737,7 @@
     }
   }
 
-  function _renderVerdict(el, conv, data) {
+  function _renderVerdict(el, conv, data, opts = {}) {
     const llmSent = (data.sentiment || 'unknown').toLowerCase();
     const llmDot = SENTIMENT_DOT[llmSent] || '·';
     const curSent = (conv.sentiment || 'unknown').toLowerCase();
@@ -718,6 +749,9 @@
     const headline = agrees
       ? `<span class="conv-verdict-agrees">✓ LLM agrees</span>`
       : `<span class="conv-verdict-disagrees">⚠ LLM disagrees</span>`;
+    const noteUsed = opts.userNote
+      ? `<div class="conv-verdict-note hint">📝 With note: ${esc(opts.userNote)}</div>`
+      : '';
     el.innerHTML = `
       <div class="conv-verdict-row conv-verdict-${verdictClass}">
         ${headline}
@@ -727,6 +761,7 @@
         </span>
         <span class="conv-verdict-meta hint">${confLabel}${model}</span>
       </div>
+      ${noteUsed}
       ${data.rationale ? `<div class="conv-verdict-rationale">${esc(data.rationale)}</div>` : ''}
     `;
   }

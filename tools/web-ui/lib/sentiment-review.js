@@ -67,11 +67,23 @@ function agentLabel(runner) {
   return base.replace(/\.(exe|cmd|bat)$/i, '');
 }
 
-function buildPrompt({ productName, summary, author, platform, currentSentiment }) {
+function buildPrompt({ productName, summary, author, platform, currentSentiment, userNote }) {
   const product = productName || 'the product';
   const cur = currentSentiment && SENTIMENT_VALUES.has(currentSentiment)
     ? currentSentiment
     : 'unknown';
+  const note = String(userNote || '').trim().slice(0, 500);
+  const noteBlock = note
+    ? [
+        ``,
+        `Reviewer note (context the human added when requesting this re-check —`,
+        `treat as a HINT to consider, not as ground truth; the post text above is`,
+        `still authoritative):`,
+        `"""`,
+        note,
+        `"""`,
+      ]
+    : [];
   return [
     `You are a sentiment classifier reviewing a social post about a specific product.`,
     ``,
@@ -84,6 +96,7 @@ function buildPrompt({ productName, summary, author, platform, currentSentiment 
     `"""`,
     String(summary || '').slice(0, 4000),
     `"""`,
+    ...noteBlock,
     ``,
     `Classify the AUTHOR'S STANCE TOWARD ${product}. Use exactly one of:`,
     `- positive: praise, success story, recommendation, "this worked great",`,
@@ -176,6 +189,7 @@ export async function reviewSentiment(input, env = process.env, opts = {}) {
     platform: String(input?.platform || ''),
     productName: String(input?.productName || ''),
     currentSentiment: String(input?.currentSentiment || 'unknown'),
+    userNote: String(input?.userNote || '').slice(0, 500),
   };
   if (!payload.summary.trim()) {
     return {
