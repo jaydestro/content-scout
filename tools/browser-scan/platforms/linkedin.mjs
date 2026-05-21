@@ -20,8 +20,64 @@
 //     reconstruct ISO from the relative string (e.g. "19m", "3d", "2w",
 //     "1mo") against `now`.
 
+import { promises as fsp } from 'node:fs';
+import path from 'node:path';
 import { newPage, sleep } from '../lib/browser.mjs';
 import { buildSearchQuery } from '../lib/query.mjs';
+
+// Selectors that, when present, indicate the search-results feed has rendered
+// at least one post container. We race several variants because LinkedIn
+// renames feed wrappers a few times a year — and because the search-results
+// page uses different containers from the home feed.
+const POST_SELECTORS = [
+  'div.feed-shared-update-v2[data-urn^="urn:li:activity"]',
+  '[data-urn^="urn:li:activity:"]',
+  '[data-id^="urn:li:activity:"]',
+  'div.search-results-container [data-urn]',
+  'li.artdeco-card[data-urn]',
+];
+// Selectors that indicate LinkedIn explicitly rendered a "no results" state.
+// Hitting one of these means our scrape is correct and the answer really is
+// zero — not selector drift.
+const EMPTY_STATE_SELECTORS = [
+  '.search-reusables__no-results-message',
+  '[data-test-search-no-results]',
+  '.search-results-container .search-no-results__container',
+];
+
+async function waitForResultsOrEmpty(page, timeoutMs = 15000) {
+  const combined = [...POST_SELECTORS, ...EMPTY_STATE_SELECTORS].join(', ');
+  try {
+    await page.waitForSelector(combined, { timeout: timeoutMs });
+  } catch {
+    return 'timeout';
+  }
+  for (const sel of POST_SELECTORS) {
+    if (await page.locator(sel).first().count() > 0) return 'posts';
+  }
+  return 'empty';
+}
+
+async function dumpDebug(page, ctx, term, reason) {
+  if (!ctx.outDir) return;
+  try {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const safeTerm = term.replace(/[^a-z0-9]+/gi, '-').toLowerCase().slice(0, 40);
+    const file = path.join(ctx.outDir, `debug-linkedin-${stamp}-${safeTerm}.html`);
+    const html = await page.evaluate(() => {
+      const main = document.querySelector('main') || document.body;
+      return [
+        `<!-- url: ${location.href} -->`,
+        `<!-- title: ${document.title} -->`,
+        main ? main.outerHTML.slice(0, 50000) : '<!-- no main element -->',
+      ].join('\n');
+    });
+    await fsp.writeFile(file, `<!-- reason: ${reason} -->\n${html}`, 'utf8');
+    console.warn(`[browser-scan] linkedin: debug snapshot saved → ${path.relative(process.cwd(), file)}`);
+  } catch (e) {
+    console.warn(`[browser-scan] linkedin: failed to write debug snapshot: ${e.message}`);
+  }
+}
 
 export async function openLinkedInLogin(browser) {
   const page = await newPage(browser);
@@ -71,17 +127,42 @@ export async function scanLinkedIn(browser, ctx) {
   for (const term of searchTerms) {
     const query = buildSearchQuery(term, 'linkedin');
     if (!query) continue;
-    const url = `https://www.linkedin.com/search/results/content/?keywords=${encodeURIComponent(query)}&datePosted=%22past-month%22&sortBy=%22date_posted%22`;
-    try {
-      await page.goto(url, { waitUntil: 'domcontentloaded' });
-    } catch (e) {
-      console.warn(`[browser-scan] linkedin: navigation failed for "${term}": ${e.message}`);
+    const keywords = encodeURIComponent(query);
+    // Primary URL uses LinkedIn's quoted-filter form (current as of May
+    // 2026). Fallback strips the filters in case LinkedIn changes the
+    // syntax again — we'd rather have unfiltered recent results than
+    // none.
+    const primaryUrl = `https://www.linkedin.com/search/results/content/?keywords=${keywords}&datePosted=%22past-month%22&sortBy=%22date_posted%22`;
+    const fallbackUrl = `https://www.linkedin.com/search/results/content/?keywords=${keywords}`;
+
+    let outcome = 'timeout';
+    for (const [attempt, url] of [['primary', primaryUrl], ['fallback', fallbackUrl]]) {
+      try {
+        await page.goto(url, { waitUntil: 'domcontentloaded' });
+      } catch (e) {
+        console.warn(`[browser-scan] linkedin: navigation failed for "${term}" (${attempt}): ${e.message}`);
+        outcome = 'navfail';
+        continue;
+      }
+      outcome = await waitForResultsOrEmpty(page, 15000);
+      if (outcome === 'posts') break;
+      if (outcome === 'empty' && attempt === 'primary') {
+        // Date filter may have hidden everything — try unfiltered.
+        continue;
+      }
+      if (outcome === 'empty') break;
+      // timeout — only retry once with fallback URL
+      if (attempt === 'primary') continue;
+    }
+
+    if (outcome === 'empty') {
+      console.warn(`[browser-scan] linkedin: 0 results for "${term}" (LinkedIn rendered empty-state)`);
+      await sleep(2500);
       continue;
     }
-    try {
-      await page.waitForSelector('div.feed-shared-update-v2[data-urn^="urn:li:activity"]', { timeout: 15000 });
-    } catch {
-      console.warn(`[browser-scan] linkedin: no results rendered for "${term}"`);
+    if (outcome !== 'posts') {
+      console.warn(`[browser-scan] linkedin: no results rendered for "${term}" (selector timeout — saving debug snapshot)`);
+      await dumpDebug(page, ctx, term, outcome);
       await sleep(3500);
       continue;
     }
@@ -157,13 +238,27 @@ async function extractPostsOnPage(page) {
     }
 
     const out = [];
-    const containers = document.querySelectorAll(
-      'div.feed-shared-update-v2[data-urn^="urn:li:activity"]'
-    );
+    // Broadened container query — match either the legacy
+    // .feed-shared-update-v2 wrapper or any element carrying the
+    // urn:li:activity URN on data-urn / data-id. We then de-dupe by
+    // activity ID below so wrapper changes don't double-count posts.
+    const seenIds = new Set();
+    const containers = [
+      ...document.querySelectorAll('div.feed-shared-update-v2[data-urn^="urn:li:activity"]'),
+      ...document.querySelectorAll('[data-urn^="urn:li:activity:"]'),
+      ...document.querySelectorAll('[data-id^="urn:li:activity:"]'),
+    ].filter((el) => {
+      const urn = el.getAttribute('data-urn') || el.getAttribute('data-id') || '';
+      const m = urn.match(/urn:li:activity:(\d+)/);
+      if (!m) return false;
+      if (seenIds.has(m[1])) return false;
+      seenIds.add(m[1]);
+      return true;
+    });
 
     for (const c of containers) {
-      // Permalink from URN
-      const urn = c.getAttribute('data-urn') || '';
+      // Permalink from URN — check data-urn first, fall back to data-id.
+      const urn = c.getAttribute('data-urn') || c.getAttribute('data-id') || '';
       const idMatch = urn.match(/urn:li:activity:(\d+)/);
       if (!idMatch) continue;
       const url = `https://www.linkedin.com/feed/update/urn:li:activity:${idMatch[1]}/`;

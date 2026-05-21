@@ -199,6 +199,7 @@ if (command === 'launch') {
         sinceMs,
         maxPerTerm,
         slug,
+        outDir,
         // In CDP mode, hand the shared tab to the platform so it navigates
         // in place instead of opening + closing its own tab. In launch
         // mode each platform still owns its tab (separate Playwright
