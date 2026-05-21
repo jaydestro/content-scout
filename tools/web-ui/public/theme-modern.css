@@ -1473,7 +1473,19 @@ aside li[data-name] .entry-open:hover {
 .conv-row-head .conv-date { color: var(--muted, #94a3b8); font-size: 0.85rem; }
 .conv-row-head .conv-spacer { flex: 1; }
 .conv-row-head a { color: var(--accent, #818cf8); }
-.conv-summary { margin: 0.5rem 0 0; line-height: 1.45; }
+.conv-summary {
+  margin: 0.5rem 0 0;
+  line-height: 1.45;
+  white-space: pre-line;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.conv-row.is-selected .conv-summary {
+  -webkit-line-clamp: unset;
+  display: block;
+}
 .conv-actions { margin-top: 0.5rem; }
 .conv-reply-btn {
   background: var(--accent, #818cf8); color: #0a0d1a; border: 0; padding: 0.4rem 0.75rem;

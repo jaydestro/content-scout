@@ -427,6 +427,69 @@ export function parseReport(raw, fileName, options = {}) {
   };
 }
 
+// Load every browser-scan sidecar for `slug` and return a Map keyed by
+// canonical URL so per-report items (which carry only the post URL) can be
+// enriched with the full body text scraped from LinkedIn / X / Reddit. The
+// per-report JSON sidecar leaves `title` empty for social posts because the
+// platforms have no canonical title — the body text is the post.
+async function loadBrowserScanBodies(reportsDir, slug) {
+  const map = new Map();
+  if (!slug) return map;
+  const dir = path.join(reportsDir, '.browser-scan', slug);
+  let entries;
+  try {
+    entries = await fs.readdir(dir);
+  } catch {
+    return map;
+  }
+  for (const name of entries) {
+    if (!name.endsWith('.json') || name.endsWith('-meta.json')) continue;
+    let parsed;
+    try {
+      parsed = JSON.parse(await fs.readFile(path.join(dir, name), 'utf8'));
+    } catch {
+      continue;
+    }
+    const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.posts) ? parsed.posts : [];
+    for (const post of list) {
+      const key = canonicalUrlKey(post?.url);
+      if (!key) continue;
+      const body = String(post?.body || '').trim();
+      const title = String(post?.title || '').trim();
+      if (!body && !title) continue;
+      // Prefer the longer body if multiple sidecars carry the same post.
+      const prev = map.get(key);
+      if (!prev || (body && body.length > (prev.body || '').length)) {
+        map.set(key, { body, title });
+      }
+    }
+  }
+  return map;
+}
+
+// Mutates the parsed report in place to backfill conversation summaries from
+// browser-scan sidecar bodies. The per-report JSON sidecar has no body field
+// for social posts, so without this step LinkedIn / X / Reddit cards render
+// with an empty summary line.
+function enrichConversationsWithBodies(parsed, bodyMap) {
+  if (!parsed || !bodyMap || !bodyMap.size) return;
+  const convs = Array.isArray(parsed.conversations) ? parsed.conversations : [];
+  for (const c of convs) {
+    const key = canonicalUrlKey(c.url);
+    if (!key) continue;
+    const hit = bodyMap.get(key);
+    if (!hit) continue;
+    const current = String(c.summary || '').trim();
+    const body = hit.body || hit.title || '';
+    if (!body) continue;
+    // Replace whenever the body is meaningfully longer than the existing
+    // summary (handles empty cells and pre-truncated previews alike).
+    if (body.length > current.length + 20) {
+      c.summary = body;
+    }
+  }
+}
+
 // Load + parse a single report. Prefers the JSON sidecar (the agent's
 // structured output) when present and parseable; falls back to the markdown
 // parser otherwise. `fileName` is the *.md basename — the sidecar is the
@@ -441,17 +504,22 @@ export async function loadReport(reportsDir, fileName) {
       parseOptions = { productTeamNames: parseProductTeamNamesFromConfig(await fs.readFile(configPath, 'utf8')) };
     } catch {}
   }
+  const bodyMap = await loadBrowserScanBodies(reportsDir, slug);
   const jsonName = fileName.replace(/\.md$/, '.json');
   const jsonPath = path.join(reportsDir, jsonName);
   try {
     const rawJson = await fs.readFile(jsonPath, 'utf8');
-    return { source: 'json', ...parseReportFromJson(rawJson, fileName, parseOptions) };
+    const parsed = { source: 'json', ...parseReportFromJson(rawJson, fileName, parseOptions) };
+    enrichConversationsWithBodies(parsed, bodyMap);
+    return parsed;
   } catch {
     // Sidecar missing or malformed — fall back to markdown.
   }
   try {
     const raw = await fs.readFile(path.join(reportsDir, fileName), 'utf8');
-    return { source: 'md', ...parseReport(raw, fileName, parseOptions) };
+    const parsed = { source: 'md', ...parseReport(raw, fileName, parseOptions) };
+    enrichConversationsWithBodies(parsed, bodyMap);
+    return parsed;
   } catch {
     return null;
   }
