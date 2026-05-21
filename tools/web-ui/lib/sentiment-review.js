@@ -42,9 +42,18 @@ const SENTIMENT_VALUES = new Set([
 const CONFIDENCE_VALUES = new Set(['high', 'medium', 'low']);
 
 // Default per-call timeout for spawned agent CLIs. The agent has to boot,
-// load its system prompt, hit the model, and print a single JSON object —
-// 90s is generous for first-call cold start on slower machines.
-const AGENT_TIMEOUT_MS = 90_000;
+// load its system prompt, hit the model, and print a single JSON object.
+// 180s covers Copilot CLI / Claude Code cold starts on slower machines
+// without changing snappy-path behavior. Override with
+// SENTIMENT_AGENT_TIMEOUT_MS (milliseconds) in .env if your runner is
+// consistently slower.
+const DEFAULT_AGENT_TIMEOUT_MS = 180_000;
+
+function resolveAgentTimeoutMs(env = process.env) {
+  const raw = Number(env.SENTIMENT_AGENT_TIMEOUT_MS);
+  if (Number.isFinite(raw) && raw >= 5_000 && raw <= 30 * 60_000) return raw;
+  return DEFAULT_AGENT_TIMEOUT_MS;
+}
 
 // Parse the human-readable label for a configured agent runner. The binary
 // name (claude, copilot, codex, gemini, cursor-agent) is what the user
@@ -200,7 +209,7 @@ async function reviewWithAgent(prompt, payload, env, opts) {
   const command = stripPromptPlaceholder(runner) || runner;
   const cwd = (opts && opts.cwd) || process.cwd();
   const label = agentLabel(runner);
-  const timeoutMs = (opts && Number(opts.timeoutMs)) || AGENT_TIMEOUT_MS;
+  const timeoutMs = (opts && Number(opts.timeoutMs)) || resolveAgentTimeoutMs(env);
 
   let stdout = '';
   let stderr = '';
@@ -244,7 +253,7 @@ async function reviewWithAgent(prompt, payload, env, opts) {
     return {
       provider: 'agent',
       model: label,
-      error: `Agent (${label || 'runner'}) timed out after ${Math.round(timeoutMs / 1000)}s. Try a smaller/faster model, or set SENTIMENT_PROVIDER=ollama in .env to use a direct local LLM.`,
+      error: `Agent (${label || 'runner'}) timed out after ${Math.round(timeoutMs / 1000)}s. Raise SENTIMENT_AGENT_TIMEOUT_MS in .env (current: ${timeoutMs}), pick a faster model, or set SENTIMENT_PROVIDER=ollama for a direct local LLM.`,
     };
   }
   const parsed = tryParseJson(stdout);
