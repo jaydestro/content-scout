@@ -355,7 +355,7 @@
         <span class="conv-spacer"></span>
         ${link}
       </div>
-      <div class="conv-summary">${esc(c.summary || '')}</div>
+      <div class="conv-summary">${summaryHtml}</div>
       ${closedBanner}${noTriageBanner}${mutedBanner}
       <div class="conv-actions">${replyBtn}${actionBtn}${noTriageBtn}${muteBtn}${recheckBtn}</div>
       <div class="conv-sentiment-verdict" data-key="${esc(key)}" hidden></div>
