@@ -173,7 +173,7 @@ export function normalizeSentiment(cell) {
   // Classification"), 🟡 = Neutral, NOT mixed. Only treat as 'mixed' when
   // the cell literally contains the word "mixed" (or a near-synonym), which
   // is what the agent writes when it actually means a real trade-off.
-  if (/\bmixed\b|cautious|confus/i.test(lower)) return 'mixed';
+  if (text.includes('🟠') || /\bmixed\b|cautious|confus/i.test(lower)) return 'mixed';
   if (text.includes('🟡') || text.includes('⚪') || /neutral/i.test(lower)) return 'neutral';
   return 'unknown';
 }

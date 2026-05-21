@@ -1078,6 +1078,12 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
         <div class="view-toolbar" role="toolbar" aria-label="Conversation tools">
           <button type="button" data-launch-cmd="scout-creators" data-launch-title="Creator trajectories" data-launch-desc="View creator trajectories, log outreach, track sentiment outcomes. (Best run in chat — this command is interactive.)" data-launch-chat-only="true">Creators &amp; interventions</button>
         </div>
+        <div class="conv-tabs" role="tablist" aria-label="Conversation type">
+          <button type="button" class="conv-tab is-active" role="tab" aria-selected="true" data-conv-tab="all">All <span class="conv-tab-count" data-count-for="all">0</span></button>
+          <button type="button" class="conv-tab" role="tab" aria-selected="false" data-conv-tab="conversations">Conversations <span class="conv-tab-count" data-count-for="conversations">0</span></button>
+          <button type="button" class="conv-tab" role="tab" aria-selected="false" data-conv-tab="mentions">Mentions <span class="conv-tab-count" data-count-for="mentions">0</span></button>
+          <span class="conv-tab-hint hint">Conversations = threaded discussion (Reddit, HN, replies). Mentions = drive-by posts naming the product.</span>
+        </div>
         <div class="conv-toolbar">
           <input id="conv-q" type="search" placeholder="Search full archive (summary, author, platform)…" />
           <select id="conv-sentiment" aria-label="Filter by sentiment" title="Sentiment">

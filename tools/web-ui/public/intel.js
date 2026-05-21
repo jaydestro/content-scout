@@ -4,10 +4,15 @@
  * Backed by /api/conversations, /api/authors, /api/source-health, /api/sentiment-summary.
  */
 (function () {
+  // Emoji convention matches the agent spec (see
+  // .github/agents/content-scout.agent.md, "Sentiment Classification"):
+  // 🟢 positive · 🟡 neutral · 🔴 negative · 🟠 mixed (rare; requires
+  // explicit trade-off). ⚪ would also be valid for neutral but the agent
+  // emits 🟡, so we mirror that here for visual consistency with reports.
   const SENTIMENT_DOT = {
     positive: '🟢',
-    neutral: '⚪',
-    mixed: '🟡',
+    neutral: '🟡',
+    mixed: '🟠',
     negative: '🔴',
     unknown: '·',
   };
@@ -25,6 +30,32 @@
   // Keys of conversations the user has checkbox-selected. Cleared on each
   // re-render so it tracks the currently visible set.
   let _selectedKeys = new Set();
+  // Active tab: 'all' | 'conversations' | 'mentions'. The split is based
+  // on _convKind() — section name + engagement signals + platform.
+  let _activeTab = 'all';
+
+  // Classify a conversation row as 'conversation' (threaded discussion the
+  // team might want to reply to) or 'mention' (drive-by post just naming
+  // the product). Heuristic:
+  //   - section "conversations" or "tracked_conv" → conversation
+  //   - reddit/hn/stackoverflow/discord platforms → conversation (forums)
+  //   - engagement.replies > 0 → conversation (someone is talking)
+  //   - everything else under "social"/"mentions" → mention
+  function _convKind(c) {
+    const sec = String(c.section || '').toLowerCase();
+    if (sec === 'conversations' || sec === 'tracked_conv' || sec === 'mentions') {
+      return sec === 'mentions' ? 'mention' : 'conversation';
+    }
+    const plat = String(c.platform || '').toLowerCase();
+    if (/^(reddit|hacker.?news|hn|stack.?overflow|stackexchange|discord|slack|github|dev\.to)/.test(plat)) {
+      return 'conversation';
+    }
+    // engagement string format: "replies:1 retweets:0 likes:0"
+    const eng = String(c.engagement || '');
+    const m = eng.match(/replies:(\d+)/i) || eng.match(/comments:(\d+)/i);
+    if (m && parseInt(m[1], 10) > 0) return 'conversation';
+    return 'mention';
+  }
   // Currently chosen `include` mode for /api/conversations.
   function _currentInclude() {
     return document.getElementById('conv-show')?.value || 'open';
@@ -257,9 +288,14 @@
 
   function _convRowHtml(c) {
     const dot = SENTIMENT_DOT[c.sentiment] || '·';
+    const kind = _convKind(c);
+    const platLabel = c.platform || 'source';
     const link = c.url
-      ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">Open ↗</a>`
+      ? `<a class="conv-open-link" href="${esc(c.url)}" target="_blank" rel="noopener" title="Open original ${esc(platLabel)} post in a new tab">View on ${esc(platLabel)} ↗</a>`
       : '';
+    const summaryHtml = c.url
+      ? `<a class="conv-summary-link" href="${esc(c.url)}" target="_blank" rel="noopener" title="Open original post">${esc(c.summary || '')}</a>`
+      : esc(c.summary || '');
     const replyBtn =
       c.url && (c.sentiment === 'negative' || c.sentiment === 'mixed') && !c.isClosed
         ? `<button type="button" class="conv-reply-btn" data-url="${esc(
@@ -365,6 +401,29 @@
           (c.author || '').toLowerCase().includes(q) ||
           (c.platform || '').toLowerCase().includes(q)
       );
+    }
+
+    // Tab counts reflect everything that passed the other filters, so the
+    // user sees how many items each tab would show without switching.
+    let countAll = 0, countConv = 0, countMen = 0;
+    for (const c of convs) {
+      countAll++;
+      if (_convKind(c) === 'conversation') countConv++;
+      else countMen++;
+    }
+    const setCount = (tab, n) => {
+      const el = document.querySelector(`.conv-tab-count[data-count-for="${tab}"]`);
+      if (el) el.textContent = String(n);
+    };
+    setCount('all', countAll);
+    setCount('conversations', countConv);
+    setCount('mentions', countMen);
+
+    // Apply the active-tab filter last so it doesn't skew the per-tab counts.
+    if (_activeTab === 'conversations') {
+      convs = convs.filter((c) => _convKind(c) === 'conversation');
+    } else if (_activeTab === 'mentions') {
+      convs = convs.filter((c) => _convKind(c) === 'mention');
     }
 
     // Split into recent (≤14d) vs older (bucketed by ISO week). When the
@@ -998,6 +1057,33 @@
   }
 
   function wireConversationsUI() {
+    // Tabs: All / Conversations / Mentions. Persisted to localStorage.
+    try {
+      const savedTab = localStorage.getItem('cs.conv.activeTab');
+      if (savedTab === 'all' || savedTab === 'conversations' || savedTab === 'mentions') {
+        _activeTab = savedTab;
+      }
+    } catch {}
+    document.querySelectorAll('.conv-tab').forEach((btn) => {
+      if (btn.dataset.wired) return;
+      btn.dataset.wired = '1';
+      const tab = btn.dataset.convTab;
+      // Sync initial active state with restored _activeTab.
+      const isActive = tab === _activeTab;
+      btn.classList.toggle('is-active', isActive);
+      btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      btn.addEventListener('click', () => {
+        if (!tab || tab === _activeTab) return;
+        _activeTab = tab;
+        try { localStorage.setItem('cs.conv.activeTab', tab); } catch {}
+        document.querySelectorAll('.conv-tab').forEach((b) => {
+          const on = b.dataset.convTab === tab;
+          b.classList.toggle('is-active', on);
+          b.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        renderConversations();
+      });
+    });
     ['conv-q', 'conv-sentiment', 'conv-platform', 'conv-timeframe', 'conv-jobs', 'conv-needs-reply'].forEach((id) => {
       const el = document.getElementById(id);
       if (el && !el.dataset.wired) {
