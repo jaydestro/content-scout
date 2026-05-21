@@ -22,6 +22,53 @@
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
     }[c]));
 
+  // Render a summary string as HTML: escape everything, convert
+  // [text](url) markdown links and bare http(s) URLs into anchors that
+  // open in a new tab, and preserve newlines. Trailing punctuation
+  // (.,;:!?) is stripped from autolinked URLs so prose like "see foo.com."
+  // doesn't capture the period. Only http(s) URLs are linked.
+  const _SAFE_URL = /^https?:\/\//i;
+  function renderSummaryHtml(text) {
+    const raw = String(text == null ? '' : text);
+    if (!raw) return '';
+    // Tokenize so each link's url + text are escaped independently and
+    // never re-scanned for autolinks.
+    const parts = [];
+    let i = 0;
+    const mdLink = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+    let m;
+    while ((m = mdLink.exec(raw)) !== null) {
+      if (m.index > i) parts.push({ t: 'text', v: raw.slice(i, m.index) });
+      parts.push({ t: 'link', href: m[2], label: m[1] });
+      i = m.index + m[0].length;
+    }
+    if (i < raw.length) parts.push({ t: 'text', v: raw.slice(i) });
+    const out = [];
+    for (const p of parts) {
+      if (p.t === 'link') {
+        if (_SAFE_URL.test(p.href)) {
+          out.push(`<a href="${esc(p.href)}" target="_blank" rel="noopener">${esc(p.label)}</a>`);
+        } else {
+          out.push(esc(`[${p.label}](${p.href})`));
+        }
+        continue;
+      }
+      // Autolink bare URLs in plain-text segments.
+      const segments = p.v.split(/(https?:\/\/[^\s<>"')]+)/g);
+      for (const seg of segments) {
+        if (_SAFE_URL.test(seg)) {
+          const trail = seg.match(/[.,;:!?)]+$/);
+          const url = trail ? seg.slice(0, -trail[0].length) : seg;
+          out.push(`<a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a>`);
+          if (trail) out.push(esc(trail[0]));
+        } else {
+          out.push(esc(seg));
+        }
+      }
+    }
+    return out.join('');
+  }
+
   // ============================================================
   // Conversations view
   // ============================================================
@@ -293,9 +340,7 @@
     const link = c.url
       ? `<a class="conv-open-link" href="${esc(c.url)}" target="_blank" rel="noopener" title="Open original ${esc(platLabel)} post in a new tab">View on ${esc(platLabel)} ↗</a>`
       : '';
-    const summaryHtml = c.url
-      ? `<a class="conv-summary-link" href="${esc(c.url)}" target="_blank" rel="noopener" title="Open original post">${esc(c.summary || '')}</a>`
-      : esc(c.summary || '');
+    const summaryHtml = renderSummaryHtml(c.summary || '');
     const replyBtn =
       c.url && (c.sentiment === 'negative' || c.sentiment === 'mixed') && !c.isClosed
         ? `<button type="button" class="conv-reply-btn" data-url="${esc(

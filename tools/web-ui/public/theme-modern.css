@@ -1493,18 +1493,22 @@ aside li[data-name] .entry-open:hover {
 }
 .conv-reply-btn:hover { filter: brightness(1.1); }
 
-/* Clickable summary text and "View on X ↗" pill — let users jump to the
-   original post so they can see what they're about to reply to. */
-.conv-summary-link {
-  color: inherit;
-  text-decoration: none;
-  border-bottom: 1px dashed transparent;
-  transition: border-color 0.12s, color 0.12s;
-}
-.conv-summary-link:hover,
-.conv-summary-link:focus-visible {
+/* Inline links inside summary text and the "View on X ↗" pill — let
+   users jump to the original post so they can see what they're about
+   to reply to. Links rendered by renderSummaryHtml() (markdown
+   `[text](url)` and autolinked bare URLs) get the same dashed-underline
+   treatment. */
+.conv-summary a {
   color: var(--accent, #818cf8);
-  border-bottom-color: var(--accent, #818cf8);
+  text-decoration: none;
+  border-bottom: 1px dashed currentColor;
+  transition: filter 0.12s;
+  word-break: break-word;
+}
+.conv-summary a:hover,
+.conv-summary a:focus-visible {
+  filter: brightness(1.2);
+  border-bottom-style: solid;
 }
 .conv-open-link {
   display: inline-block;
