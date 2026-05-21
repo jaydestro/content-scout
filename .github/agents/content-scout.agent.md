@@ -326,6 +326,20 @@ For every conversation item, assign a sentiment. **Sentiment is about the author
 **Confidence on directional / migration items:**
 Migration/switching items always carry `sentiment_confidence: medium` at best unless the post text explicitly states the direction with both endpoints named. If only one endpoint is named, mark `low` and let the human confirm.
 
+**Common misclassification patterns — DO NOT trigger on these:**
+
+1. **Tutorials, talks, demos, books, and courses about our product default to 🟢 Positive** (or 🟡 Neutral if the author is genuinely neutral). The act of publishing educational content about our product is implicit advocacy — the author chose to invest hours teaching it. YouTube tutorials, blog walkthroughs, "let's build X with [our product]" posts, conference sessions, and book chapters all qualify. The lowest sentiment for a tutorial/educational item about our product is 🟡, never 🔴.
+
+2. **Tutorials with troubleshooting, "common pitfalls", or "gotchas" sections stay positive.** Acknowledging difficulty inside a teaching artifact is pedagogy, not critique. A "5 mistakes to avoid with [our product]" video by a community educator is 🟢, not 🔴 or "mixed".
+
+3. **Negation phrases in body text are NOT sentiment signals.** Phrases like "are not", "is not", "do not", "n't", "no longer", "without" only count when they negate an evaluative sentence whose subject is OUR product and whose predicate is evaluative (good/bad/recommended/working/fast/slow). Feature-description negations ("documents are not limited to X", "you do not need to provision throughput", "indexes are not required for…") are neutral framing — often positive, since they describe capabilities or remove friction.
+
+4. **Provocative or rhetorical titles are framing, not critique.** Titles like "Your EF Core Entities Are Not Your Domain Objects", "The Hidden Tax of Relational Development", "The Sharding Mistake That Crashes EVERY Database", "Why X Is Broken" are hooks designed to set up a teaching moment about our product. Always read the body before scoring. If the body teaches or recommends our product, the stance is 🟢 or 🟡.
+
+5. **Use 🟠 Mixed (or `sentiment: "mixed"`) only when both elements are present in the same item:** an explicit positive claim about our product AND an explicit reservation about our product. Absent that real trade-off, default to the single sentiment that is present, or 🟡 Neutral. Do not infer "mixed" from ambivalent-sounding wording, hedges, or the mere presence of a "limitations" subsection in a tutorial.
+
+6. **When sentiment is inferred from a single ambiguous phrase rather than an evaluative sentence, set `sentiment_confidence: low`** so the item lands in the human-triage bucket instead of skewing counts. Better to under-classify with low confidence than to over-classify with false confidence.
+
 #### Feature Request & Pain Point Flagging
 When scanning conversations, flag items that match these patterns:
 - **Feature request:** "I wish...", "it would be great if...", "is there a way to...", "does [product] support...", "feature request:", "please add"

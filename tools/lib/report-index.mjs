@@ -169,8 +169,12 @@ export function normalizeSentiment(cell) {
   const lower = text.toLowerCase();
   if (text.includes('🟢') || /positive|advoc/i.test(lower)) return 'positive';
   if (text.includes('🔴') || /negative|critic|frustrat/i.test(lower)) return 'negative';
-  if (text.includes('🟡') || /mixed|cautious|confus/i.test(lower)) return 'mixed';
-  if (/neutral/i.test(lower)) return 'neutral';
+  // Per the agent spec (.github/agents/content-scout.agent.md, "Sentiment
+  // Classification"), 🟡 = Neutral, NOT mixed. Only treat as 'mixed' when
+  // the cell literally contains the word "mixed" (or a near-synonym), which
+  // is what the agent writes when it actually means a real trade-off.
+  if (/\bmixed\b|cautious|confus/i.test(lower)) return 'mixed';
+  if (text.includes('🟡') || text.includes('⚪') || /neutral/i.test(lower)) return 'neutral';
   return 'unknown';
 }
 
