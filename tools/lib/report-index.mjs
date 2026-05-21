@@ -111,7 +111,7 @@ function splitMarkdownTableRow(row) {
   return cells;
 }
 
-function canonicalUrlKey(url) {
+export function canonicalUrlKey(url) {
   const raw = String(url || '').trim();
   if (!/^https?:\/\//i.test(raw)) return '';
   try {
@@ -231,6 +231,9 @@ export function parseReportFromJson(rawOrObj, fileName, options = {}) {
 
     if (isConversation) {
       const sentiment = normalizeSentiment(it.sentiment);
+      const sentimentConfidence = typeof it.sentiment_confidence === 'string'
+        ? it.sentiment_confidence.toLowerCase()
+        : null;
       sentimentTotals[sentiment] = (sentimentTotals[sentiment] || 0) + 1;
       const community = (it.group || '').toLowerCase();
       const isProduct =
@@ -248,6 +251,7 @@ export function parseReportFromJson(rawOrObj, fileName, options = {}) {
         author: authorName,
         summary: title,
         sentiment,
+        sentimentConfidence,
         community: isProduct ? 'product' : 'community',
         communityRaw: community,
         engagement,
@@ -467,6 +471,48 @@ async function loadBrowserScanBodies(reportsDir, slug) {
   return map;
 }
 
+// Load the sentiment overrides file written by the bulk-recheck endpoint.
+// Keys are canonical URLs; values are { sentiment, confidence, rationale,
+// model, provider, reviewedAt }. Returns an empty Map when missing.
+async function loadSentimentOverrides(reportsDir) {
+  const file = path.join(reportsDir, '.sentiment-overrides.json');
+  try {
+    const raw = await fs.readFile(file, 'utf8');
+    const obj = JSON.parse(raw);
+    const map = new Map();
+    for (const [url, v] of Object.entries(obj || {})) {
+      const key = canonicalUrlKey(url);
+      if (key && v && typeof v === 'object') map.set(key, v);
+    }
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
+// Apply LLM-derived sentiment overrides on top of whatever the agent stamped
+// at scan time. Lets the user re-classify a batch of low-confidence neutrals
+// from the UI without re-running the scan.
+function applySentimentOverrides(parsed, overrides) {
+  if (!parsed || !overrides || !overrides.size) return;
+  const convs = Array.isArray(parsed.conversations) ? parsed.conversations : [];
+  const totals = parsed.sentimentTotals || emptySentimentTotals();
+  for (const c of convs) {
+    const key = canonicalUrlKey(c.url);
+    if (!key) continue;
+    const hit = overrides.get(key);
+    if (!hit || !hit.sentiment) continue;
+    const next = normalizeSentiment(hit.sentiment);
+    if (next === c.sentiment) continue;
+    if (totals[c.sentiment] != null) totals[c.sentiment] = Math.max(0, totals[c.sentiment] - 1);
+    totals[next] = (totals[next] || 0) + 1;
+    c.sentiment = next;
+    c.sentimentConfidence = (hit.confidence || 'medium').toLowerCase();
+    c.sentimentOverridden = true;
+  }
+  parsed.sentimentTotals = totals;
+}
+
 // Mutates the parsed report in place to backfill conversation summaries from
 // browser-scan sidecar bodies. The per-report JSON sidecar has no body field
 // for social posts, so without this step LinkedIn / X / Reddit cards render
@@ -504,13 +550,17 @@ export async function loadReport(reportsDir, fileName) {
       parseOptions = { productTeamNames: parseProductTeamNamesFromConfig(await fs.readFile(configPath, 'utf8')) };
     } catch {}
   }
-  const bodyMap = await loadBrowserScanBodies(reportsDir, slug);
+  const [bodyMap, overrides] = await Promise.all([
+    loadBrowserScanBodies(reportsDir, slug),
+    loadSentimentOverrides(reportsDir),
+  ]);
   const jsonName = fileName.replace(/\.md$/, '.json');
   const jsonPath = path.join(reportsDir, jsonName);
   try {
     const rawJson = await fs.readFile(jsonPath, 'utf8');
     const parsed = { source: 'json', ...parseReportFromJson(rawJson, fileName, parseOptions) };
     enrichConversationsWithBodies(parsed, bodyMap);
+    applySentimentOverrides(parsed, overrides);
     return parsed;
   } catch {
     // Sidecar missing or malformed — fall back to markdown.
@@ -519,6 +569,7 @@ export async function loadReport(reportsDir, fileName) {
     const raw = await fs.readFile(path.join(reportsDir, fileName), 'utf8');
     const parsed = { source: 'md', ...parseReport(raw, fileName, parseOptions) };
     enrichConversationsWithBodies(parsed, bodyMap);
+    applySentimentOverrides(parsed, overrides);
     return parsed;
   } catch {
     return null;

@@ -573,6 +573,7 @@
       });
     });
     _updateBulkBar();
+    _updateRecheckBulkButton();
   }
 
   // ----- Sentiment re-check (local-LLM second opinion) -----------
@@ -683,6 +684,144 @@
       </div>
       ${data.rationale ? `<div class="conv-verdict-rationale">${esc(data.rationale)}</div>` : ''}
     `;
+  }
+
+  // ----- Bulk re-check sentiment for all visible neutrals --------
+
+  // Walk the DOM after every render to figure out how many visible rows are
+  // currently flagged neutral. Update the toolbar button label and visibility.
+  function _updateRecheckBulkButton() {
+    const btn = document.getElementById('conv-recheck-bulk');
+    if (!btn) return;
+    const lbl = document.getElementById('conv-recheck-bulk-count');
+    const list = document.getElementById('conv-list');
+    if (!list) {
+      btn.hidden = true;
+      return;
+    }
+    const keys = _visibleNeutralKeys();
+    if (!keys.length) {
+      btn.hidden = true;
+      return;
+    }
+    btn.hidden = false;
+    if (lbl) lbl.textContent = String(keys.length);
+    btn.dataset.count = String(keys.length);
+  }
+
+  function _visibleNeutralKeys() {
+    const list = document.getElementById('conv-list');
+    if (!list) return [];
+    const keys = [];
+    list.querySelectorAll('.conv-row.sent-neutral').forEach((row) => {
+      if (row.classList.contains('conv-closed') || row.classList.contains('conv-muted')) return;
+      const key = row.dataset.key;
+      if (!key) return;
+      const c = _findConvByKey(key);
+      if (!c || !c.url || !(c.summary || '').trim()) return;
+      keys.push(key);
+    });
+    return keys;
+  }
+
+  async function _recheckBulkNeutrals(btn) {
+    const keys = _visibleNeutralKeys();
+    if (!keys.length) return;
+    const max = 100;
+    const trimmed = keys.slice(0, max);
+    if (keys.length > max) {
+      if (!confirm(`${keys.length} visible neutrals — only the first ${max} will be re-checked in this batch. Continue?`)) return;
+    } else if (trimmed.length > 25) {
+      if (!confirm(`Re-check ${trimmed.length} neutral conversation${trimmed.length === 1 ? '' : 's'} with the local LLM? This can take 1–2 minutes.`)) return;
+    }
+    const origLabel = btn?.innerHTML;
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `🤖 Reviewing 0 / ${trimmed.length}…`;
+    }
+    // Group by report so we can resolve productName once per report.
+    const bySlug = new Map();
+    for (const key of trimmed) {
+      const c = _findConvByKey(key);
+      if (!c) continue;
+      const slug = _slugFromReport(c.report) || '';
+      if (!bySlug.has(slug)) bySlug.set(slug, []);
+      bySlug.get(slug).push(c);
+    }
+    let done = 0;
+    let agreed = 0;
+    let changed = 0;
+    let errored = 0;
+    for (const [slug, items] of bySlug.entries()) {
+      const payload = {
+        slug,
+        items: items.map((c) => ({
+          key: c.key,
+          url: c.url,
+          summary: c.summary || '',
+          author: c.author || '',
+          platform: c.platform || '',
+          currentSentiment: c.sentiment || 'unknown',
+        })),
+      };
+      try {
+        const res = await fetch('/api/sentiment/review-bulk', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || data?.error) {
+          errored += items.length;
+          done += items.length;
+          if (btn) btn.innerHTML = `🤖 Reviewing ${done} / ${trimmed.length}… (error: ${esc(data?.error || res.status)})`;
+          continue;
+        }
+        for (const r of data.results || []) {
+          done++;
+          if (!r.ok) { errored++; continue; }
+          const conv = _findConvByKey(r.key);
+          if (!conv) continue;
+          const newSent = (r.sentiment || conv.sentiment || 'unknown').toLowerCase();
+          if (newSent !== conv.sentiment) {
+            conv.sentiment = newSent;
+            conv.sentimentConfidence = (r.confidence || 'medium').toLowerCase();
+            conv.sentimentOverridden = true;
+            changed++;
+          } else {
+            agreed++;
+          }
+          // Update the row's dot in place so the user sees progress live.
+          const row = document.querySelector(`.conv-row[data-key="${CSS.escape(r.key)}"]`);
+          if (row) {
+            row.classList.remove('sent-neutral', 'sent-positive', 'sent-negative', 'sent-mixed', 'sent-unknown');
+            row.classList.add(`sent-${newSent}`);
+            const dotEl = row.querySelector('.conv-dot');
+            if (dotEl) {
+              dotEl.textContent = SENTIMENT_DOT[newSent] || '·';
+              dotEl.title = newSent;
+            }
+            const verdictEl = row.querySelector('.conv-sentiment-verdict');
+            if (verdictEl) {
+              verdictEl.hidden = false;
+              _renderVerdict(verdictEl, conv, r);
+            }
+          }
+        }
+        if (btn) btn.innerHTML = `🤖 Reviewing ${done} / ${trimmed.length}… (${changed} changed)`;
+      } catch (err) {
+        errored += items.length;
+        done += items.length;
+        if (btn) btn.innerHTML = `🤖 Reviewing ${done} / ${trimmed.length}… (error: ${esc(err.message || err)})`;
+      }
+    }
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origLabel || '🤖 Re-check <span id="conv-recheck-bulk-count">0</span> neutrals';
+    }
+    const msg = `Re-checked ${done} conversation${done === 1 ? '' : 's'}: ${changed} re-classified, ${agreed} confirmed neutral${errored ? `, ${errored} errored` : ''}.`;
+    if (typeof window !== 'undefined' && window.alert) alert(msg);
+    _updateRecheckBulkButton();
   }
 
   // ----- Close / reopen plumbing ---------------------------------
@@ -1156,6 +1295,11 @@
       sentStatusBtn.dataset.wired = '1';
       sentStatusBtn.addEventListener('click', () => _refreshSentimentStatus());
       _refreshSentimentStatus();
+    }
+    const recheckBulkBtn = document.getElementById('conv-recheck-bulk');
+    if (recheckBulkBtn && !recheckBulkBtn.dataset.wired) {
+      recheckBulkBtn.dataset.wired = '1';
+      recheckBulkBtn.addEventListener('click', () => _recheckBulkNeutrals(recheckBulkBtn));
     }
     const mutedCloseBtn = document.getElementById('conv-muted-close');
     if (mutedCloseBtn && !mutedCloseBtn.dataset.wired) {

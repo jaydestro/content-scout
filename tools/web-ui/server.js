@@ -21,6 +21,7 @@ import {
   parseReportFromJson,
   normalizeSentiment,
   classifyItem,
+  canonicalUrlKey,
 } from '../lib/report-index.mjs';
 import {
   ALLOWED_REASONS,
@@ -2681,6 +2682,85 @@ app.post('/api/sentiment/review', express.json({ limit: '64kb' }), async (req, r
       return res.status(502).json({ ...result, ok: false });
     }
     res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Bulk re-check sentiment for many conversation rows in one request. Used by
+// the Conversations toolbar "Re-check N neutrals" button. Persists results to
+// reports/.sentiment-overrides.json so they survive a server restart and get
+// applied during loadReport(). Runs items serially to avoid hammering a local
+// Ollama model with parallel requests.
+app.post('/api/sentiment/review-bulk', express.json({ limit: '2mb' }), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const items = Array.isArray(body.items) ? body.items : [];
+    if (!items.length) return res.status(400).json({ error: 'items[] required' });
+    const MAX = 100;
+    const limited = items.slice(0, MAX);
+    const env = await readEnvObject();
+    if (getSentimentProvider(env) === 'none') {
+      return res.status(400).json({
+        error: 'No sentiment provider configured. Set SENTIMENT_PROVIDER=agent|ollama|openai|custom in .env.',
+      });
+    }
+    const productName = body.productName
+      ? String(body.productName).trim()
+      : await resolveProductName(body.slug || '');
+    const { runner } = await getRunner();
+    const overridesPath = path.join(REPORTS_DIR, '.sentiment-overrides.json');
+    let overrides = {};
+    try {
+      overrides = JSON.parse(await fs.readFile(overridesPath, 'utf8')) || {};
+    } catch {}
+    const results = [];
+    for (const raw of limited) {
+      const summary = String(raw?.summary || '').trim();
+      const url = String(raw?.url || '').trim();
+      const key = raw?.key || canonicalUrlKey(url);
+      if (!summary) {
+        results.push({ key, ok: false, error: 'empty summary' });
+        continue;
+      }
+      try {
+        const r = await reviewSentiment(
+          {
+            summary,
+            author: String(raw?.author || '').slice(0, 200),
+            platform: String(raw?.platform || '').slice(0, 80),
+            productName,
+            currentSentiment: String(raw?.currentSentiment || 'unknown').toLowerCase(),
+          },
+          env,
+          { runner, cwd: REPO_ROOT },
+        );
+        if (r?.error) {
+          results.push({ key, ok: false, error: r.error });
+        } else {
+          results.push({ key, ok: true, ...r });
+          if (url) {
+            overrides[url] = {
+              sentiment: r.sentiment,
+              confidence: r.confidence,
+              rationale: r.rationale,
+              provider: r.provider,
+              model: r.model,
+              reviewedAt: new Date().toISOString(),
+            };
+          }
+        }
+      } catch (err) {
+        results.push({ key, ok: false, error: err.message });
+      }
+    }
+    try {
+      await fs.mkdir(REPORTS_DIR, { recursive: true });
+      await fs.writeFile(overridesPath, JSON.stringify(overrides, null, 2));
+    } catch (err) {
+      return res.json({ ok: true, results, persistError: err.message });
+    }
+    res.json({ ok: true, results, persisted: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

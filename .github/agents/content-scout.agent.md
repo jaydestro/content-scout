@@ -340,6 +340,10 @@ Migration/switching items always carry `sentiment_confidence: medium` at best un
 
 6. **When sentiment is inferred from a single ambiguous phrase rather than an evaluative sentence, set `sentiment_confidence: low`** so the item lands in the human-triage bucket instead of skewing counts. Better to under-classify with low confidence than to over-classify with false confidence.
 
+7. **MUST classify every social item individually using its full body text.** When ingesting browser-scan sidecars (Layer 0) for X, LinkedIn, Bluesky, and Reddit, the canonical text for sentiment is the post's `body` field — NOT the title (which is empty for most social posts) and NOT a default. **Bulk-stamping `sentiment: "neutral", sentiment_confidence: "low"` across many items in a section is a quality failure**, not a safety move; it produces an all-yellow Conversations view that destroys the signal the report is supposed to surface. Read every body, apply the rules above, and emit `positive`/`neutral`/`negative` with `high`/`medium`/`low` confidence per-item. If body text is genuinely absent (rare — browser-scan always captures it), then-and-only-then is `neutral`/`low` acceptable, with a `provenance` note `"body_missing": true`.
+
+8. **The JSON sidecar's `sentiment_confidence` field is mandatory and case-sensitive lowercase** (`high`/`medium`/`low`). The web UI's bulk "Re-check N neutrals" button is a backstop for items the agent missed, not a substitute for doing the classification at scan time.
+
 #### Feature Request & Pain Point Flagging
 When scanning conversations, flag items that match these patterns:
 - **Feature request:** "I wish...", "it would be great if...", "is there a way to...", "does [product] support...", "feature request:", "please add"
