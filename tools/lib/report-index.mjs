@@ -471,6 +471,27 @@ async function loadBrowserScanBodies(reportsDir, slug) {
   return map;
 }
 
+// Load the side-cache of post bodies fetched from public APIs (currently
+// only Bluesky — see tools/backfill-bluesky-bodies.mjs). The browser-scan
+// pipeline covers LinkedIn / X / Reddit; this cache covers everything else
+// whose body the agent dropped during ingestion. File is a flat object
+// `{ <canonical-url-key>: { body, fetchedAt, source } }`.
+async function loadCachedBodies(reportsDir) {
+  const file = path.join(reportsDir, '.cached-bodies.json');
+  const map = new Map();
+  try {
+    const raw = await fs.readFile(file, 'utf8');
+    const obj = JSON.parse(raw);
+    for (const [key, v] of Object.entries(obj || {})) {
+      if (!key || !v || typeof v !== 'object') continue;
+      const body = String(v.body || '').trim();
+      if (!body) continue;
+      map.set(key, { body, title: '' });
+    }
+  } catch {}
+  return map;
+}
+
 // Load the sentiment overrides file written by the bulk-recheck endpoint.
 // Keys are canonical URLs; values are { sentiment, confidence, rationale,
 // model, provider, reviewedAt }. Returns an empty Map when missing.
@@ -550,10 +571,16 @@ export async function loadReport(reportsDir, fileName) {
       parseOptions = { productTeamNames: parseProductTeamNamesFromConfig(await fs.readFile(configPath, 'utf8')) };
     } catch {}
   }
-  const [bodyMap, overrides] = await Promise.all([
+  const [browserBodyMap, cachedBodyMap, overrides] = await Promise.all([
     loadBrowserScanBodies(reportsDir, slug),
+    loadCachedBodies(reportsDir),
     loadSentimentOverrides(reportsDir),
   ]);
+  // Browser-scan sidecars take priority over the API-fetched cache when
+  // both have a body for the same URL — the scraped LinkedIn body is
+  // typically richer (hashtags, formatting) than what the public API returns.
+  const bodyMap = new Map(cachedBodyMap);
+  for (const [k, v] of browserBodyMap) bodyMap.set(k, v);
   const jsonName = fileName.replace(/\.md$/, '.json');
   const jsonPath = path.join(reportsDir, jsonName);
   try {
