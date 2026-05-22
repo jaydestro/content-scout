@@ -2104,7 +2104,10 @@ const URL_CHECK_TIMEOUT_MS = 6000;
 async function probeUrl(url) {
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), URL_CHECK_TIMEOUT_MS);
-  const ua = 'Mozilla/5.0 (compatible; ContentScout-LinkCheck/1.0)';
+  // Browser-shaped UA: some hosts (notably x.com / bsky.app / linkedin.com)
+  // return 403/404 to "compatible;" bot UAs even on GET. Pretend to be a
+  // recent Chromium so liveness probes match what a user would actually see.
+  const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
   try {
     let r = await fetch(url, {
       method: 'HEAD',
@@ -2112,8 +2115,11 @@ async function probeUrl(url) {
       signal: ac.signal,
       headers: { 'user-agent': ua, accept: '*/*' },
     });
-    if (r.status === 405 || r.status === 501 || r.status === 403) {
-      // Try GET — some hosts block HEAD or return 403 to it.
+    // Many SPAs (bsky.app, some LinkedIn routes, x.com) return 404 to HEAD
+    // even though the page renders 200 on GET. 4xx that *might* be the
+    // server lying about HEAD support gets a second-chance GET.
+    if (r.status === 404 || r.status === 405 || r.status === 410 || r.status === 501 || r.status === 403) {
+      // Try GET — some hosts block HEAD or return 403/404 to it.
       r = await fetch(url, {
         method: 'GET',
         redirect: 'follow',

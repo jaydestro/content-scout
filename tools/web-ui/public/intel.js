@@ -11,7 +11,7 @@
   // emits 🟡, so we mirror that here for visual consistency with reports.
   const SENTIMENT_DOT = {
     positive: '🟢',
-    neutral: '🟡',
+    neutral: '⚪',
     mixed: '🟠',
     negative: '🔴',
     unknown: '·',
@@ -1706,6 +1706,31 @@
       }
 
       // Render: per-platform breakdown
+      // Helper: extract a leading [text](url) markdown link from a summary
+      // string. YouTube items in particular store their title as
+      // `[Title](https://youtu.be/…)` and have an empty `url` field, which
+      // used to leak raw markdown into the card preview. Returns
+      // `{ text, url }` with `text` always being plain prose (markdown link
+      // collapsed to its label) and `url` set when the source had no
+      // explicit `url` but the summary's first markdown link covers it.
+      const _mdLeadingLink = /^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)\s*/;
+      function extractSamplePreview(c) {
+        const raw = String(c.summary || c.author || '(post)');
+        const m = raw.match(_mdLeadingLink);
+        if (m) {
+          const rest = raw.slice(m[0].length).trim();
+          return {
+            text: rest ? `${m[1]} — ${rest}` : m[1],
+            url: c.url || m[2],
+          };
+        }
+        // Strip any inline markdown link wrappers so prose like
+        // "see [the docs](https://…)" never renders as raw markdown.
+        return {
+          text: raw.replace(/\[([^\]]+)\]\(https?:\/\/[^\s)]+\)/g, '$1'),
+          url: c.url || '',
+        };
+      }
       const platformRows = SOCIAL_PLATFORMS
         .map((p) => {
           const b = byPlatform.get(p.key);
@@ -1713,15 +1738,28 @@
           const c = b.community.length;
           const pr = b.product.length;
           if (!c && !pr) return null;
+          // Pick the first sample whose URL — either explicit or extracted
+          // from a leading markdown link in the summary — is syntactically
+          // valid; fall back to whatever's first if nothing has one.
+          const withUrl = (x) => {
+            const u = (x.url || (String(x.summary || '').match(_mdLeadingLink) || [])[2] || '').trim();
+            return u && isValidPostUrl(u);
+          };
           const sample =
-            b.community.find((x) => isValidPostUrl(x.url)) ||
-            b.product.find((x) => isValidPostUrl(x.url)) ||
+            b.community.find(withUrl) ||
+            b.product.find(withUrl) ||
             b.community[0] ||
             b.product[0];
-          const sampleHasUrl = sample && isValidPostUrl(sample.url);
+          const prev = sample ? extractSamplePreview(sample) : { text: '', url: '' };
+          const sampleHasUrl = !!prev.url && isValidPostUrl(prev.url);
+          const sampleDot = sample
+            ? (SENTIMENT_DOT[sample.sentiment] || SENTIMENT_DOT.unknown)
+            : '';
+          const sentTitle = sample ? esc(sample.sentiment || 'unknown') : '';
           const sampleHtml = sample
             ? `<div class="dash-plat-sample">
-                ${sampleHasUrl ? `<a href="${esc(sample.url)}" class="dash-link" data-check-url="${esc(sample.url)}" data-conv-key="${esc(sample.key || '')}" target="_blank" rel="noopener" title="Open in Conversations (Ctrl/Cmd-click for source)">${esc(trim(sample.summary || sample.author || '(post)', 100))}</a>` : esc(trim(sample.summary || sample.author || '(post)', 100))}
+                <span class="dash-plat-sent" title="${sentTitle}" aria-label="sentiment: ${sentTitle}">${sampleDot}</span>
+                ${sampleHasUrl ? `<a href="${esc(prev.url)}" class="dash-link" data-check-url="${esc(prev.url)}" data-conv-key="${esc(sample.key || '')}" target="_blank" rel="noopener" title="Open in Conversations (Ctrl/Cmd-click for source)">${esc(trim(prev.text, 100))}</a>` : esc(trim(prev.text, 100))}
                 <div class="hint">${esc(sample.author || '')}${sample.author && sample.date ? ' · ' : ''}${esc(sample.date || '')}</div>
               </div>`
             : '';
