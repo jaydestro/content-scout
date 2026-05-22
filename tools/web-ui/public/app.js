@@ -2836,7 +2836,15 @@ function wireListFilter({ inputId, listId, kind }) {
     let visible = 0;
     items.forEach((li) => {
       const name = (li.dataset.name || '').toLowerCase();
-      const matchName = !q || name.includes(q);
+      // Also match the visible title + summary text, so a user typing
+      // "cosmos" matches even when the rail row is now showing the H1
+      // title instead of the raw filename.
+      const titleEl = li.querySelector('.entry-title');
+      const summaryEl = li.querySelector('.entry-summary');
+      const haystack = [name, titleEl?.textContent || '', summaryEl?.textContent || '']
+        .join(' ')
+        .toLowerCase();
+      const matchName = !q || haystack.includes(q);
       li.hidden = !matchName;
       li.classList.remove('content-match');
       if (matchName) visible++;
@@ -2880,16 +2888,187 @@ function wireListFilter({ inputId, listId, kind }) {
   if (input.value) apply();
 }
 
+// Render a single list row for a report or social-posts file. Uses the
+// `meta` blob the server now attaches to each /api/reports entry — the
+// parsed H1 title, a one-line summary, a kind badge, and the report's
+// own date range — so the rail shows what the doc IS instead of just the
+// raw timestamp-slug filename.
+function renderDocListItem(r) {
+  const meta = r.meta || {};
+  const title = escapeAttr(meta.title || r.name);
+  const subject = meta.subjectLabel ? escapeAttr(meta.subjectLabel) : '';
+  const kind = meta.kindLabel ? escapeAttr(meta.kindLabel) : '';
+  const summary = meta.summary ? escapeAttr(meta.summary) : '';
+  const range = meta.dateRange ? escapeAttr(meta.dateRange) : '';
+  // Prefer the filename's authored stamp (date + HHMM) over file mtime so a
+  // file that's been touched by replay/rerun still sorts/reads as its
+  // original run. Falls back to mtime for legacy / non-conforming names.
+  let stamp = '';
+  if (meta.date && meta.time) {
+    const hh = meta.time.slice(0, 2);
+    const mm = meta.time.slice(2, 4);
+    stamp = `${meta.date} ${hh}:${mm}`;
+  } else {
+    stamp = (r.mtime || '').slice(0, 10);
+  }
+  const subtitleBits = [];
+  if (subject && !meta.title?.toLowerCase().includes(subject.toLowerCase())) {
+    subtitleBits.push(subject);
+  }
+  if (range) subtitleBits.push(range);
+  const subtitle = subtitleBits.join(' · ');
+  return `<li data-name="${escapeAttr(r.name)}" title="${escapeAttr(r.name)}">
+        <div class="entry-row">
+          ${kind ? `<span class="entry-kind kind-${escapeAttr(meta.kind || 'doc')}">${kind}</span>` : ''}
+          <span class="entry-title">${title}</span>
+          <a class="entry-open" href="/view/reports/${encodeURIComponent(r.name)}" target="_blank" rel="noopener" title="Open in new window" aria-label="Open ${escapeAttr(r.name)} in new window">↗</a>
+        </div>
+        ${subtitle ? `<div class="entry-subtitle">${subtitle}</div>` : ''}
+        ${summary ? `<div class="entry-summary">${summary}</div>` : ''}
+        <div class="entry-meta"><span class="mtime">${escapeAttr(stamp)}</span></div>
+      </li>`;
+}
+
+// Small HTML-attribute escaper. Avoids pulling in a sanitizer just for
+// list rendering — the values come from our own filesystem and parser,
+// but quoting still matters for titles that contain &, <, ", etc.
+function escapeAttr(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+// --- Reports view: tabbed IA ---------------------------------------
+// The Reports view is now organized by *kind* (Content / Mindshare /
+// Trends / Gaps / CFPs / Conferences / Ask) instead of a flat dump of
+// every markdown file with a row of /scout-* toolbar buttons. Each
+// non-stub tab filters the existing list by the doc-meta kind id, and
+// Trends + Gaps gain a "Compute now" action-bar button that calls the
+// in-browser analytics endpoint (no agent round-trip).
+const REPORTS_TABS = ['content', 'mindshare', 'trends', 'gaps', 'cfps', 'conferences', 'ask'];
+const TAB_TO_KIND = {
+  content: ['content'],
+  mindshare: ['mindshare'],
+  trends: ['trends'],
+  gaps: ['gaps'],
+};
+let _reportsActiveTab = 'content';
+let _reportsCache = null; // last /api/reports payload (so tab switches don't re-fetch)
+
+function setReportsActiveTab(tab) {
+  if (!REPORTS_TABS.includes(tab)) tab = 'content';
+  _reportsActiveTab = tab;
+  document.querySelectorAll('#reports-tabs button').forEach((b) => {
+    const on = b.dataset.tab === tab;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  document.querySelectorAll('#view-reports .tab-panel').forEach((p) => {
+    let show = false;
+    if (p.dataset.panel === 'browse') show = !!TAB_TO_KIND[tab];
+    else show = p.dataset.panel === tab;
+    p.hidden = !show;
+  });
+  renderReportsActionBar(tab);
+  if (TAB_TO_KIND[tab]) applyReportsTabFilter();
+}
+
+function applyReportsTabFilter() {
+  const kinds = TAB_TO_KIND[_reportsActiveTab];
+  if (!kinds) return;
+  const lis = document.querySelectorAll('#reports-list li[data-name]');
+  let firstVisible = null;
+  let visibleCount = 0;
+  lis.forEach((li) => {
+    const k = li.dataset.kind || '';
+    const match = kinds.includes(k);
+    li.hidden = !match;
+    if (match) {
+      visibleCount += 1;
+      if (!firstVisible) firstVisible = li;
+    }
+  });
+  // If the currently-selected row is hidden, auto-select the first visible.
+  const selected = document.querySelector('#reports-list li.selected');
+  if ((!selected || selected.hidden) && firstVisible) firstVisible.click();
+  // If no rows match, clear the article body with a helpful message.
+  if (visibleCount === 0) {
+    const body = $('reports-body');
+    if (body) {
+      body.innerHTML = `<p class="hint">No <strong>${escapeAttr(_reportsActiveTab)}</strong> reports yet. Use the action bar above to compute one, or run the matching <code>/scout-${_reportsActiveTab}</code> command in an agent chat.</p>`;
+      delete body.dataset.name;
+    }
+  }
+}
+
+function renderReportsActionBar(tab) {
+  const bar = $('reports-action-bar');
+  if (!bar) return;
+  if (tab === 'trends') {
+    bar.innerHTML = `
+      <label class="field-inline">Months
+        <input type="number" id="trends-months" value="4" min="2" max="12" />
+      </label>
+      <button type="button" id="btn-trends-compute">+ Compute trends now</button>
+      <span class="hint" id="analytics-status"></span>
+    `;
+    $('btn-trends-compute')?.addEventListener('click', () => computeAnalytics('trends'));
+  } else if (tab === 'gaps') {
+    bar.innerHTML = `
+      <label class="field-inline">Window (days)
+        <input type="number" id="gaps-window" value="30" min="7" max="365" />
+      </label>
+      <button type="button" id="btn-gaps-compute">+ Compute gaps now</button>
+      <span class="hint" id="analytics-status"></span>
+    `;
+    $('btn-gaps-compute')?.addEventListener('click', () => computeAnalytics('gaps'));
+  } else if (tab === 'content' || tab === 'mindshare') {
+    bar.innerHTML = `<span class="hint">Browse existing ${escapeAttr(tab)} reports. New scans land here automatically after <code>/scout-scan</code> completes.</span>`;
+  } else {
+    bar.innerHTML = '';
+  }
+}
+
+async function computeAnalytics(kind) {
+  const slug = (window.activeRoleSlug && window.activeRoleSlug()) || '';
+  const status = $('analytics-status');
+  if (status) status.textContent = 'Computing…';
+  try {
+    let url;
+    if (kind === 'trends') {
+      const months = $('trends-months')?.value || 4;
+      url = `/api/analytics/trends?slug=${encodeURIComponent(slug)}&months=${encodeURIComponent(months)}`;
+    } else if (kind === 'gaps') {
+      const windowDays = $('gaps-window')?.value || 30;
+      url = `/api/analytics/gaps?slug=${encodeURIComponent(slug)}&windowDays=${encodeURIComponent(windowDays)}`;
+    } else return;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      if (status) status.textContent = `error: ${data.error || res.status}`;
+      return;
+    }
+    if (status) status.textContent = `Wrote ${data.fileName}`;
+    await loadReports();
+    // After reload, the tab filter re-applies; openReport the new file.
+    const li = document.querySelector(`#reports-list li[data-name="${data.fileName}"]`);
+    if (li) li.click();
+  } catch (err) {
+    if (status) status.textContent = `error: ${err.message || err}`;
+  }
+}
+
 async function loadReports() {
-  const { reports } = await api('/api/reports');
-  $('reports-list').innerHTML = reports
-    .map((r) => `<li data-name="${r.name}">
-        <span class="entry-name">${r.name}</span>
-        <a class="entry-open" href="/view/reports/${encodeURIComponent(r.name)}" target="_blank" rel="noopener" title="Open in new window" aria-label="Open ${r.name} in new window">↗</a>
-        <span class="mtime">${r.mtime.slice(0, 10)}</span>
-      </li>`)
-    .join('') || '<li class="hint">No reports yet.</li>';
-  $('reports-list').querySelectorAll('li[data-name]').forEach((li) => {
+  const payload = await api('/api/reports');
+  _reportsCache = payload;
+  const { reports } = payload;
+  $('reports-list').innerHTML = reports.map(renderDocListItem).join('')
+    || '<li class="hint">No reports yet.</li>';
+  // Stamp every <li> with its kind so the tab filter can show/hide
+  // without a re-render.
+  $('reports-list').querySelectorAll('li[data-name]').forEach((li, idx) => {
+    const meta = reports[idx]?.meta || {};
+    li.dataset.kind = meta.kind || 'doc';
     li.addEventListener('click', async (e) => {
       // Don't hijack clicks on the "open in new window" link.
       if (e.target.closest('.entry-open')) return;
@@ -2897,23 +3076,114 @@ async function loadReports() {
       li.classList.add('selected');
       const r = await api(`/api/reports/${encodeURIComponent(li.dataset.name)}`);
       renderDocBody($('reports-body'), { name: li.dataset.name, html: r.html, kind: 'reports' });
+      $('reports-body').dataset.name = li.dataset.name;
     });
   });
-  // Auto-open the most recent report (list is sorted desc by mtime) so the
-  // page never lands on an empty viewer.
-  const body = $('reports-body');
-  const first = $('reports-list').querySelector('li[data-name]');
-  if (first && body && !body.dataset.name) first.click();
   wireListFilter({ inputId: 'reports-filter', listId: 'reports-list', kind: 'reports' });
+  // Apply tab filter + open the first matching row.
+  setReportsActiveTab(_reportsActiveTab);
 }
+
+// Wire the tab strip + Ask panel once the DOM is ready. The Reports view
+// is rendered into the page on load, so these elements exist on first paint.
+document.addEventListener('click', (e) => {
+  const tabBtn = e.target.closest('#reports-tabs button[data-tab]');
+  if (tabBtn) {
+    e.preventDefault();
+    setReportsActiveTab(tabBtn.dataset.tab);
+    return;
+  }
+  const chip = e.target.closest('[data-ask-chip]');
+  if (chip) {
+    e.preventDefault();
+    fillAskChip(chip.dataset.askChip);
+  }
+});
+
+function fillAskChip(kind) {
+  const ta = $('ask-prompt');
+  if (!ta) return;
+  const slug = (window.activeRoleSlug && window.activeRoleSlug()) || '<product>';
+  const selectedName =
+    document.querySelector('#reports-list li.selected')?.dataset.name || '';
+  const prompts = {
+    replay: selectedName
+      ? `Replay the saved scan ${selectedName} with stricter filters: minimum engagement = 5, minimum score = 7. Compare kept vs dropped items.`
+      : 'Open the Content tab, select a saved scan, then re-click this chip to fill in the filename.',
+    seo: 'Run an SEO audit on this URL: <paste URL>. Score title, description, headings, internal links, structured data, media alt text, technical signals, and LLM-readiness; suggest concrete rewrites.',
+    cfp: `Find open Calls for Papers for ${slug} over the next 90 days. Prefer Sessionize / Pretalx / typeform-based CFPs over awards or "register interest" pages. Include deadline, audience fit, and submission URL.`,
+    conf: `List upcoming developer-focused conferences in the next 6 months where ${slug} would land well — bias toward Linux Foundation events, KubeCon, language/runtime confs, and AI app-developer venues.`,
+    summary: `Summarize the last 30 days of ${slug} mentions across reports. Group by topic tag, call out sentiment shifts, and flag any single-source spikes that need verification.`,
+    recommend: `Based on the gap analysis + trends for ${slug}, recommend three blog or video topics we should publish in the next two weeks. For each, cite the gap or rising trend that motivates it.`,
+  };
+  ta.value = prompts[kind] || '';
+  ta.focus();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const sendBtn = document.getElementById('ask-send');
+  const stopBtn = document.getElementById('ask-stop');
+  const outEl = document.getElementById('ask-output');
+  const metaEl = document.getElementById('ask-meta');
+  let askSrc = null;
+  sendBtn?.addEventListener('click', async () => {
+    const prompt = document.getElementById('ask-prompt')?.value.trim();
+    if (!prompt) { if (metaEl) metaEl.textContent = 'Enter a prompt first.'; return; }
+    const slug = (window.activeRoleSlug && window.activeRoleSlug()) || '';
+    if (outEl) outEl.textContent = '';
+    if (metaEl) metaEl.textContent = 'Starting…';
+    sendBtn.disabled = true;
+    try {
+      const res = await fetch('/api/runs', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ command: 'custom', args: { slug, prompt } }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (metaEl) metaEl.textContent = data.error || 'error';
+        if (outEl && data.prompt) outEl.textContent = `Prompt:\n\n${data.prompt}\n\nSet SCOUT_RUNNER to execute, or paste this into your agent chat.`;
+        sendBtn.disabled = false;
+        return;
+      }
+      if (metaEl) metaEl.textContent = `Running: ${data.command || 'ask'}`;
+      if (stopBtn) stopBtn.hidden = false;
+      askSrc = new EventSource(`/api/runs/${data.id}/stream`);
+      askSrc.onmessage = (ev) => {
+        try {
+          const { chunk } = JSON.parse(ev.data);
+          if (outEl) { outEl.textContent += chunk; outEl.scrollTop = outEl.scrollHeight; }
+        } catch {}
+      };
+      askSrc.addEventListener('done', (ev) => {
+        try {
+          const { status } = JSON.parse(ev.data);
+          if (metaEl) metaEl.textContent = `Done: ${status}`;
+        } catch {}
+        if (stopBtn) stopBtn.hidden = true;
+        sendBtn.disabled = false;
+        askSrc?.close();
+        askSrc = null;
+      });
+      askSrc.onerror = () => { askSrc?.close(); askSrc = null; sendBtn.disabled = false; };
+    } catch (err) {
+      if (metaEl) metaEl.textContent = `error: ${err.message || err}`;
+      sendBtn.disabled = false;
+    }
+  });
+  stopBtn?.addEventListener('click', () => {
+    askSrc?.close();
+    askSrc = null;
+    stopBtn.hidden = true;
+    sendBtn.disabled = false;
+    if (metaEl) metaEl.textContent = 'Stopped.';
+  });
+});
 async function loadSocial() {
   const { social } = await api('/api/reports');
+  // Same row renderer, but the open-in-window link should hit /view/social/.
   $('social-list').innerHTML = social
-    .map((r) => `<li data-name="${r.name}">
-        <span class="entry-name">${r.name}</span>
-        <a class="entry-open" href="/view/social/${encodeURIComponent(r.name)}" target="_blank" rel="noopener" title="Open in new window" aria-label="Open ${r.name} in new window">↗</a>
-        <span class="mtime">${r.mtime.slice(0, 10)}</span>
-      </li>`)
+    .map((r) => renderDocListItem(r).replace('/view/reports/', '/view/social/'))
     .join('') || '<li class="hint">No social posts yet.</li>';
   $('social-list').querySelectorAll('li[data-name]').forEach((li) => {
     li.addEventListener('click', async (e) => {
