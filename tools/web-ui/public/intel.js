@@ -6,9 +6,9 @@
 (function () {
   // Emoji convention matches the agent spec (see
   // .github/agents/content-scout.agent.md, "Sentiment Classification"):
-  // 🟢 positive · 🟡 neutral · 🔴 negative · 🟠 mixed (rare; requires
-  // explicit trade-off). ⚪ would also be valid for neutral but the agent
-  // emits 🟡, so we mirror that here for visual consistency with reports.
+  // 🟢 positive · ⚪ neutral · 🔴 negative · 🟠 mixed (rare; requires
+  // explicit trade-off). Keep this aligned with the agent spec and
+  // dashboard sentiment pills.
   const SENTIMENT_DOT = {
     positive: '🟢',
     neutral: '⚪',
@@ -1655,7 +1655,7 @@
         // Hide buckets that are empty so "0 mixed" doesn't waste a slot when
         // the classifier (intentionally restrictive) finds no items there.
         // The 🟠 mixed glyph matches the per-card sentiment dot in
-        // SENTIMENT_DOT; 🟡 was an older inconsistent value that collided
+        // SENTIMENT_DOT; yellow was an older inconsistent value that collided
         // with the legacy neutral dot.
         const pills = [];
         if (totals.positive) pills.push(`<span class="pill pill-pos" title="Advocates">🟢 ${totals.positive} advocate${totals.positive === 1 ? '' : 's'}</span>`);
@@ -1788,7 +1788,7 @@
         ? `<details class="dash-needs-card" ${needs.length <= 3 ? 'open' : ''}>
             <summary><strong>Needs reply</strong> <span class="hint">${needs.length} item${needs.length === 1 ? '' : 's'}</span></summary>
             ${needs.slice(0, 5).map((c) => {
-              const dot = c.sentiment === 'negative' ? '🔴' : '🟡';
+              const dot = c.sentiment === 'negative' ? '🔴' : '🟠';
               const tone = c.sentiment === 'negative' ? 'critical' : 'mixed';
               const hasUrl = isValidPostUrl(c.url);
               const link = hasUrl
@@ -1971,7 +1971,7 @@
             <div class="sent-legend">
               ${t.positive ? `🟢 ${t.positive}` : ''}
               ${t.neutral ? `⚪ ${t.neutral}` : ''}
-              ${t.mixed ? `� ${t.mixed}` : ''}
+              ${t.mixed ? `🟠 ${t.mixed}` : ''}
               ${t.negative ? `🔴 ${t.negative}` : ''}
             </div>
           </div>`;

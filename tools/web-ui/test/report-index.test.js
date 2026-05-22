@@ -3,7 +3,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { parseProductTeamNamesFromConfig, parseReport, parseReportFromJson, loadReport } from '../../lib/report-index.mjs';
+import { normalizeSentiment, parseProductTeamNamesFromConfig, parseReport, parseReportFromJson, loadReport } from '../../lib/report-index.mjs';
+
+test('normalizeSentiment treats white/yellow as neutral and orange as mixed', () => {
+  assert.equal(normalizeSentiment('⚪ Neutral'), 'neutral');
+  assert.equal(normalizeSentiment('🟡 Neutral'), 'neutral');
+  assert.equal(normalizeSentiment('🟠 Mixed'), 'mixed');
+});
 
 test('parseReport drops conversation rows that duplicate numbered content URLs', () => {
   const report = String.raw`

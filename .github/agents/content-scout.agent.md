@@ -289,7 +289,8 @@ The config file specifies which networks are enabled. For each enabled source, u
 | **Poster bio/context** | Brief context — follower count, bio snippet, or affiliation if visible | When available |
 | **Post date** | When the post was published | Always |
 | **Post content/summary** | The text of the post or a summary (first 280 chars minimum) | Always |
-| **Sentiment** | 🟢 Positive, 🟡 Neutral, or 🔴 Negative (see Sentiment Classification below) | Always |
+| **Sentiment** | 🟢 Positive, ⚪ Neutral, 🟠 Mixed, 🔴 Negative, or Unknown (see Sentiment Classification below) | Always |
+| **Sentiment confidence** | `high`, `medium`, or `low` confidence in the sentiment label | Always |
 | **Engagement metrics** | Upvotes, likes, retweets, replies, comments, views — whatever the platform exposes | When available |
 | **Thread/replies** | If the post is part of a thread or has notable replies, summarize the thread context | When available |
 | **Subreddit/community** | For Reddit: the subreddit. For LinkedIn: the group. For Bluesky: any feed context | When available |
@@ -302,45 +303,58 @@ The config file specifies which networks are enabled. For each enabled source, u
 
 #### Sentiment Classification
 
-For every conversation item, assign a sentiment. **Sentiment is about the author's stance toward OUR product** (the product configured in `scout-config-*.prompt.md`), not toward technology in general.
+For every retained conversation item, assign a sentiment. **Sentiment is about the author's stance toward OUR product** (the product configured in `scout-config-*.prompt.md`), not toward technology in general.
+
+**Decision order — MUST follow:**
+
+1. **Relevance / drop gate first.** Hiring, recruiting, job-search, resume, portfolio-availability, spam, and generic skills-wall posts are dropped under the No Hiring Content rule before sentiment is assigned. Do not keep them as neutral just because they mention the product.
+2. **Subject gate second.** If the post is retained but the product is only a passing stack mention, data-source mention, hashtag, or one tool in a list, assign `unknown` (or drop it if it fails the relevancy gate). Neutral is for on-topic posts with no verdict; it is not a safe fallback for off-topic content.
+3. **Stance gate third.** Identify the author's stance toward our product only. Sentiment toward Azure, AI, a customer project, a hiring role, or a competing product does not count unless the author connects it directly to our product.
+4. **Confidence last.** Assign `sentiment_confidence` after choosing the label. Low confidence is a triage signal, not permission to bulk-stamp uncertain items as neutral.
 
 - **Positive (🟢):**
   - Praise of our product, success story, recommendation, "this worked great", "solved my problem"
   - **Competitor-win migrations:** author is migrating/switching/moving **FROM a competitor TO our product** (e.g. "we moved from Aerospike to Azure Cosmos DB", "migrated from DynamoDB to Cosmos"). This is a customer win — classify as 🟢, NOT 🔴.
   - "Choosing our product because…", "we picked [our product] over [competitor]".
-- **Neutral (🟡):**
-  - Question, how-to, informational, comparison inquiry without a verdict.
+- **Neutral (⚪):**
+  - On-topic question, how-to, informational post, or comparison inquiry without a verdict.
   - Generic migration / "how do I migrate" mentions where the direction is unclear or doesn't involve our product as winner or loser.
   - Announcements, release notes, retweets without commentary.
+- **Mixed (🟠):**
+  - BOTH an explicit positive claim about our product AND an explicit reservation about our product in the same item.
+  - Real trade-off statements such as "Cosmos DB solved our scale problem, but RU costs surprised us" or "love the global distribution, still struggling with partition-key design."
 - **Negative (🔴):**
   - Complaint, frustration, bug report about our product, "doesn't work", "why can't I".
   - **Detractor migrations:** author is migrating/switching/moving **FROM our product TO a competitor** (e.g. "we left Cosmos DB for MongoDB Atlas"). Only this direction is 🔴.
   - "Chose [competitor] because [our product] failed at X".
+- **Unknown:**
+  - Not enough context, not really about our product, or only a passing product mention after the relevance gate.
+  - Retained archival/imported rows whose body text is unavailable and cannot be restored from source/cache. Prefer `unknown` over `neutral` when the stance cannot be assessed.
 
 **Directional rule — MUST follow:**
-> The phrases "migrate from", "switch from", "moved from", "leaving", "ditching" are ambiguous on their own. Always identify the SOURCE and DESTINATION before assigning sentiment. If our product is the **destination**, the item is 🟢 (or 🟡 if hedged). If our product is the **source** being abandoned, the item is 🔴. If the post is about migrating BETWEEN two competitors with no involvement of our product, the item is 🟡 (or excluded as off-topic).
+> The phrases "migrate from", "switch from", "moved from", "leaving", "ditching" are ambiguous on their own. Always identify the SOURCE and DESTINATION before assigning sentiment. If our product is the **destination**, the item is 🟢 (or ⚪ if hedged). If our product is the **source** being abandoned, the item is 🔴. If the post is about migrating BETWEEN two competitors with no involvement of our product, the item is ⚪ (or excluded as off-topic).
 
 **Author affiliation rule — MUST follow:**
-> Before scoring an item 🔴, check whether the author appears in the config's `### Product Team Members` (or a verified `microsoft_employee: true` / equivalent affiliation flag from a trustworthy profile source). Product team members and the company's own employees never get 🔴 for posts about our own product — they are internal advocates posting customer stories, demos, and migration wins. The lowest sentiment for a team-member-authored post about our own product is 🟡 (neutral). The only exception is a team member explicitly criticising our product on a personal capacity; flag those with `sentiment_confidence: low` and surface to the human for confirmation. Microsoft MVP / MCT / Regional Director / partner / community speaker status does **not** count as employment. If employment is not verified, classify the author as Community and, if high-signal, `is_influencer: true`.
+> Before scoring an item 🔴, check whether the author appears in the config's `### Product Team Members` (or a verified `microsoft_employee: true` / equivalent affiliation flag from a trustworthy profile source). Product team members and the company's own employees never get 🔴 for posts about our own product — they are internal advocates posting customer stories, demos, and migration wins. The lowest sentiment for a team-member-authored post about our own product is ⚪ (neutral). The only exception is a team member explicitly criticising our product on a personal capacity; flag those with `sentiment_confidence: low` and surface to the human for confirmation. Microsoft MVP / MCT / Regional Director / partner / community speaker status does **not** count as employment. If employment is not verified, classify the author as Community and, if high-signal, `is_influencer: true`.
 
 **Confidence on directional / migration items:**
 Migration/switching items always carry `sentiment_confidence: medium` at best unless the post text explicitly states the direction with both endpoints named. If only one endpoint is named, mark `low` and let the human confirm.
 
 **Common misclassification patterns — DO NOT trigger on these:**
 
-1. **Tutorials, talks, demos, books, and courses about our product default to 🟢 Positive** (or 🟡 Neutral if the author is genuinely neutral). The act of publishing educational content about our product is implicit advocacy — the author chose to invest hours teaching it. YouTube tutorials, blog walkthroughs, "let's build X with [our product]" posts, conference sessions, and book chapters all qualify. The lowest sentiment for a tutorial/educational item about our product is 🟡, never 🔴.
+1. **Tutorials, talks, demos, books, and courses about our product default to 🟢 Positive** (or ⚪ Neutral if the author is genuinely neutral). The act of publishing educational content about our product is implicit advocacy — the author chose to invest hours teaching it. YouTube tutorials, blog walkthroughs, "let's build X with [our product]" posts, conference sessions, and book chapters all qualify. The lowest sentiment for a tutorial/educational item about our product is ⚪, never 🔴.
 
 2. **Tutorials with troubleshooting, "common pitfalls", or "gotchas" sections stay positive.** Acknowledging difficulty inside a teaching artifact is pedagogy, not critique. A "5 mistakes to avoid with [our product]" video by a community educator is 🟢, not 🔴 or "mixed".
 
 3. **Negation phrases in body text are NOT sentiment signals.** Phrases like "are not", "is not", "do not", "n't", "no longer", "without" only count when they negate an evaluative sentence whose subject is OUR product and whose predicate is evaluative (good/bad/recommended/working/fast/slow). Feature-description negations ("documents are not limited to X", "you do not need to provision throughput", "indexes are not required for…") are neutral framing — often positive, since they describe capabilities or remove friction.
 
-4. **Provocative or rhetorical titles are framing, not critique.** Titles like "Your EF Core Entities Are Not Your Domain Objects", "The Hidden Tax of Relational Development", "The Sharding Mistake That Crashes EVERY Database", "Why X Is Broken" are hooks designed to set up a teaching moment about our product. Always read the body before scoring. If the body teaches or recommends our product, the stance is 🟢 or 🟡.
+4. **Provocative or rhetorical titles are framing, not critique.** Titles like "Your EF Core Entities Are Not Your Domain Objects", "The Hidden Tax of Relational Development", "The Sharding Mistake That Crashes EVERY Database", "Why X Is Broken" are hooks designed to set up a teaching moment about our product. Always read the body before scoring. If the body teaches or recommends our product, the stance is 🟢 or ⚪.
 
-5. **Use 🟠 Mixed (or `sentiment: "mixed"`) only when both elements are present in the same item:** an explicit positive claim about our product AND an explicit reservation about our product. Absent that real trade-off, default to the single sentiment that is present, or 🟡 Neutral. Do not infer "mixed" from ambivalent-sounding wording, hedges, or the mere presence of a "limitations" subsection in a tutorial.
+5. **Use 🟠 Mixed (or `sentiment: "mixed"`) only when both elements are present in the same item:** an explicit positive claim about our product AND an explicit reservation about our product. Absent that real trade-off, default to the single sentiment that is present, or ⚪ Neutral. Do not infer "mixed" from ambivalent-sounding wording, hedges, or the mere presence of a "limitations" subsection in a tutorial.
 
 6. **When sentiment is inferred from a single ambiguous phrase rather than an evaluative sentence, set `sentiment_confidence: low`** so the item lands in the human-triage bucket instead of skewing counts. Better to under-classify with low confidence than to over-classify with false confidence.
 
-7. **MUST classify every social item individually using its full body text.** When ingesting browser-scan sidecars (Layer 0) for X, LinkedIn, Bluesky, and Reddit, the canonical text for sentiment is the post's `body` field — NOT the title (which is empty for most social posts) and NOT a default. **Bulk-stamping `sentiment: "neutral", sentiment_confidence: "low"` across many items in a section is a quality failure**, not a safety move; it produces an all-yellow Conversations view that destroys the signal the report is supposed to surface. Read every body, apply the rules above, and emit `positive`/`neutral`/`negative` with `high`/`medium`/`low` confidence per-item. If body text is genuinely absent (rare — browser-scan always captures it), then-and-only-then is `neutral`/`low` acceptable, with a `provenance` note `"body_missing": true`.
+7. **MUST classify every social item individually using its full body text.** When ingesting browser-scan sidecars (Layer 0) for X, LinkedIn, Bluesky, and Reddit, the canonical text for sentiment is the post's `body` field — NOT the title (which is empty for most social posts) and NOT a default. **Bulk-stamping `sentiment: "neutral", sentiment_confidence: "low"` across many items in a section is a quality failure**, not a safety move; it produces an all-neutral Conversations view that destroys the signal the report is supposed to surface. Read every body, apply the rules above, and emit `positive`/`neutral`/`negative`/`mixed`/`unknown` with `high`/`medium`/`low` confidence per-item. If body text is genuinely absent (rare — browser-scan always captures it), then-and-only-then is `unknown`/`low` acceptable, with a `provenance` note `"body_missing": true`.
 
 8. **The JSON sidecar's `sentiment_confidence` field is mandatory and case-sensitive lowercase** (`high`/`medium`/`low`). The web UI's bulk "Re-check N neutrals" button is a backstop for items the agent missed, not a substitute for doing the classification at scan time.
 
@@ -534,13 +548,13 @@ For every Markdown output `path/to/file.md`, also write `path/to/file.json` cont
       "author": { "display_name": "...", "handle": "...", "platform": "...", "profile_url": "..." },
       "tags": ["..."],
       "engagement_potential": 4,
-      "sentiment": "positive|neutral|negative|null",
+      "sentiment": "positive|neutral|negative|mixed|unknown|null",
       "sentiment_confidence": "low|medium|high|null",
       "language": "en",
       "provenance": { "run_id": "...", "source": "...", "fetched_at": "...", "raw_hash": "..." }
     }
   ],
-  "summary": { "total": 0, "official": 0, "community": 0, "by_section": {}, "by_tag": {}, "sentiment": {"positive":0,"neutral":0,"negative":0} },
+  "summary": { "total": 0, "official": 0, "community": 0, "by_section": {}, "by_tag": {}, "sentiment": {"positive":0,"neutral":0,"negative":0,"mixed":0,"unknown":0} },
   "skipped_sources": [{"source":"x", "reason":"missing key"}]
 }
 ```
@@ -621,13 +635,13 @@ This makes "where did this item come from?" answerable for any item ever produce
 
 ### Sentiment Confidence Scoring
 
-Sentiment is no longer a hard label. Every conversation item now has both a `sentiment` (positive/neutral/negative) AND a `sentiment_confidence`:
+Sentiment is no longer a hard label. Every retained conversation item now has both a `sentiment` (positive/neutral/negative/mixed/unknown) AND a `sentiment_confidence`:
 
 | Confidence | Criteria |
 |-----------|---------|
 | `high` | Clear keyword match (e.g., "broken", "love it", "best in class"), unambiguous tone, no sarcasm risk |
-| `medium` | Inferred from context, mixed signals present, agent is reasonably sure |
-| `low` | Ambiguous, sarcastic, or only tangentially about the product. Agent is guessing |
+| `medium` | Inferred from context, real mixed signals present, or migration direction is clear but not stated with both endpoints |
+| `low` | Ambiguous, sarcastic, translated with uncertainty, missing context/body, or only tangentially about the product |
 
 **Rules:**
 - `low`-confidence sentiment items DO NOT trigger automatic `sentiment_classification` changes for a creator. They are recorded in `sentiment_history` but classifications only count `medium` and `high` confidence items.
@@ -1021,10 +1035,12 @@ All **Conversations & Mentions** items get a sentiment indicator:
 | Sentiment | Indicator | Criteria |
 |-----------|-----------|----------|
 | Positive | 🟢 | Praise, success story, recommendation, "solved my problem" |
-| Neutral | 🟡 | Question, how-to request, informational discussion |
+| Neutral | ⚪ | Question, how-to request, informational discussion |
+| Mixed | 🟠 | Explicit positive claim plus explicit reservation in the same item |
 | Negative | 🔴 | Complaint, bug report, frustration, "doesn't work", migration away |
+| Unknown | · | Not enough context, off-topic/passive product mention, missing body |
 
-The role-specific summary aggregates these: "Sentiment: X positive, Y neutral, Z negative"
+The role-specific summary aggregates these: "Sentiment: X positive, Y neutral, Z mixed, W negative, V unknown"
 
 ### Hard Rule: Social Items Must Be Attributable
 

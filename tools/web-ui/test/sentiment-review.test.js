@@ -31,9 +31,9 @@ test('buildPrompt: caps summary length to 4000 chars', () => {
   const p = buildPrompt({ productName: 'Foo', summary: long, currentSentiment: 'unknown' });
   // Summary section is truncated at 4000 chars. The full prompt also carries
   // the classification rules, nuance/misclassification guidance, and JSON
-  // schema (~2500 chars). Any value under 4000 + 3500 = 7500 confirms the
+  // schema (~4000 chars). Any value under 4000 + 5000 = 9000 confirms the
   // cap fired (a non-capped prompt would be 8000 + 2500+ ≈ 10500).
-  assert.ok(p.length < 7500, `prompt length ${p.length} should be < 7500`);
+  assert.ok(p.length < 9000, `prompt length ${p.length} should be < 9000`);
   assert.ok(p.length > 4000, `prompt length ${p.length} should still include the prompt header`);
 });
 
@@ -65,6 +65,20 @@ test('buildPrompt: appends reviewer note as hint, not ground truth', () => {
   assert.match(p, /Reviewer note/);
   assert.match(p, /treat as a HINT/);
   assert.match(p, /author is a known competitor advocate/);
+});
+
+test('buildPrompt: uses relevance-first sentiment rubric', () => {
+  const p = buildPrompt({
+    productName: 'Azure Cosmos DB',
+    summary: 'Senior .NET developer role. Preferred: Cosmos DB.',
+    currentSentiment: 'neutral',
+  });
+  assert.match(p, /Relevance gate/);
+  assert.match(p, /hiring, recruiting, job-search/);
+  assert.match(p, /passing hashtag, stack item/);
+  assert.match(p, /Do not call it neutral just because/);
+  assert.match(p, /off-topic\/passive\s+mentions are unknown/);
+  assert.match(p, /Confidence rule/);
 });
 
 test('buildPrompt: truncates reviewer note to 500 chars', () => {
