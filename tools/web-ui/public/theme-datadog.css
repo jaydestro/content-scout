@@ -78,16 +78,35 @@ html[data-theme="dark"] .site-header::before {
   background: none !important;
 }
 /* The actual culprits in dark mode: <a class="banner"> and .header-bar
-   both carry decorative gradients in theme-presentation.css. */
+   both carry decorative gradients in theme-presentation.css.
+   NOTE: .site-header is `display: contents` (set in theme-polish.css), so
+   it cannot paint a background. The opaque background must live on
+   .banner and .header-bar directly, otherwise scrolled content bleeds
+   through the sticky header (they are individually position: sticky). */
 html[data-theme="light"] .banner,
 html[data-theme="light"] .header-bar,
 html[data-theme="dark"] .banner,
 html[data-theme="dark"] .header-bar {
-  background: transparent !important;
+  background: var(--panel) !important;
   background-image: none !important;
   box-shadow: none !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+}
+/* Give the header strip a single, calm bottom border instead of the
+   stacked borders from each child. */
+html[data-theme="light"] .banner,
+html[data-theme="dark"] .banner {
+  border-bottom: 1px solid var(--border) !important;
+  /* The layout reserves var(--topbar-h) (64px) for the banner row and
+     sticks .header-bar at top:var(--topbar-h). The banner's natural
+     height is ~40px, which leaves a transparent 24px gap where scrolled
+     content bled through the sticky header. Fill that gap. */
+  min-height: var(--topbar-h) !important;
+}
+html[data-theme="light"] .header-bar,
+html[data-theme="dark"] .header-bar {
+  border-bottom: 1px solid var(--border) !important;
 }
 html[data-theme="light"] .banner::after,
 html[data-theme="light"] .banner::before,
