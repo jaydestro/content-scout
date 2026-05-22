@@ -403,3 +403,252 @@ html[data-theme="light"] .empty-banner h3 {
   color: #ff8b8b;
   border-color: rgba(255, 107, 107, 0.35);
 }
+
+/* ==============================================================
+   LIGHT MODE OVERRIDES — counterparts for every hardcoded-dark
+   rule above. Everything in this file was written for the dark
+   demo and shipped with only 3 light-mode patches, which left the
+   hero, site-header, secondary buttons, run-output, code blocks,
+   empty banner, and status pills rendering as near-black panels
+   on a white page. This block fixes all of that.
+
+   Tokens already defined by theme-modern.css:
+     --bg / --panel / --panel-2 / --panel-3 / --border /
+     --border-strong / --text / --muted / --muted-2 / --accent /
+     --accent-strong / --shadow-md / --shadow-lg / --ring
+   ============================================================== */
+
+/* ---------- Hero: soft tinted panel with readable display text ---------- */
+html[data-theme="light"] .dash-hero {
+  background:
+    radial-gradient(ellipse 80% 100% at 0% 0%, rgba(79, 70, 229, 0.10), transparent 60%),
+    radial-gradient(ellipse 60% 80% at 100% 100%, rgba(190, 24, 93, 0.08), transparent 60%),
+    linear-gradient(135deg, #ffffff 0%, #f5f7fb 100%) !important;
+  border-color: rgba(79, 70, 229, 0.22) !important;
+  box-shadow:
+    0 12px 32px -16px rgba(15, 23, 42, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+}
+html[data-theme="light"] .dash-hero::before {
+  /* Subtler top accent line in light mode */
+  opacity: 0.85;
+}
+html[data-theme="light"] .dash-hero h2 {
+  /* Override the white→slate gradient text (invisible on white) */
+  background: linear-gradient(135deg, #1e1b4b 0%, #4f46e5 55%, #be185d 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+html[data-theme="light"] .dash-hero #dash-hero-sub,
+html[data-theme="light"] .dash-hero .hint {
+  color: var(--muted);
+}
+
+/* Hero primary CTA — re-tint glow to indigo so it works on white */
+html[data-theme="light"] .dash-hero-actions .btn-primary,
+html[data-theme="light"] .dash-hero-actions button:first-child {
+  background: var(--gradient-accent) !important;
+  color: #fff !important;
+  box-shadow: 0 8px 22px rgba(79, 70, 229, 0.30) !important;
+}
+html[data-theme="light"] .dash-hero-actions .btn-primary:hover,
+html[data-theme="light"] .dash-hero-actions button:first-child:hover {
+  box-shadow: 0 12px 28px rgba(79, 70, 229, 0.40) !important;
+}
+
+/* Hero secondary buttons — the dark rule used rgba(255,255,255,0.06),
+   which is invisible against a light hero. Switch to a slate scrim. */
+html[data-theme="light"] .dash-hero-actions button:not(.btn-primary):not(:first-child) {
+  background: rgba(15, 23, 42, 0.05);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+}
+html[data-theme="light"] .dash-hero-actions button:not(.btn-primary):not(:first-child):hover {
+  background: rgba(15, 23, 42, 0.08);
+  border-color: var(--accent);
+}
+
+/* ---------- Stat tiles ---------- */
+html[data-theme="light"] .dash-stats .stat {
+  background: linear-gradient(180deg, #ffffff 0%, #fafbfd 100%) !important;
+  border-color: var(--border) !important;
+}
+html[data-theme="light"] .dash-stats .stat:hover {
+  box-shadow: 0 10px 24px -14px rgba(15, 23, 42, 0.25);
+}
+html[data-theme="light"] .dash-stats .stat-num {
+  /* Already neutralized above, but re-apply for specificity in this block.
+     Use the brand gradient (indigo→pink) so KPI numbers still feel premium. */
+  background: linear-gradient(135deg, #4f46e5 0%, #be185d 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Accent dot in section heads — soften the dark-mode shadow */
+html[data-theme="light"] .dash-section-head::before {
+  box-shadow: 0 0 8px rgba(79, 70, 229, 0.35);
+}
+
+/* ---------- Cards ---------- */
+html[data-theme="light"] .card {
+  background: linear-gradient(180deg, #ffffff 0%, #fafbfd 100%), var(--panel) !important;
+  border-color: var(--border) !important;
+}
+html[data-theme="light"] .card:hover {
+  box-shadow: 0 8px 24px -14px rgba(15, 23, 42, 0.20);
+  border-color: var(--border-strong);
+}
+
+/* ---------- Primary buttons (global) ---------- */
+html[data-theme="light"] button.btn-primary,
+html[data-theme="light"] button[type="submit"]:not(.secondary) {
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(79, 70, 229, 0.28);
+}
+html[data-theme="light"] button.btn-primary:hover:not(:disabled),
+html[data-theme="light"] button[type="submit"]:not(.secondary):hover:not(:disabled) {
+  box-shadow: 0 10px 26px rgba(79, 70, 229, 0.36);
+}
+
+/* ---------- Active nav ---------- */
+html[data-theme="light"] nav button.active {
+  box-shadow: 0 6px 18px -4px rgba(79, 70, 229, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+html[data-theme="light"] nav button:not(.active):hover {
+  background: rgba(15, 23, 42, 0.05);
+  border-color: var(--border);
+}
+
+/* ---------- Skeleton shimmer (indigo tint reads on white) ---------- */
+html[data-theme="light"] .skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(79, 70, 229, 0.06) 0%,
+    rgba(79, 70, 229, 0.18) 50%,
+    rgba(79, 70, 229, 0.06) 100%
+  ) !important;
+}
+
+/* ---------- Empty banner ---------- */
+html[data-theme="light"] .empty-banner {
+  background:
+    radial-gradient(ellipse 60% 80% at 30% 0%, rgba(79, 70, 229, 0.10), transparent 60%),
+    radial-gradient(ellipse 60% 80% at 70% 100%, rgba(4, 120, 87, 0.08), transparent 60%),
+    linear-gradient(135deg, #ffffff 0%, #f5f7fb 100%) !important;
+  border-color: rgba(79, 70, 229, 0.28) !important;
+  box-shadow: 0 10px 28px -16px rgba(15, 23, 42, 0.20);
+}
+html[data-theme="light"] .empty-banner h3 {
+  background: linear-gradient(135deg, #1e1b4b 0%, #4f46e5 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* ---------- Markdown ---------- */
+html[data-theme="light"] .markdown h1 {
+  border-bottom-color: var(--border);
+}
+html[data-theme="light"] .markdown h3 {
+  color: var(--accent-strong);
+}
+html[data-theme="light"] .markdown blockquote {
+  background: rgba(79, 70, 229, 0.06);
+  color: var(--muted-2);
+  border-left-color: var(--accent);
+}
+html[data-theme="light"] .markdown code {
+  background: rgba(79, 70, 229, 0.10) !important;
+  color: var(--accent-strong);
+}
+html[data-theme="light"] .markdown a {
+  color: var(--accent);
+  border-bottom-color: rgba(79, 70, 229, 0.30);
+}
+html[data-theme="light"] .markdown a:hover {
+  border-bottom-color: var(--accent);
+}
+/* Keep code blocks dark in light mode for legibility — slate-900 like theme-modern.css */
+html[data-theme="light"] .markdown pre {
+  background: #0f172a !important;
+  border-color: #1e293b !important;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* ---------- Run output (keep terminal feel; tone down for light page) ---------- */
+html[data-theme="light"] #run-output {
+  background: linear-gradient(180deg, #0b1220 0%, #050810 100%) !important;
+  border-color: #1e293b !important;
+  box-shadow:
+    inset 0 2px 12px rgba(0, 0, 0, 0.45),
+    0 8px 24px -12px rgba(15, 23, 42, 0.25);
+}
+
+/* ---------- Run form ---------- */
+html[data-theme="light"] .run-form {
+  background: #ffffff !important;
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 16px -8px rgba(15, 23, 42, 0.10);
+}
+html[data-theme="light"] .run-form label {
+  color: var(--muted);
+}
+
+/* ---------- Sticky header ---------- */
+html[data-theme="light"] .site-header {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 250, 252, 0.85)) !important;
+  border-bottom: 1px solid var(--border);
+  box-shadow:
+    0 1px 0 rgba(15, 23, 42, 0.04),
+    0 8px 24px rgba(15, 23, 42, 0.06) !important;
+}
+html[data-theme="light"] .site-header .banner-title,
+html[data-theme="light"] .banner-title {
+  /* Replace the white→slate-300 clip text (invisible on white) with the brand gradient */
+  background: linear-gradient(135deg, #1e1b4b 0%, #4f46e5 60%, #be185d 100%) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  color: transparent !important;
+}
+html[data-theme="light"] .site-header .banner-sub,
+html[data-theme="light"] .banner-sub {
+  color: var(--muted) !important;
+}
+
+/* ---------- Activity row hover ---------- */
+html[data-theme="light"] .dash-activity li:hover,
+html[data-theme="light"] #dash-suggestions li:hover,
+html[data-theme="light"] #dash-subjects li:hover {
+  background: rgba(79, 70, 229, 0.05);
+}
+html[data-theme="light"] .dash-activity li,
+html[data-theme="light"] #dash-suggestions li,
+html[data-theme="light"] #dash-subjects li {
+  border-bottom-color: rgba(148, 163, 184, 0.30);
+}
+
+/* ---------- Status pills — AA contrast on white ---------- */
+html[data-theme="light"] .pill[data-state="ok"],
+html[data-theme="light"] .pill.ok {
+  background: rgba(4, 120, 87, 0.12);
+  color: #064e3b;
+  border-color: rgba(4, 120, 87, 0.35);
+}
+html[data-theme="light"] .pill[data-state="warn"],
+html[data-theme="light"] .pill.warn {
+  background: rgba(180, 83, 9, 0.14);
+  color: #78350f;
+  border-color: rgba(180, 83, 9, 0.40);
+}
+html[data-theme="light"] .pill[data-state="err"],
+html[data-theme="light"] .pill.err {
+  background: rgba(185, 28, 28, 0.12);
+  color: #7f1d1d;
+  border-color: rgba(185, 28, 28, 0.40);
+}
