@@ -1645,9 +1645,24 @@ app.get('/view/social/:name', async (req, res) => {
 // =====================================================================
 
 let _indexCache = null;// { builtAt, signature, items, conversations, authors, sources, reports }
+let _indexBuilding = null; // in-flight build promise — concurrent callers share it
 const INDEX_TTL_MS = 30_000;
 
 async function getIndex() {
+  // If a build is already in flight, every concurrent caller awaits the same
+  // promise instead of racing four parallel rebuilds. The dashboard fires four
+  // index-backed endpoints in parallel (conversations, authors, sentiment,
+  // source-health) and without this mutex each cold start did 4× the I/O,
+  // pushing total time over the client-side timeout.
+  if (_indexBuilding) return _indexBuilding;
+  _indexBuilding = (async () => {
+    try { return await _buildIndex(); }
+    finally { _indexBuilding = null; }
+  })();
+  return _indexBuilding;
+}
+
+async function _buildIndex() {
   const reports = (await listMarkdownFiles(REPORTS_DIR)).filter((r) =>
     /-content\.md$/.test(r.name)
   );
