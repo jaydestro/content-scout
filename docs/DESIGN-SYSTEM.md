@@ -2,8 +2,9 @@
 
 This branch (`production-grade-ux`) moves Content Scout away from "demo polish"
 (big indigo→pink gradients, oversized hero cards, decorative shadows) toward a
-**calm, dense, signal-first** UX inspired by Datadog and other operational
-tools that real people use all day without fatigue.
+**calm, dense, signal-first** UX inspired by operational dashboards and
+long-session developer tools — the kind of interface real people use all
+day without fatigue.
 
 ## North-star principles
 
@@ -76,7 +77,7 @@ tools that real people use all day without fatigue.
 
 ## Implementation
 
-A new layer `theme-datadog.css` loads **last** in the cascade and is the
+A new layer `theme-production.css` loads **last** in the cascade and is the
 single source of truth for the new visual direction. It overrides
 `theme-presentation.css` rules where needed without modifying the older
 demo layer — keeps the diff legible and revertible.

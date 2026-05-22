@@ -1,7 +1,7 @@
 /* ============================================================
- * theme-datadog.css
+ * theme-production.css
  * Production-grade visual layer. Loads LAST. The single source
- * of truth for the new calm/dense direction. See
+ * of truth for the calm/dense/signal-first direction. See
  * docs/DESIGN-SYSTEM.md for principles.
  *
  * Strategy:
@@ -452,7 +452,53 @@ textarea:focus {
   box-shadow: 0 0 0 3px var(--accent-soft) !important;
 }
 
-/* ---------- Tabs (Pulse / Activity / Intel) ---------- */
+/* ---------- Dashboard tabs (Pulse / Activity / Intel) ----------
+ * Flattens the heavy gradient pill from theme-compact.css into a
+ * calm underline-style tab strip that works in both themes.
+ */
+html[data-theme="light"] .dash-tabs,
+html[data-theme="dark"] .dash-tabs {
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--border) !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  gap: 0.25rem !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 1rem 0 1.25rem !important;
+  box-shadow: none !important;
+}
+html[data-theme="light"] .dash-tabs button[data-tab],
+html[data-theme="dark"] .dash-tabs button[data-tab] {
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  border-bottom: 2px solid transparent !important;
+  border-radius: 0 !important;
+  color: var(--muted) !important;
+  padding: 0.55rem 0.9rem !important;
+  font-weight: 500 !important;
+  font-size: 0.875rem !important;
+  box-shadow: none !important;
+  margin-bottom: -1px !important; /* sit on the underline */
+}
+html[data-theme="light"] .dash-tabs button[data-tab]:hover,
+html[data-theme="dark"] .dash-tabs button[data-tab]:hover {
+  background: transparent !important;
+  color: var(--text) !important;
+}
+html[data-theme="light"] .dash-tabs button[data-tab].active,
+html[data-theme="dark"] .dash-tabs button[data-tab].active {
+  background: transparent !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-bottom-color: var(--accent) !important;
+  box-shadow: none !important;
+}
+
+/* role-based tabs elsewhere — calm pill style */
 [role="tablist"] [role="tab"] {
   border-radius: var(--radius) !important;
   font-weight: 500 !important;
@@ -463,6 +509,77 @@ textarea:focus {
   color: var(--accent-strong) !important;
   border-color: transparent !important;
   box-shadow: none !important;
+}
+
+/* ---------- Report tag chips / status pills (light-mode contrast) ----------
+ * Many badges were authored with light text on light-alpha backgrounds —
+ * great for dark mode, illegible in light. Force readable colors in light
+ * theme by re-deriving the foreground from the same hue family.
+ */
+html[data-theme="light"] .dash-needs-tone.tone-critical,
+html[data-theme="light"] .badge.badge-error,
+html[data-theme="light"] .badge.badge-danger {
+  color: #991b1b !important;
+  background: rgba(239, 68, 68, 0.12) !important;
+  border: 1px solid rgba(239, 68, 68, 0.35) !important;
+}
+html[data-theme="light"] .dash-needs-tone.tone-warning,
+html[data-theme="light"] .badge.badge-warning {
+  color: #92400e !important;
+  background: rgba(245, 158, 11, 0.14) !important;
+  border: 1px solid rgba(245, 158, 11, 0.4) !important;
+}
+html[data-theme="light"] .dash-needs-tone.tone-success,
+html[data-theme="light"] .badge.badge-success {
+  color: #166534 !important;
+  background: rgba(34, 197, 94, 0.14) !important;
+  border: 1px solid rgba(34, 197, 94, 0.4) !important;
+}
+html[data-theme="light"] .dash-needs-tone.tone-info,
+html[data-theme="light"] .badge.badge-info {
+  color: #1e40af !important;
+  background: rgba(59, 130, 246, 0.12) !important;
+  border: 1px solid rgba(59, 130, 246, 0.4) !important;
+}
+html[data-theme="light"] .pill,
+html[data-theme="light"] .pill-pos,
+html[data-theme="light"] .pill-neu,
+html[data-theme="light"] .pill-mix,
+html[data-theme="light"] .pill-neg {
+  color: var(--text) !important;
+  background: var(--panel-2) !important;
+  border: 1px solid var(--border) !important;
+}
+
+/* ---------- Operations queue launcher ("runner bug") ----------
+ * Was hard-coded to a dark navy background that ignored the theme.
+ * Use the panel token so it inverts correctly in light mode.
+ */
+html[data-theme="light"] #runs-launcher,
+html[data-theme="dark"] #runs-launcher {
+  background: var(--panel) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text) !important;
+  box-shadow: var(--shadow-md, 0 6px 18px rgba(0, 0, 0, 0.18)) !important;
+}
+html[data-theme="light"] #runs-launcher svg,
+html[data-theme="dark"] #runs-launcher svg {
+  color: var(--muted) !important;
+}
+html[data-theme="light"] #runs-launcher:hover svg,
+html[data-theme="dark"] #runs-launcher:hover svg {
+  color: var(--accent) !important;
+}
+html[data-theme="light"] #runs-launcher .rq-badge,
+html[data-theme="dark"] #runs-launcher .rq-badge {
+  background: var(--accent) !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 0 2px var(--panel) !important;
+}
+html[data-theme="light"] #runs-drawer,
+html[data-theme="dark"] #runs-drawer {
+  background: var(--panel) !important;
+  color: var(--text) !important;
 }
 
 /* ---------- Run form panel ---------- */
