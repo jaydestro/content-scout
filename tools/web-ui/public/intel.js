@@ -1630,10 +1630,11 @@
     if (!host) return;
     host.innerHTML = '<p class="hint">Loading…</p>';
     try {
-      // 8s ceiling — covers a cold index build on first dashboard load, but
-      // still fails fast enough that the user sees an actionable error
-      // instead of a stuck card.
-      const data = await fetchJsonWithTimeout('/api/conversations?includeProduct=1', 8000);
+      // 15s ceiling — covers a cold index build on first dashboard load
+      // plus any browser HTTP/1.1 connection-pool queueing, while still
+      // failing fast enough that the user sees an actionable error instead
+      // of a stuck card.
+      const data = await fetchJsonWithTimeout('/api/conversations?includeProduct=1', 15000);
       const allEver = Array.isArray(data.conversations) ? data.conversations : [];
       // Dashboard card is intentionally scoped to the most recent 30 days.
       // Anything older lives in the Conversations view, which has its own

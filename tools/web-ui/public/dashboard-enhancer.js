@@ -351,33 +351,14 @@
       if (meta) meta.textContent = '';
       return;
     }
-    // Sanitize every external URL so we never put dead links in the
-    // dashboard. Falls back to a no-op if intel.js hasn't loaded the helper.
+    // Drop syntactically-bad URLs up front (cheap, no network). Liveness is
+    // probed in the background AFTER render via intel.js's data-check-url
+    // pruning — pre-validating here used to fire up to 80 /api/check-url
+    // calls that saturated the browser's 6-per-host HTTP/1.1 pool and
+    // starved /api/conversations until its 8s timeout fired.
     const check = window.csUrlCheck;
-    if (check && typeof check.checkUrlLive === 'function') {
-      const urls = new Set();
-      const collect = (u) => { if (check.isValidPostUrl(u)) urls.add(u); };
-      for (const g of groups) {
-        for (const it of g.topItems || []) collect(it.url);
-        for (const c of g.cfps || []) {
-          if (typeof c === 'string') continue;
-          collect(c.site); collect(c.cfp);
-          for (const ln of c.links || []) collect(ln.url);
-        }
-      }
-      const list = [...urls].slice(0, 80);
-      const live = new Map();
-      const CONC = 6;
-      let i = 0;
-      const worker = async () => {
-        while (i < list.length) {
-          const u = list[i++];
-          try { const r = await check.checkUrlLive(u); live.set(u, !!(r && r.ok)); }
-          catch { live.set(u, false); }
-        }
-      };
-      await Promise.all(Array.from({ length: CONC }, worker));
-      const sanitize = (u) => (check.isValidPostUrl(u) && live.get(u) === true ? u : '');
+    if (check && typeof check.isValidPostUrl === 'function') {
+      const sanitize = (u) => (check.isValidPostUrl(u) ? u : '');
       for (const g of groups) {
         for (const it of g.topItems || []) it.url = sanitize(it.url);
         for (const c of g.cfps || []) {
