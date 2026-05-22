@@ -3,12 +3,83 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { normalizeSentiment, parseProductTeamNamesFromConfig, parseReport, parseReportFromJson, loadReport } from '../../lib/report-index.mjs';
+import {
+  applySentimentOverrides,
+  canonicalUrlKey,
+  normalizeSentiment,
+  parseProductTeamNamesFromConfig,
+  parseReport,
+  parseReportFromJson,
+  loadReport,
+} from '../../lib/report-index.mjs';
 
 test('normalizeSentiment treats white/yellow as neutral and orange as mixed', () => {
   assert.equal(normalizeSentiment('⚪ Neutral'), 'neutral');
   assert.equal(normalizeSentiment('🟡 Neutral'), 'neutral');
   assert.equal(normalizeSentiment('🟠 Mixed'), 'mixed');
+});
+
+test('applySentimentOverrides updates confidence even when label stays neutral', () => {
+  const url = 'https://bsky.app/profile/example.bsky.social/post/abc123';
+  const parsed = parseReportFromJson({
+    generated_at: '2026-05-22',
+    items: [
+      {
+        section: 'social',
+        title: 'Is Cosmos DB right for this use case?',
+        url,
+        author: { display_name: 'Example User', platform: 'bluesky' },
+        sentiment: 'neutral',
+        sentiment_confidence: 'low',
+      },
+    ],
+  }, '2026-05-22-1200-test-product-content.md');
+
+  applySentimentOverrides(parsed, new Map([
+    [canonicalUrlKey(url), { sentiment: 'neutral', confidence: 'high' }],
+  ]));
+
+  assert.equal(parsed.conversations[0].sentiment, 'neutral');
+  assert.equal(parsed.conversations[0].sentimentConfidence, 'high');
+  assert.equal(parsed.conversations[0].sentimentOverridden, true);
+  assert.deepEqual(parsed.sentimentTotals, {
+    positive: 0,
+    neutral: 1,
+    negative: 0,
+    mixed: 0,
+    unknown: 0,
+  });
+});
+
+test('applySentimentOverrides moves totals when label changes to mixed', () => {
+  const url = 'https://www.linkedin.com/feed/update/urn:li:activity:123';
+  const parsed = parseReportFromJson({
+    generated_at: '2026-05-22',
+    items: [
+      {
+        section: 'social',
+        title: 'Cosmos DB solved our scale problem, but RU costs surprised us.',
+        url,
+        author: { display_name: 'Example User', platform: 'linkedin' },
+        sentiment: 'neutral',
+        sentiment_confidence: 'low',
+      },
+    ],
+  }, '2026-05-22-1200-test-product-content.md');
+
+  applySentimentOverrides(parsed, new Map([
+    [canonicalUrlKey(url), { sentiment: 'mixed', confidence: 'medium' }],
+  ]));
+
+  assert.equal(parsed.conversations[0].sentiment, 'mixed');
+  assert.equal(parsed.conversations[0].sentimentConfidence, 'medium');
+  assert.deepEqual(parsed.sentimentTotals, {
+    positive: 0,
+    neutral: 0,
+    negative: 0,
+    mixed: 1,
+    unknown: 0,
+  });
 });
 
 test('parseReport drops conversation rows that duplicate numbered content URLs', () => {

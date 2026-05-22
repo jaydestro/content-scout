@@ -545,7 +545,8 @@ html[data-theme="light"] .pill,
 html[data-theme="light"] .pill-pos,
 html[data-theme="light"] .pill-neu,
 html[data-theme="light"] .pill-mix,
-html[data-theme="light"] .pill-neg {
+html[data-theme="light"] .pill-neg,
+html[data-theme="light"] .pill-unk {
   color: var(--text) !important;
   background: var(--panel-2) !important;
   border: 1px solid var(--border) !important;

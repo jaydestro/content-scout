@@ -2087,6 +2087,7 @@ details.conv-week .conv-week-body .conv-row:last-child { margin-bottom: 0; }
 .dash-sent-pills .pill-neu { border-color: rgba(148,163,184,0.5); }
 .dash-sent-pills .pill-mix { border-color: rgba(234,179,8,0.6); }
 .dash-sent-pills .pill-neg { border-color: rgba(239,68,68,0.6); }
+.dash-sent-pills .pill-unk { border-color: rgba(148,163,184,0.35); opacity: 0.85; }
 
 .dash-needs-row {
   border: 1px solid var(--border, #2a2e44);

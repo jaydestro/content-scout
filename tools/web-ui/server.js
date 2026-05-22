@@ -1648,6 +1648,17 @@ let _indexCache = null;// { builtAt, signature, items, conversations, authors, s
 let _indexBuilding = null; // in-flight build promise — concurrent callers share it
 const INDEX_TTL_MS = 30_000;
 
+async function stateFileMtime(name) {
+  try {
+    const file = await resolveStateRead(name, REPORTS_DIR);
+    if (!file) return '';
+    const st = await fs.stat(file);
+    return st.mtimeMs;
+  } catch {
+    return '';
+  }
+}
+
 async function getIndex() {
   // If a build is already in flight, every concurrent caller awaits the same
   // promise instead of racing four parallel rebuilds. The dashboard fires four
@@ -1668,20 +1679,25 @@ async function _buildIndex() {
   );
   // Cache signature also hashes sidecar mtime so a fresh JSON write (e.g. an
   // agent rerun that updates sentiment without touching the .md) invalidates.
-  const sidecarMtimes = await Promise.all(
-    reports.map(async (r) => {
-      try {
-        const st = await fs.stat(path.join(REPORTS_DIR, r.name.replace(/\.md$/, '.json')));
-        return st.mtimeMs;
-      } catch {
-        return '';
-      }
-    })
-  );
+  const [sidecarMtimes, sentimentOverridesMtime] = await Promise.all([
+    Promise.all(
+      reports.map(async (r) => {
+        try {
+          const st = await fs.stat(path.join(REPORTS_DIR, r.name.replace(/\.md$/, '.json')));
+          return st.mtimeMs;
+        } catch {
+          return '';
+        }
+      })
+    ),
+    // Sentiment overrides alter parsed conversation labels and totals even
+    // though the report markdown/JSON files are untouched.
+    stateFileMtime(SENTIMENT_OVERRIDES_FILE),
+  ]);
   const signature = reports
     .map((r, idx) => `${r.name}@${r.mtime || ''}#${sidecarMtimes[idx] || ''}`)
     .sort()
-    .join('|');
+    .join('|') + `|sentiment-overrides@${sentimentOverridesMtime || ''}`;
   if (
     _indexCache &&
     _indexCache.signature === signature &&
@@ -2787,9 +2803,9 @@ app.post('/api/sentiment/review', express.json({ limit: '64kb' }), async (req, r
 
 // Bulk re-check sentiment for many conversation rows in one request. Used by
 // the Conversations toolbar "Re-check N neutrals" button. Persists results to
-// reports/.sentiment-overrides.json so they survive a server restart and get
-// applied during loadReport(). Runs items serially to avoid hammering a local
-// Ollama model with parallel requests.
+// .local/state/sentiment-overrides.json so they survive a server restart and
+// get applied during loadReport(). Runs items serially to avoid hammering a
+// local Ollama model with parallel requests.
 app.post('/api/sentiment/review-bulk', express.json({ limit: '2mb' }), async (req, res) => {
   try {
     const body = req.body || {};
@@ -2860,6 +2876,11 @@ app.post('/api/sentiment/review-bulk', express.json({ limit: '2mb' }), async (re
     try {
       const overridesWritePath = await resolveStateWrite(SENTIMENT_OVERRIDES_FILE);
       await fs.writeFile(overridesWritePath, JSON.stringify(overrides, null, 2));
+      // Overrides affect parsed conversation labels and sentiment totals, but
+      // do not change report file mtimes. Drop the in-memory index so Pulse,
+      // Conversations, and /api/sentiment-summary see the new verdicts on the
+      // next request instead of waiting for the cache TTL.
+      _indexCache = null;
     } catch (err) {
       return res.json({ ok: true, results, persistError: err.message });
     }

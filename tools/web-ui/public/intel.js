@@ -780,10 +780,12 @@
     `;
   }
 
-  // ----- Bulk re-check sentiment for all visible neutrals --------
+  // ----- Bulk re-check sentiment for likely-misclassified neutrals --------
 
   // Walk the DOM after every render to figure out how many visible rows are
-  // currently flagged neutral. Update the toolbar button label and visibility.
+  // currently flagged neutral with low/blank confidence. Those are the rows
+  // most likely to reflect old bulk-stamped sidecars. Update the toolbar
+  // button label and visibility.
   function _updateRecheckBulkButton() {
     const btn = document.getElementById('conv-recheck-bulk');
     if (!btn) return;
@@ -793,7 +795,7 @@
       btn.hidden = true;
       return;
     }
-    const keys = _visibleNeutralKeys();
+    const keys = _visibleLowConfidenceNeutralKeys();
     if (!keys.length) {
       btn.hidden = true;
       return;
@@ -803,7 +805,7 @@
     btn.dataset.count = String(keys.length);
   }
 
-  function _visibleNeutralKeys() {
+  function _visibleLowConfidenceNeutralKeys() {
     const list = document.getElementById('conv-list');
     if (!list) return [];
     const keys = [];
@@ -813,20 +815,22 @@
       if (!key) return;
       const c = _findConvByKey(key);
       if (!c || !c.url || !(c.summary || '').trim()) return;
+      const confidence = String(c.sentimentConfidence || '').toLowerCase();
+      if (confidence && confidence !== 'low') return;
       keys.push(key);
     });
     return keys;
   }
 
   async function _recheckBulkNeutrals(btn) {
-    const keys = _visibleNeutralKeys();
+    const keys = _visibleLowConfidenceNeutralKeys();
     if (!keys.length) return;
     const max = 100;
     const trimmed = keys.slice(0, max);
     if (keys.length > max) {
-      if (!confirm(`${keys.length} visible neutrals — only the first ${max} will be re-checked in this batch. Continue?`)) return;
+      if (!confirm(`${keys.length} visible low-confidence neutrals — only the first ${max} will be re-checked in this batch. Continue?`)) return;
     } else if (trimmed.length > 25) {
-      if (!confirm(`Re-check ${trimmed.length} neutral conversation${trimmed.length === 1 ? '' : 's'} with the local LLM? This can take 1–2 minutes.`)) return;
+      if (!confirm(`Re-check ${trimmed.length} low-confidence neutral conversation${trimmed.length === 1 ? '' : 's'} with the local LLM? This can take 1–2 minutes.`)) return;
     }
     const origLabel = btn?.innerHTML;
     if (btn) {
@@ -877,10 +881,10 @@
           const conv = _findConvByKey(r.key);
           if (!conv) continue;
           const newSent = (r.sentiment || conv.sentiment || 'unknown').toLowerCase();
+          conv.sentimentConfidence = (r.confidence || conv.sentimentConfidence || 'medium').toLowerCase();
+          conv.sentimentOverridden = true;
           if (newSent !== conv.sentiment) {
             conv.sentiment = newSent;
-            conv.sentimentConfidence = (r.confidence || 'medium').toLowerCase();
-            conv.sentimentOverridden = true;
             changed++;
           } else {
             agreed++;
@@ -911,9 +915,9 @@
     }
     if (btn) {
       btn.disabled = false;
-      btn.innerHTML = origLabel || '🤖 Re-check <span id="conv-recheck-bulk-count">0</span> neutrals';
+      btn.innerHTML = origLabel || '🤖 Re-check <span id="conv-recheck-bulk-count">0</span> low-confidence neutrals';
     }
-    const msg = `Re-checked ${done} conversation${done === 1 ? '' : 's'}: ${changed} re-classified, ${agreed} confirmed neutral${errored ? `, ${errored} errored` : ''}.`;
+    const msg = `Re-checked ${done} low-confidence neutral conversation${done === 1 ? '' : 's'}: ${changed} re-classified, ${agreed} confirmed neutral${errored ? `, ${errored} errored` : ''}.`;
     if (typeof window !== 'undefined' && window.alert) alert(msg);
     _updateRecheckBulkButton();
   }
@@ -1662,6 +1666,7 @@
         if (totals.neutral)  pills.push(`<span class="pill pill-neu" title="Neutral">⚪ ${totals.neutral} neutral</span>`);
         if (totals.mixed)    pills.push(`<span class="pill pill-mix" title="Mixed — worth a thoughtful reply">🟠 ${totals.mixed} mixed</span>`);
         if (totals.negative) pills.push(`<span class="pill pill-neg" title="Critical — respond first">🔴 ${totals.negative} critical</span>`);
+        if (totals.unknown)  pills.push(`<span class="pill pill-unk" title="Unknown — not enough product stance to score">· ${totals.unknown} unknown</span>`);
         summary.innerHTML = all.length
           ? `<div class="dash-sent-pills">${pills.join('')}</div>`
           : `<p class="hint">No conversations tracked yet. Run a scan to surface community chatter.</p>`;

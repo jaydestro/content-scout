@@ -546,7 +546,7 @@ async function loadSentimentOverrides(reportsDir) {
 // Apply LLM-derived sentiment overrides on top of whatever the agent stamped
 // at scan time. Lets the user re-classify a batch of low-confidence neutrals
 // from the UI without re-running the scan.
-function applySentimentOverrides(parsed, overrides) {
+export function applySentimentOverrides(parsed, overrides) {
   if (!parsed || !overrides || !overrides.size) return;
   const convs = Array.isArray(parsed.conversations) ? parsed.conversations : [];
   const totals = parsed.sentimentTotals || emptySentimentTotals();
@@ -556,11 +556,16 @@ function applySentimentOverrides(parsed, overrides) {
     const hit = overrides.get(key);
     if (!hit || !hit.sentiment) continue;
     const next = normalizeSentiment(hit.sentiment);
-    if (next === c.sentiment) continue;
+    const confidence = (hit.confidence || c.sentimentConfidence || 'medium').toLowerCase();
+    if (next === c.sentiment) {
+      c.sentimentConfidence = confidence;
+      c.sentimentOverridden = true;
+      continue;
+    }
     if (totals[c.sentiment] != null) totals[c.sentiment] = Math.max(0, totals[c.sentiment] - 1);
     totals[next] = (totals[next] || 0) + 1;
     c.sentiment = next;
-    c.sentimentConfidence = (hit.confidence || 'medium').toLowerCase();
+    c.sentimentConfidence = confidence;
     c.sentimentOverridden = true;
   }
   parsed.sentimentTotals = totals;
