@@ -1652,13 +1652,18 @@
       const totals = { positive: 0, neutral: 0, mixed: 0, negative: 0, unknown: 0 };
       all.forEach((c) => { totals[c.sentiment] = (totals[c.sentiment] || 0) + 1; });
       if (summary) {
+        // Hide buckets that are empty so "0 mixed" doesn't waste a slot when
+        // the classifier (intentionally restrictive) finds no items there.
+        // The 🟠 mixed glyph matches the per-card sentiment dot in
+        // SENTIMENT_DOT; 🟡 was an older inconsistent value that collided
+        // with the legacy neutral dot.
+        const pills = [];
+        if (totals.positive) pills.push(`<span class="pill pill-pos" title="Advocates">🟢 ${totals.positive} advocate${totals.positive === 1 ? '' : 's'}</span>`);
+        if (totals.neutral)  pills.push(`<span class="pill pill-neu" title="Neutral">⚪ ${totals.neutral} neutral</span>`);
+        if (totals.mixed)    pills.push(`<span class="pill pill-mix" title="Mixed — worth a thoughtful reply">🟠 ${totals.mixed} mixed</span>`);
+        if (totals.negative) pills.push(`<span class="pill pill-neg" title="Critical — respond first">🔴 ${totals.negative} critical</span>`);
         summary.innerHTML = all.length
-          ? `<div class="dash-sent-pills">
-              <span class="pill pill-pos" title="Advocates">🟢 ${totals.positive} advocate${totals.positive === 1 ? '' : 's'}</span>
-              <span class="pill pill-neu" title="Neutral">⚪ ${totals.neutral} neutral</span>
-              <span class="pill pill-mix" title="Mixed — worth a thoughtful reply">🟡 ${totals.mixed} mixed</span>
-              <span class="pill pill-neg" title="Critical — respond first">🔴 ${totals.negative} critical</span>
-            </div>`
+          ? `<div class="dash-sent-pills">${pills.join('')}</div>`
           : `<p class="hint">No conversations tracked yet. Run a scan to surface community chatter.</p>`;
       }
 
@@ -1966,7 +1971,7 @@
             <div class="sent-legend">
               ${t.positive ? `🟢 ${t.positive}` : ''}
               ${t.neutral ? `⚪ ${t.neutral}` : ''}
-              ${t.mixed ? `🟡 ${t.mixed}` : ''}
+              ${t.mixed ? `� ${t.mixed}` : ''}
               ${t.negative ? `🔴 ${t.negative}` : ''}
             </div>
           </div>`;
