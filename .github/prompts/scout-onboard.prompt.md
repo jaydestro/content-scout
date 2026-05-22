@@ -264,6 +264,27 @@ This is the moment where the user can say things like:
 
 If the user describes additional needs, turn on the relevant features and explain what was added. If they want changes, show the feature toggle table and let them flip individual settings. Any feature can be added or removed regardless of role.
 
+#### Operator Identity (you)
+
+After the role is locked in, ask: **"Who are you? I'll use this to filter out your own posts so you don't end up triaging yourself in Conversations & Mentions."**
+
+Collect:
+1. **Display name** (e.g., `Jay Gordon`) — required.
+2. **Per-platform handles** — ask each separately, accept "none" / "skip" per platform. Strip leading `@`, `u/`, `/in/`. Suggested platforms (in order):
+   - GitHub
+   - X / Twitter
+   - LinkedIn
+   - Bluesky
+   - Dev.to
+   - Medium
+   - Hacker News
+   - Reddit
+   - YouTube channel
+   - Stack Overflow
+   - Personal blog URL
+
+Write the answers into the generated config under the `### Operator Identity` heading (see template below). The operator's display name is automatically merged into the Product Team Members filter so their own posts never show up as community conversations — there is no need for the user to also add themselves to the Product Team Members list.
+
 ### Group 2 — Product Identity
 Ask these fields **one at a time**, waiting for each answer:
 1. What is the **full name** of the product, technology, project, or tool you want to track? (e.g., "Azure Cosmos DB", "Python", "Ollama", "GitHub Copilot")
@@ -595,8 +616,12 @@ description: "Content Scout configuration for {Product Name}"
 ### Excluded Domains/Authors
 - {domain or author or "none"}
 
+### Operator Identity
+<!-- This is YOU — the person running Content Scout. The display name here is auto-merged into the team-member filter so your own posts are excluded from Conversations & Mentions. Handles in parentheses follow the same alias syntax as Product Team Members. Omit the section only if the user explicitly declined to identify themselves. -->
+- {your display name} ({platform: handle, platform: handle, ...})
+
 ### Product Team Members
-<!-- Content by these verified employees/co-workers appears in "Team Member Mentions" section, not as numbered community items. Handles in parentheses can be imported as no-triage accounts with `node tools/conversations-cli.mjs no-triage-team {slug}` or the Conversations web UI. MVP/MCT/partner/community-speaker status is not employment; put those people in Known Author Watchlist or Influencers instead. Omit section if "none". -->
+<!-- Content by these verified employees/co-workers appears in "Team Member Mentions" section, not as numbered community items. Handles in parentheses can be imported as no-triage accounts with `node tools/conversations-cli.mjs no-triage-team {slug}` or the Conversations web UI. MVP/MCT/partner/community-speaker status is not employment; put those people in Known Author Watchlist or Influencers instead. Omit section if "none". You do NOT need to list yourself here — the Operator Identity above is included automatically. -->
 - {name} — {role or context}
 
 ## Networks

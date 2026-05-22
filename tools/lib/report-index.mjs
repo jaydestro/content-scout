@@ -63,13 +63,10 @@ function isProductAuthor(authorName, options = {}) {
   return isProductAuthorName(authorName) || (!!normalized && productTeamNameSet(options.productTeamNames).has(normalized));
 }
 
-export function parseProductTeamNamesFromConfig(raw) {
-  const text = String(raw || '').replace(/<!--[\s\S]*?-->/g, '');
-  const blockMatch = text.match(/(?:^|\r?\n)\s*#{1,6}\s*Product Team Members[^\n]*\r?\n([\s\S]*?)(?=\r?\n\s*#{1,6}\s|\r?\n-{3,}\s*\r?\n|$)/i);
-  const block = blockMatch ? blockMatch[1] : '';
+function extractNamesFromBlock(block) {
   const out = [];
   const seen = new Set();
-  for (const rawLine of block.split(/\r?\n/)) {
+  for (const rawLine of String(block || '').split(/\r?\n/)) {
     const line = rawLine.replace(/^[-*\s]+/, '').trim();
     if (!line || /^none$/i.test(line)) continue;
     const name = line.replace(/\([^)]*\)/g, '').replace(/[—-].*$/, '').trim();
@@ -79,6 +76,22 @@ export function parseProductTeamNamesFromConfig(raw) {
     out.push(name);
   }
   return out;
+}
+
+export function parseProductTeamNamesFromConfig(raw) {
+  const text = String(raw || '').replace(/<!--[\s\S]*?-->/g, '');
+  const teamMatch = text.match(/(?:^|\r?\n)\s*#{1,6}\s*Product Team Members[^\n]*\r?\n([\s\S]*?)(?=\r?\n\s*#{1,6}\s|\r?\n-{3,}\s*\r?\n|$)/i);
+  const operatorMatch = text.match(/(?:^|\r?\n)\s*#{1,6}\s*Operator Identity[^\n]*\r?\n([\s\S]*?)(?=\r?\n\s*#{1,6}\s|\r?\n-{3,}\s*\r?\n|$)/i);
+  const names = extractNamesFromBlock(teamMatch ? teamMatch[1] : '');
+  const seen = new Set(names.map(normalizeName));
+  for (const name of extractNamesFromBlock(operatorMatch ? operatorMatch[1] : '')) {
+    const key = normalizeName(name);
+    if (!seen.has(key)) {
+      seen.add(key);
+      names.push(name);
+    }
+  }
+  return names;
 }
 
 function splitMarkdownTableRow(row) {
