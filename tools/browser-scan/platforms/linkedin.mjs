@@ -11,11 +11,21 @@
 //      (`.update-components-text`), and reaction/comment counts
 //   5. De-dupe by post URL across search terms
 //
-// Selector notes (verified May 2026 against live linkedin.com):
-//   - The `.update-components-actor` wrapper class no longer exists as a
-//     stable selector — LinkedIn ships a randomized hash class on it.
-//     ALWAYS query the `.update-components-actor__*` child classes
-//     directly on the post container.
+// Selector notes (verified Nov 2026 against live linkedin.com):
+//   - LinkedIn migrated `/search/results/content/` to a Server-Driven UI
+//     (SDUI) LazyColumn. Legacy markers — `feed-shared-update-v2`,
+//     `data-urn^="urn:li:activity"`, `.search-reusables__no-results-message`,
+//     `.update-components-actor__*` — are entirely absent on the new
+//     search surface. We now walk
+//     `div[role="listitem"][componentkey*="FeedType_FLAGSHIP_SEARCH"]`
+//     and pull the body from `[data-testid="expandable-text-box"]`.
+//   - Legacy selectors are kept as a fallback for surfaces that may not
+//     have migrated yet (e.g. hashtag or profile activity feeds).
+//   - SDUI posts do NOT expose a per-post permalink in the DOM —
+//     LinkedIn lazy-loads it only when the user opens the "..." menu.
+//     We synthesize a stable URL from the componentkey hash so the
+//     downstream dedup/reporter pipeline works; the URL is not
+//     navigable but the author profile is included separately.
 //   - LinkedIn does not expose absolute timestamps in the DOM. We
 //     reconstruct ISO from the relative string (e.g. "19m", "3d", "2w",
 //     "1mo") against `now`.
@@ -30,6 +40,10 @@ import { buildSearchQuery } from '../lib/query.mjs';
 // renames feed wrappers a few times a year — and because the search-results
 // page uses different containers from the home feed.
 const POST_SELECTORS = [
+  // SDUI search-results (Nov 2026+) — primary path for /search/results/content/
+  'div[role="listitem"][componentkey*="FeedType_FLAGSHIP_SEARCH"]',
+  '[data-component-type="LazyColumn"] [data-testid="expandable-text-box"]',
+  // Legacy fallback — kept for hashtag/profile feeds that may still use old DOM
   'div.feed-shared-update-v2[data-urn^="urn:li:activity"]',
   '[data-urn^="urn:li:activity:"]',
   '[data-id^="urn:li:activity:"]',
@@ -40,6 +54,10 @@ const POST_SELECTORS = [
 // Hitting one of these means our scrape is correct and the answer really is
 // zero — not selector drift.
 const EMPTY_STATE_SELECTORS = [
+  // SDUI no-results variants (best-effort — we have no verified empty
+  // snapshot yet; the legacy ones are kept as belt-and-braces)
+  '[data-sdui-screen*="SearchResultsContent"] [data-testid*="empty"]',
+  '[data-sdui-screen*="SearchResultsContent"] [data-testid*="no-results"]',
   '.search-reusables__no-results-message',
   '[data-test-search-no-results]',
   '.search-results-container .search-no-results__container',
@@ -351,6 +369,118 @@ async function extractPostsOnPage(page) {
         thread_context: null,
         scraped_at: new Date().toISOString(),
         source: 'linkedin-browser',
+      });
+    }
+
+    // --- SDUI (Server-Driven UI) extraction path ---------------------
+    // The /search/results/content/ surface migrated to an SDUI LazyColumn
+    // (Nov 2026+). Posts have NO data-urn, NO .feed-shared-update-v2
+    // wrapper, and NO in-DOM permalink — only a stable per-post hash on
+    // the listitem's componentkey. We walk those listitems and synthesize
+    // a non-navigable URL keyed off the hash so dedup works.
+    const sduiNodes = document.querySelectorAll(
+      'div[role="listitem"][componentkey*="FeedType_FLAGSHIP_SEARCH"]'
+    );
+    for (const node of sduiNodes) {
+      const ck = node.getAttribute('componentkey') || '';
+      const hashMatch = ck.match(/^expanded([A-Za-z0-9_-]+)FeedType_FLAGSHIP_SEARCH$/);
+      const postHash = hashMatch ? hashMatch[1] : ck;
+      if (!postHash) continue;
+
+      // Prefer a real permalink if LinkedIn happens to emit one inline
+      // (rare on search SDUI, common on quoted reshares — but the
+      // reshare anchor points at the SOURCE post, not the outer post,
+      // so we ignore it and synthesize off the outer hash).
+      const url = `https://www.linkedin.com/feed/sdui-post/${postHash}/`;
+      if (seenIds.has(`sdui:${postHash}`)) continue;
+      seenIds.add(`sdui:${postHash}`);
+
+      // Body: first commentary block belonging to THIS post (descendant
+      // expandable-text-box whose ancestor <p> has feed-commentary_*
+      // componentkey).
+      let body = '';
+      const commentaryP = node.querySelector('p[componentkey^="feed-commentary_"]');
+      if (commentaryP) {
+        const box = commentaryP.querySelector('[data-testid="expandable-text-box"]');
+        body = (box || commentaryP).innerText.trim();
+      } else {
+        const anyBox = node.querySelector('[data-testid="expandable-text-box"]');
+        if (anyBox) body = anyBox.innerText.trim();
+      }
+      // Strip the trailing "…more" expansion button text if present.
+      body = body.replace(/\s*…\s*more\s*$/i, '').trim();
+
+      // Author: control-menu aria-label is the most reliable signal
+      // ("Open control menu for post by {Name}").
+      let author_display = null;
+      const menuBtn = node.querySelector('button[aria-label^="Open control menu for post by "]');
+      if (menuBtn) {
+        author_display = (menuBtn.getAttribute('aria-label') || '')
+          .replace(/^Open control menu for post by\s+/i, '')
+          .trim() || null;
+      }
+
+      // Author profile / handle from the avatar anchor (first /in/ or /company/ link).
+      let author_handle = null;
+      let author_profile = null;
+      const avatar = node.querySelector(
+        'a[href*="linkedin.com/in/"], a[href*="linkedin.com/company/"], a[href^="/in/"], a[href^="/company/"]'
+      );
+      if (avatar) {
+        let href = avatar.getAttribute('href') || '';
+        if (href.startsWith('/')) href = `https://www.linkedin.com${href}`;
+        author_profile = href.split('?')[0] || null;
+        const m = href.match(/\/in\/([^/?#]+)|\/company\/([^/?#]+)/);
+        if (m) author_handle = `@${(m[1] || m[2]).toLowerCase()}`;
+      }
+
+      // Author headline: nearest <p> with non-trivial text that isn't
+      // the name or the "• 1st" connection badge or the timestamp.
+      let author_bio = null;
+      const headlinePs = node.querySelectorAll('p');
+      for (const p of headlinePs) {
+        const t = (p.textContent || '').trim();
+        if (!t) continue;
+        if (author_display && t === author_display) continue;
+        if (/^•?\s*1st$/i.test(t)) continue;
+        if (/^\d+[smhdwy](o)?\b/.test(t)) continue;
+        if (/^Feed post$/i.test(t)) continue;
+        if (t.length < 8 || t.length > 220) continue;
+        author_bio = t;
+        break;
+      }
+
+      // Relative timestamp → ISO. Look for the <p> that contains the
+      // visibility-globe icon (every SDUI post has one next to the
+      // relative time).
+      let post_date = null;
+      const tsP = [...node.querySelectorAll('p')].find(
+        (p) => p.querySelector('svg#globe-americas-small')
+      );
+      if (tsP) post_date = relToIso(tsP.textContent || '');
+
+      if (!author_display && !body) continue;
+
+      out.push({
+        platform: 'linkedin',
+        url,
+        author_handle,
+        author_display,
+        author_profile,
+        author_bio,
+        post_date,
+        title: null,
+        body,
+        engagement: {
+          // SDUI defers reaction/comment/repost counts to a sub-component
+          // fetch; counts are not present on the initial DOM.
+          reactions: null,
+          comments: null,
+          reposts: null,
+        },
+        thread_context: null,
+        scraped_at: new Date().toISOString(),
+        source: 'linkedin-browser-sdui',
       });
     }
 

@@ -2945,12 +2945,14 @@ function escapeAttr(s) {
 // non-stub tab filters the existing list by the doc-meta kind id, and
 // Trends + Gaps gain a "Compute now" action-bar button that calls the
 // in-browser analytics endpoint (no agent round-trip).
-const REPORTS_TABS = ['content', 'mindshare', 'trends', 'gaps', 'cfps', 'conferences', 'ask'];
+const REPORTS_TABS = ['content', 'mindshare', 'trends', 'gaps', 'replay', 'seo', 'cfps', 'conferences', 'ask'];
 const TAB_TO_KIND = {
   content: ['content'],
   mindshare: ['mindshare'],
   trends: ['trends'],
   gaps: ['gaps'],
+  replay: ['replay'],
+  seo: ['seo'],
 };
 let _reportsActiveTab = 'content';
 let _reportsCache = null; // last /api/reports payload (so tab switches don't re-fetch)
@@ -3022,6 +3024,37 @@ function renderReportsActionBar(tab) {
       <span class="hint" id="analytics-status"></span>
     `;
     $('btn-gaps-compute')?.addEventListener('click', () => computeAnalytics('gaps'));
+  } else if (tab === 'replay') {
+    // Replay re-runs filters/scoring against an existing scan's JSON sidecar.
+    // User picks a source content/mindshare report from the dropdown; we POST
+    // /api/analytics/replay (no LLM, no API calls).
+    const items = (_reportsCache?.reports || [])
+      .filter((r) => ['content', 'mindshare'].includes(r?.meta?.kind))
+      .slice(0, 100);
+    const opts = items.map((r) => `<option value="${escapeAttr(r.name)}">${escapeAttr(r.name)}</option>`).join('');
+    bar.innerHTML = `
+      <label class="field-inline">Source scan
+        <select id="replay-source">${opts || '<option value="">(no scans found)</option>'}</select>
+      </label>
+      <label class="field-inline">Min engagement
+        <input type="number" id="replay-min-engagement" value="" min="0" max="100" placeholder="keep" />
+      </label>
+      <label class="field-inline">Min score
+        <input type="number" id="replay-min-score" value="" min="0" max="9" placeholder="keep" />
+      </label>
+      <button type="button" id="btn-replay-compute">+ Replay now</button>
+      <span class="hint" id="analytics-status"></span>
+    `;
+    $('btn-replay-compute')?.addEventListener('click', () => computeAnalytics('replay'));
+  } else if (tab === 'seo') {
+    bar.innerHTML = `
+      <label class="field-inline" style="flex:1;min-width:240px">URLs (one per line, max 5)
+        <textarea id="seo-urls" rows="3" placeholder="https://example.com/page-1&#10;https://example.com/page-2"></textarea>
+      </label>
+      <button type="button" id="btn-seo-compute">+ Audit now</button>
+      <span class="hint" id="analytics-status"></span>
+    `;
+    $('btn-seo-compute')?.addEventListener('click', () => computeAnalytics('seo'));
   } else if (tab === 'content' || tab === 'mindshare') {
     bar.innerHTML = `<span class="hint">Browse existing ${escapeAttr(tab)} reports. New scans land here automatically after <code>/scout-scan</code> completes.</span>`;
   } else {
@@ -3034,15 +3067,42 @@ async function computeAnalytics(kind) {
   const status = $('analytics-status');
   if (status) status.textContent = 'Computing…';
   try {
-    let url;
+    let res;
     if (kind === 'trends') {
       const months = $('trends-months')?.value || 4;
-      url = `/api/analytics/trends?slug=${encodeURIComponent(slug)}&months=${encodeURIComponent(months)}`;
+      res = await fetch(`/api/analytics/trends?slug=${encodeURIComponent(slug)}&months=${encodeURIComponent(months)}`);
     } else if (kind === 'gaps') {
       const windowDays = $('gaps-window')?.value || 30;
-      url = `/api/analytics/gaps?slug=${encodeURIComponent(slug)}&windowDays=${encodeURIComponent(windowDays)}`;
+      res = await fetch(`/api/analytics/gaps?slug=${encodeURIComponent(slug)}&windowDays=${encodeURIComponent(windowDays)}`);
+    } else if (kind === 'replay') {
+      const sourceFile = $('replay-source')?.value || '';
+      if (!sourceFile) {
+        if (status) status.textContent = 'pick a source scan first';
+        return;
+      }
+      const overrides = {};
+      const me = $('replay-min-engagement')?.value;
+      const ms = $('replay-min-score')?.value;
+      if (me !== '' && me != null) overrides.minEngagement = Number(me);
+      if (ms !== '' && ms != null) overrides.minScore = Number(ms);
+      res = await fetch('/api/analytics/replay', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sourceFile, overrides }),
+      });
+    } else if (kind === 'seo') {
+      const raw = $('seo-urls')?.value || '';
+      const urls = raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+      if (urls.length === 0) {
+        if (status) status.textContent = 'enter at least one URL';
+        return;
+      }
+      res = await fetch('/api/analytics/seo', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ urls, slug }),
+      });
     } else return;
-    const res = await fetch(url);
     const data = await res.json();
     if (!res.ok || !data.ok) {
       if (status) status.textContent = `error: ${data.error || res.status}`;

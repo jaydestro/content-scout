@@ -26,6 +26,12 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {
+  CACHED_BODIES_FILE,
+  SENTIMENT_OVERRIDES_FILE,
+  browserScanReadDirs,
+  resolveStateRead,
+} from './paths.mjs';
 
 const SENTIMENT_KEYS = ['positive', 'neutral', 'negative', 'mixed', 'unknown'];
 
@@ -452,32 +458,43 @@ export function parseReport(raw, fileName, options = {}) {
 async function loadBrowserScanBodies(reportsDir, slug) {
   const map = new Map();
   if (!slug) return map;
-  const dir = path.join(reportsDir, '.browser-scan', slug);
-  let entries;
-  try {
-    entries = await fs.readdir(dir);
-  } catch {
-    return map;
-  }
-  for (const name of entries) {
-    if (!name.endsWith('.json') || name.endsWith('-meta.json')) continue;
-    let parsed;
+  // Consult both the canonical .local/state/browser-scan/{slug} and the
+  // legacy reports/.browser-scan/{slug} dirs. The reportsDir argument is
+  // honored for tests that pass a tmp dir.
+  const dirs = [
+    ...browserScanReadDirs(slug),
+    path.join(reportsDir || '', '.browser-scan', slug),
+  ];
+  const seenDirs = new Set();
+  for (const dir of dirs) {
+    if (!dir || seenDirs.has(dir)) continue;
+    seenDirs.add(dir);
+    let entries;
     try {
-      parsed = JSON.parse(await fs.readFile(path.join(dir, name), 'utf8'));
+      entries = await fs.readdir(dir);
     } catch {
       continue;
     }
-    const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.posts) ? parsed.posts : [];
-    for (const post of list) {
-      const key = canonicalUrlKey(post?.url);
-      if (!key) continue;
-      const body = String(post?.body || '').trim();
-      const title = String(post?.title || '').trim();
-      if (!body && !title) continue;
-      // Prefer the longer body if multiple sidecars carry the same post.
-      const prev = map.get(key);
-      if (!prev || (body && body.length > (prev.body || '').length)) {
-        map.set(key, { body, title });
+    for (const name of entries) {
+      if (!name.endsWith('.json') || name.endsWith('-meta.json')) continue;
+      let parsed;
+      try {
+        parsed = JSON.parse(await fs.readFile(path.join(dir, name), 'utf8'));
+      } catch {
+        continue;
+      }
+      const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.posts) ? parsed.posts : [];
+      for (const post of list) {
+        const key = canonicalUrlKey(post?.url);
+        if (!key) continue;
+        const body = String(post?.body || '').trim();
+        const title = String(post?.title || '').trim();
+        if (!body && !title) continue;
+        // Prefer the longer body if multiple sidecars carry the same post.
+        const prev = map.get(key);
+        if (!prev || (body && body.length > (prev.body || '').length)) {
+          map.set(key, { body, title });
+        }
       }
     }
   }
@@ -490,8 +507,9 @@ async function loadBrowserScanBodies(reportsDir, slug) {
 // whose body the agent dropped during ingestion. File is a flat object
 // `{ <canonical-url-key>: { body, fetchedAt, source } }`.
 async function loadCachedBodies(reportsDir) {
-  const file = path.join(reportsDir, '.cached-bodies.json');
+  const file = await resolveStateRead(CACHED_BODIES_FILE, reportsDir);
   const map = new Map();
+  if (!file) return map;
   try {
     const raw = await fs.readFile(file, 'utf8');
     const obj = JSON.parse(raw);
@@ -509,7 +527,8 @@ async function loadCachedBodies(reportsDir) {
 // Keys are canonical URLs; values are { sentiment, confidence, rationale,
 // model, provider, reviewedAt }. Returns an empty Map when missing.
 async function loadSentimentOverrides(reportsDir) {
-  const file = path.join(reportsDir, '.sentiment-overrides.json');
+  const file = await resolveStateRead(SENTIMENT_OVERRIDES_FILE, reportsDir);
+  if (!file) return new Map();
   try {
     const raw = await fs.readFile(file, 'utf8');
     const obj = JSON.parse(raw);

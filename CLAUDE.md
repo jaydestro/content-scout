@@ -37,7 +37,7 @@ Users will request these operations using natural language. Map their requests t
 |-----------|-------------|------------|
 | "scout onboard", "set up content scout", "configure" | `.github/prompts/scout-onboard.prompt.md` | Interactive config wizard — ask questions one group at a time |
 | "scout scan", "scan for content", "find content", "import reddit threads", "reddit fallback", "manual reddit" | `.github/prompts/scout-scan.prompt.md` | Search all sources, filter, generate report. Routes to the `scout-reddit-import.prompt.md` sub-flow when the user pastes Reddit URLs to ingest manually. |
-| "scout post", "generate posts", "create social posts", "alt text", "generate alt text", "describe this image" | `.github/prompts/scout-post.prompt.md` | Generate social posts from a URL or report item. Routes to the `scout-alt.prompt.md` sub-flow when alt text is requested for a post image. |
+| "scout post", "generate posts", "create social posts", "alt text", "generate alt text", "describe this image" | `.github/prompts/scout-post.prompt.md` | Generate social posts from a URL or report item. Routes to the `scout-alt.prompt.md` sub-flow when alt text is requested for a post image. **Always run the humanizer pass** (`.claude/skills/humanizer/SKILL.md`) on every variant before saving — it's a required final step, not optional cleanup. |
 | "scout calendar", "schedule posts", "posting calendar" | `.github/prompts/scout-calendar.prompt.md` | Create a weekly posting schedule |
 | "scout gaps", "content gaps", "gap analysis" | `.github/prompts/scout-gaps.prompt.md` | Show topics with no recent coverage |
 | "scout trends", "show trends", "compare months" | `.github/prompts/scout-trends.prompt.md` | Month-over-month trajectory analysis |

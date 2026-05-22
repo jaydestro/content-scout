@@ -32,6 +32,17 @@ import {
   canonicalUrlKey,
 } from '../lib/report-index.mjs';
 import {
+  SENTIMENT_OVERRIDES_FILE,
+  WEB_SETTINGS_FILE,
+  STATE_DIR,
+  stateFilePath,
+  resolveStateRead,
+  resolveStateWrite,
+  browserScanReadDirs,
+  BROWSER_SCAN_DIR as BROWSER_SCAN_SIDECAR_DIR,
+  LEGACY_BROWSER_SCAN_DIR,
+} from '../lib/paths.mjs';
+import {
   ALLOWED_REASONS,
   convoKey,
   loadClosed,
@@ -67,6 +78,7 @@ const SOCIAL_DIR = path.join(REPO_ROOT, 'social-posts');
 const ENV_FILE = path.join(REPO_ROOT, '.env');
 const ENV_EXAMPLE = path.join(REPO_ROOT, '.env.example');
 const SETTINGS_FILE = path.join(__dirname, '.scout-web-settings.json');
+const SETTINGS_FILE_NEW = stateFilePath(WEB_SETTINGS_FILE);
 
 const PORT = Number(process.env.PORT || 4477);
 // Bind to loopback by default. Set SCOUT_HOST=0.0.0.0 to expose on the LAN
@@ -123,9 +135,21 @@ const AGENT_PRESETS = {
 };
 
 // --- Settings persistence -----------------------------------------
+// Settings live at .local/state/web-settings.json. Reads fall back to the
+// legacy tools/web-ui/.scout-web-settings.json so the first run after the
+// path-refactor doesn't lose the saved agent/runner.
 async function loadSettings() {
+  let raw;
   try {
-    const raw = await fs.readFile(SETTINGS_FILE, 'utf8');
+    raw = await fs.readFile(SETTINGS_FILE_NEW, 'utf8');
+  } catch {
+    try {
+      raw = await fs.readFile(SETTINGS_FILE, 'utf8');
+    } catch {
+      return { agent: null, runner: '' };
+    }
+  }
+  try {
     const data = JSON.parse(raw);
     return {
       agent: typeof data.agent === 'string' ? data.agent : null,
@@ -137,7 +161,8 @@ async function loadSettings() {
 }
 
 async function saveSettings(settings) {
-  await fs.writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2) + '\n', 'utf8');
+  await fs.mkdir(STATE_DIR, { recursive: true });
+  await fs.writeFile(SETTINGS_FILE_NEW, JSON.stringify(settings, null, 2) + '\n', 'utf8');
 }
 
 // Effective runner: env var wins, then saved settings.
@@ -648,7 +673,8 @@ async function detectExternalActivity(windowSec = 90) {
   const dirs = [
     { dir: path.join(REPO_ROOT, 'reports'), kind: 'report', exts: ['.md', '.json'] },
     { dir: path.join(REPO_ROOT, 'social-posts'), kind: 'social post', exts: ['.md'] },
-    { dir: path.join(REPO_ROOT, '.scout-state'), kind: 'state', exts: null },
+    { dir: path.join(REPO_ROOT, 'reports', '.scout-state'), kind: 'state', exts: null },
+    { dir: path.join(STATE_DIR, 'scout-state'), kind: 'state', exts: null },
   ];
   const now = Date.now();
   let best = null;
@@ -2760,10 +2786,15 @@ app.post('/api/sentiment/review-bulk', express.json({ limit: '2mb' }), async (re
       ? String(body.productName).trim()
       : await resolveProductName(body.slug || '');
     const { runner } = await getRunner();
-    const overridesPath = path.join(REPORTS_DIR, '.sentiment-overrides.json');
+    // Sentiment overrides live at .local/state/sentiment-overrides.json;
+    // the resolver auto-migrates from the legacy reports/.sentiment-overrides.json
+    // on first read.
+    const overridesReadPath = await resolveStateRead(SENTIMENT_OVERRIDES_FILE, REPORTS_DIR);
     let overrides = {};
     try {
-      overrides = JSON.parse(await fs.readFile(overridesPath, 'utf8')) || {};
+      if (overridesReadPath) {
+        overrides = JSON.parse(await fs.readFile(overridesReadPath, 'utf8')) || {};
+      }
     } catch {}
     const results = [];
     for (const raw of limited) {
@@ -2806,8 +2837,8 @@ app.post('/api/sentiment/review-bulk', express.json({ limit: '2mb' }), async (re
       }
     }
     try {
-      await fs.mkdir(REPORTS_DIR, { recursive: true });
-      await fs.writeFile(overridesPath, JSON.stringify(overrides, null, 2));
+      const overridesWritePath = await resolveStateWrite(SENTIMENT_OVERRIDES_FILE);
+      await fs.writeFile(overridesWritePath, JSON.stringify(overrides, null, 2));
     } catch (err) {
       return res.json({ ok: true, results, persistError: err.message });
     }
@@ -3003,20 +3034,22 @@ async function runBrowserScanPreflight(run, slugs, force = false, days = 0) {
   }
   pushRunOutput(run, `[browser-scan] Attached to ${probe.browser || 'browser'} on CDP port 9222.\n`);
 
-  const sidecarRoot = path.join(REPORTS_DIR, '.browser-scan');
   const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
   for (const slug of slugs) {
-    // Freshness check unless forced.
+    // Freshness check unless forced. Consult both the new and legacy
+    // sidecar dirs and use the freshest mtime across either.
     if (!force) {
       let freshest = 0;
-      try {
-        const files = await fs.readdir(path.join(sidecarRoot, slug));
-        for (const f of files) {
-          if (!/^\d{4}-\d{2}-\d{2}-\d{4}-(x|linkedin|reddit|google)\.json$/.test(f)) continue;
-          const stat = await fs.stat(path.join(sidecarRoot, slug, f));
-          if (stat.mtimeMs > freshest) freshest = stat.mtimeMs;
-        }
-      } catch { /* no dir yet → freshest stays 0 */ }
+      for (const slugDir of browserScanReadDirs(slug)) {
+        try {
+          const files = await fs.readdir(slugDir);
+          for (const f of files) {
+            if (!/^\d{4}-\d{2}-\d{2}-\d{4}-(x|linkedin|reddit|google)\.json$/.test(f)) continue;
+            const stat = await fs.stat(path.join(slugDir, f));
+            if (stat.mtimeMs > freshest) freshest = stat.mtimeMs;
+          }
+        } catch { /* no dir yet → skip */ }
+      }
       if (freshest && Date.now() - freshest < SIX_HOURS_MS) {
         const ageMin = Math.floor((Date.now() - freshest) / 60000);
         pushRunOutput(
@@ -3421,17 +3454,19 @@ app.get('/api/browser-scan/status', async (req, res) => {
   if (!BROWSER_SCAN_INSTALLED) return res.json({ installed: false });
   const port = Number(req.query.port || 9222);
   const cdp = await probeCdpPort(port);
-  // List sidecars per slug under reports/.browser-scan/{slug}/
-  const sidecarRoot = path.join(REPORTS_DIR, '.browser-scan');
+  // List sidecars per slug across new (.local/state/browser-scan) and
+  // legacy (reports/.browser-scan) dirs. Newer stamp wins per platform.
+  const sidecarRoots = [BROWSER_SCAN_SIDECAR_DIR, LEGACY_BROWSER_SCAN_DIR];
   const bySlug = {};
-  try {
-    const slugs = await fs.readdir(sidecarRoot);
+  for (const sidecarRoot of sidecarRoots) {
+    let slugs = [];
+    try { slugs = await fs.readdir(sidecarRoot); } catch { continue; }
     for (const slug of slugs) {
       if (!isValidSlug(slug)) continue;
       const slugDir = path.join(sidecarRoot, slug);
       let files = [];
       try { files = await fs.readdir(slugDir); } catch { continue; }
-      const platforms = {};
+      const platforms = bySlug[slug] || {};
       for (const f of files) {
         if (!f.endsWith('.json')) continue;
         const m = f.match(/^(\d{4}-\d{2}-\d{2}-\d{4})-(x|linkedin|reddit|google)\.json$/);
@@ -3447,7 +3482,7 @@ app.get('/api/browser-scan/status', async (req, res) => {
       }
       bySlug[slug] = platforms;
     }
-  } catch { /* no sidecar dir yet */ }
+  }
   res.json({
     installed: true,
     port,

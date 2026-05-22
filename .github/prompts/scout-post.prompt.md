@@ -254,3 +254,24 @@ Reddit-specific rules:
 - If the poster is affiliated with the content (works on the product, knows the author personally), say so in the body or OP context comment. Disclosure is a Reddit norm and rule in many subs.
 - If `mention-authors: yes`, credit the creator in the body ("@author from <site> wrote this up…") — not in the title.
 - Never astroturf. Write as someone genuinely sharing, never as the product team unless the user has said they're the maintainer.
+
+## Humanizer pass (mandatory final step — do not skip)
+
+Before writing any post body to disk, run every variant (LinkedIn, X, Bluesky, Reddit title + body, OP context comments) through the **humanizer** skill at [`.claude/skills/humanizer/SKILL.md`](../../.claude/skills/humanizer/SKILL.md). The skill is vendored into this repo so it's always available; load it as part of the post-generation flow, not as an optional cleanup.
+
+What to do:
+
+1. After drafting all variants, do a single editing pass per variant against the patterns in the humanizer skill. Pay particular attention to the patterns that show up most often in social copy:
+   - Promotional / advertisement language ("boasts", "vibrant", "groundbreaking", "seamless", "powerful")
+   - AI-vocabulary words ("delve", "underscore", "unlock", "showcase", "leverage", "robust", "empower", "intricate")
+   - Significance inflation ("a pivotal moment", "reshaping the landscape", "a testament to")
+   - Negative parallelisms ("It's not just X — it's Y")
+   - Rule-of-three lists where two would do ("faster, simpler, and more reliable")
+   - Em-dash overuse (a single em-dash per post is plenty; replace the rest with commas or periods)
+   - Sycophantic / chatbot artifacts ("Excited to share", "Thrilled to announce", "Big news…")
+   - Filler openings ("In today's fast-paced world", "Let's dive into…")
+2. After the cleanup pass, ask yourself the skill's audit prompt: **"What makes this so obviously AI-generated?"** Note 1–3 remaining tells per variant, then revise once more to remove them.
+3. Preserve the tuner contract: tone, length caps, emoji budget, hashtag policy, and the canonical brand name must survive the humanizer pass unchanged. The humanizer trims AI tells, it does not rewrite the angle.
+4. If `tone:` is `enthusiastic` or `playful`, the humanizer still applies — keep the energy but cut the AI tells. Enthusiasm should come from concrete specifics, not from filler intensifiers.
+
+The goal is copy that reads like a real practitioner posted it, not like an LLM autocompleted a marketing brief. If a variant still reads like a press release after two passes, drop it and write a different angle from scratch.

@@ -21,7 +21,7 @@ Before any operation, read config files from `.github/prompts/scout-config-*.pro
 | Request | Prompt file | Description |
 |---------|-------------|-------------|
 | scout onboard | `.github/prompts/scout-onboard.prompt.md` | Interactive setup wizard |
-| scout post | `.github/prompts/scout-post.prompt.md` | Generate social posts from URL or report item. Includes the alt-text sub-flow (`scout-alt.prompt.md`) when an image needs accessible alt text. |
+| scout post | `.github/prompts/scout-post.prompt.md` | Generate social posts from URL or report item. Includes the alt-text sub-flow (`scout-alt.prompt.md`) when an image needs accessible alt text. **Always run the humanizer pass** (`.claude/skills/humanizer/SKILL.md`) on every variant before saving — required final step, not optional. |
 | scout scan | `.github/prompts/scout-scan.prompt.md` | Search sources, filter, generate report. Includes the Reddit manual-import sub-flow (`scout-reddit-import.prompt.md`) when automated Reddit layers are blocked. |
 | scout calendar | `.github/prompts/scout-calendar.prompt.md` | Weekly posting schedule |
 | scout gaps | `.github/prompts/scout-gaps.prompt.md` | Topics with no recent coverage |

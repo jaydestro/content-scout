@@ -1542,6 +1542,16 @@ aside li[data-name]:has(.entry-row).selected .entry-title {
 .conv-row-head { display: flex; gap: 0.5rem; align-items: baseline; flex-wrap: wrap; }
 .conv-row-head .conv-dot { font-size: 0.9rem; }
 .conv-row-head .conv-platform { color: var(--muted, #94a3b8); font-size: 0.85rem; padding: 0 0.4rem; border: 1px solid var(--border, #2a2e44); border-radius: 999px; }
+.conv-row-head .conv-team-badge {
+  color: var(--accent, #818cf8);
+  background: rgba(129, 140, 248, 0.12);
+  border: 1px solid var(--accent, #818cf8);
+  font-size: 0.78rem;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
 .conv-row-head .conv-date { color: var(--muted, #94a3b8); font-size: 0.85rem; }
 .conv-row-head .conv-spacer { flex: 1; }
 .conv-row-head a { color: var(--accent, #818cf8); }

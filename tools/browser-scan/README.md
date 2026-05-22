@@ -1,9 +1,9 @@
 # Content Scout — Browser Scan (Edge + Playwright over CDP)
 
-A logged-in, real-browser scanner for **X / Twitter**, **LinkedIn**, and
-**Reddit**. The scanner attaches to **your real Edge window over the Chrome
-DevTools Protocol** — it does **not** open its own browser or use a
-synthetic Playwright profile.
+A logged-in, real-browser scanner for **X / Twitter**, **LinkedIn**,
+**Reddit**, and **Google** (News + Web Search). The scanner attaches to
+**your real Edge window over the Chrome DevTools Protocol** — it does
+**not** open its own browser or use a synthetic Playwright profile.
 
 Why CDP attach? X (and increasingly LinkedIn) flags fresh Playwright
 profiles as bots and refuses to let you log in — even with stealth flags.
@@ -82,11 +82,11 @@ within the last 6 hours and merges it as Layer 0.
 `lib/query.mjs::buildSearchQuery(term, platform)` shapes each search-term
 from the config before sending it to the platform:
 
-| Config term | X / LinkedIn | Reddit |
-|---|---|---|
-| `Azure Cosmos DB` | `"Azure Cosmos DB"` (phrase match) | `"Azure Cosmos DB"` (phrase match) |
-| `CosmosDB` | `CosmosDB` | `CosmosDB` |
-| `#AzureCosmosDB` | `#AzureCosmosDB` (hashtag match) | `AzureCosmosDB` (Reddit ignores `#`) |
+| Config term | X / LinkedIn | Reddit | Google |
+|---|---|---|---|
+| `Azure Cosmos DB` | `"Azure Cosmos DB"` (phrase match) | `"Azure Cosmos DB"` (phrase match) | `"Azure Cosmos DB"` (phrase match) |
+| `CosmosDB` | `CosmosDB` | `CosmosDB` | `CosmosDB` |
+| `#AzureCosmosDB` | `#AzureCosmosDB` (hashtag match) | `AzureCosmosDB` (Reddit ignores `#`) | `AzureCosmosDB` (Google ignores `#`) |
 
 Multi-word terms always get phrase-quoted so platforms don't OR the
 tokens. Single tokens and `#hashtag` terms pass through. Reddit gets the
@@ -146,6 +146,27 @@ Each JSON sidecar is an array of items shaped like:
 ```
 
 LinkedIn items use `linkedin-browser`, Reddit items use `reddit-browser`.
+
+### Google (two passes per scan)
+
+The Google scanner runs **two passes** over the same logged-in browser
+context, and merges results into a single `*-google.json` sidecar with
+natural URL-dedup:
+
+1. **Google News** (`news.google.com/search?q=…+when:…`) — surfaces
+   editorial / press coverage. Items carry `platform: "google-news"`,
+   `source: "google-news-browser"`, `subSource: "google-news"`, and a
+   structured `post_date`.
+2. **Google Web Search** (`www.google.com/search?q=…&tbs=qdr:…`) —
+   surfaces blog posts, docs, repo READMEs, and anything else the
+   organic SERP indexes. Items carry `platform: "google-web"`,
+   `source: "google-web-browser"`, `subSource: "google-web"`. The SERP
+   rarely exposes per-result dates, so `post_date` is usually `null` —
+   the `tbs=qdr:{d|w|m|y}` bucket (derived from `--days`) already
+   limits the window server-side.
+
+A CAPTCHA in one pass only stops that pass; items already collected
+(from either pass) are still written to the sidecar.
 
 ## Rate-limit hygiene
 

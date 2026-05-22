@@ -48,6 +48,19 @@ const PROBES = [
     // The user-drawer button is only rendered when signed in.
     okSelector: 'faceplate-tracker[noun="user_account_menu"] button, #USER_DROPDOWN_ID, a[href*="/user/"]',
   },
+  {
+    platform: 'google',
+    url: 'https://news.google.com/',
+    // Google News doesn't require a sign-in to be useful — we only flag
+    // the rare hard-redirect to a sign-in wall (some accounts / regions)
+    // or a reCAPTCHA challenge as "not signed in / blocked".
+    loginPattern: /accounts\.google\.com\/(?:ServiceLogin|signin)/,
+    okPattern: /news\.google\.com/,
+    // Article cards are present for both signed-in and signed-out users
+    // on the News home page, so their presence proves "Google News is
+    // serving us results" — which is all we need.
+    okSelector: 'article, c-wiz[data-p]',
+  },
 ];
 
 let browser;

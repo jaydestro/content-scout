@@ -877,6 +877,8 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
           <button type="button" data-tab="mindshare" role="tab" aria-selected="false">Mindshare</button>
           <button type="button" data-tab="trends" role="tab" aria-selected="false">Trends</button>
           <button type="button" data-tab="gaps" role="tab" aria-selected="false">Gaps</button>
+          <button type="button" data-tab="replay" role="tab" aria-selected="false">Replay</button>
+          <button type="button" data-tab="seo" role="tab" aria-selected="false">SEO</button>
           <button type="button" data-tab="cfps" role="tab" aria-selected="false">CFPs</button>
           <button type="button" data-tab="conferences" role="tab" aria-selected="false">Conferences</button>
           <button type="button" data-tab="ask" role="tab" aria-selected="false">Ask</button>
@@ -1160,6 +1162,11 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             <input type="checkbox" id="conv-needs-reply" />
             Needs reply (negative + mixed)
           </label>
+          <select id="conv-team-mode" aria-label="Team filter" title="Filter by team membership: community-only, team-only, or everyone">
+            <option value="community">Community only (hide team)</option>
+            <option value="team">My team only</option>
+            <option value="everyone">Everyone (community + team)</option>
+          </select>
           <select id="conv-show" aria-label="Show closed / muted" title="Show closed / dismissed / muted conversations">
             <option value="open">Hide closed &amp; muted</option>
             <option value="all">Show all (incl. closed &amp; muted)</option>

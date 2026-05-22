@@ -444,6 +444,7 @@ When scanning sources via `web/fetch` or API calls, follow these rules to avoid 
 | Reddit | None required (cascading scanner) | Yes | Layer 0 = logged-in browser scan via `tools/browser-scan` if a fresh sidecar exists → Layer 1 = `old.reddit.com` RSS → Layer 2 = `old.reddit.com` HTML scrape → Layer 3 = Brave Search API if `BRAVE_SEARCH_API_KEY` set (Layer 3b = legacy Google PSE for pre-2026 projects only) → Layer 4 = manual import via `/scout-reddit-import`. OAuth creds optional pre-Layer-1 upgrade. **Always attempted — never skipped for missing keys.** |
 | X/Twitter | None required (cascading scanner) | Optional ($200/mo Basic for Layer 1) | Layer 0 = logged-in browser scan via `tools/browser-scan` if a fresh sidecar exists → Layer 1 = authenticated API → Layer 2 = Brave Search API (Layer 2b = legacy PSE) → Layer 3 = RSSHub feeds via Custom RSS → Layer 4 = web/fetch on referenced permalinks. **Always attempted at whatever layers have what they need.** |
 | LinkedIn | None required (free layered scanner) | Yes | Layer 0 = logged-in browser scan via `tools/browser-scan` if a fresh sidecar exists → Layer 1 = Brave Search API for `linkedin.com/posts/* linkedin.com/pulse/*` (Layer 1b = legacy PSE) → Layer 2 = RSSHub via Custom RSS → Layer 3 = web/fetch on referenced permalinks. No paid LinkedIn API used. **Always attempted at whatever layers have what they need.** |
+| Google (News + Web) | None required (browser scan only) | Yes | Layer 0 = `tools/browser-scan` runs two passes over the same logged-in browser context: **Google News** (`news.google.com/search?…+when:…`) for editorial coverage, then **Google Web Search** (`www.google.com/search?…&tbs=qdr:…`) for blogs / docs / repos. Items merge into a single `*-google.json` sidecar with a `subSource` discriminator (`google-news` / `google-web`); `source` is `google-news-browser` / `google-web-browser`. Web pass items typically have `post_date: null` — the `qdr` bucket already limits the window. No API-layer fallback; the browser scan is the only Google source. |
 | Hacker News | No | — | Works fine (Algolia API) |
 | Bluesky | App password | Yes (free) | Skipped only if `BLUESKY_HANDLE` or `BLUESKY_APP_PASSWORD` is missing. **If both are present, the agent MUST call `createSession` and run the search — "credentials present but API call not completed" is a bug, not an acceptable outcome.** |
 | Brave Search API | API key | Yes (2000/mo free) | Reddit Layer 3, LinkedIn Layer 1, X Layer 2 all skipped (cascade falls through to next layer or web/fetch fallback). |
@@ -1287,6 +1288,15 @@ If the config has no `## Social Post Standards` section, fall back to these mini
 #### Audience Awareness
 - Read `Target audience` from the config. Tailor technical depth, jargon, and framing to that audience.
 - If the audience is "backend developers", lean into implementation details. If "engineering managers", emphasize impact and outcomes. Adapt accordingly.
+
+#### Humanizer pass (mandatory)
+
+**Every social post variant MUST go through the humanizer skill before being saved.** The skill is vendored at `.claude/skills/humanizer/SKILL.md` (MIT, from https://github.com/blader/humanizer — see its `LICENSE`) and is treated as part of the post-generation flow, not optional cleanup.
+
+- Apply the skill's pattern list to LinkedIn, X, Bluesky, Reddit titles, Reddit bodies, and any OP-context comments. The patterns that bite social copy hardest: promotional adjectives ("vibrant", "groundbreaking", "seamless"), AI-vocabulary tells ("delve", "underscore", "showcase", "unlock", "leverage", "robust", "empower"), significance inflation ("a pivotal moment", "reshaping the landscape"), negative parallelisms ("It's not just X — it's Y"), em-dash overuse, and chatbot openers ("Excited to share", "Thrilled to announce").
+- Do the skill's audit prompt after the first pass ("What makes this so obviously AI-generated?") and revise once more.
+- The humanizer trims AI tells; it does **not** override the tuner contract. Tone, length caps, emoji budget, hashtag policy, and canonical brand name survive the pass unchanged.
+- If a variant still reads like a press release after two passes, drop it and write a different angle from scratch — do not save AI-sounding copy.
 
 #### Brand Name Enforcement
 - Read `Brand name — canonical form`, `Brand name — acceptable short form`, and `Brand name — never write` from the config.

@@ -36,14 +36,15 @@
   let statusCache = null;
   let statusLastFetched = 0;
   let polling = null;
-  let authCache = null; // { ok, port, checkedAt, platforms: { x|linkedin|reddit: { state, ... } } }
+  let authCache = null; // { ok, port, checkedAt, platforms: { x|linkedin|reddit|google: { state, ... } } }
   let wired = false;   // ensures we only attach event listeners once
 
-  const PLATFORM_LABEL = { x: 'X', linkedin: 'LinkedIn', reddit: 'Reddit' };
+  const PLATFORM_LABEL = { x: 'X', linkedin: 'LinkedIn', reddit: 'Reddit', google: 'Google News' };
   const PLATFORM_LOGIN_URL = {
     x: 'https://x.com/login',
     linkedin: 'https://www.linkedin.com/login',
     reddit: 'https://www.reddit.com/login',
+    google: 'https://news.google.com/',
   };
 
   async function fetchInfo() {
@@ -146,7 +147,7 @@
     if (!wrap) return;
     const timeEl = $('bs-auth-time');
     const platforms = authCache?.platforms || {};
-    for (const p of ['x', 'linkedin', 'reddit']) {
+    for (const p of ['x', 'linkedin', 'reddit', 'google']) {
       const chip = wrap.querySelector(`.bs-chip[data-platform="${p}"]`);
       if (!chip) continue;
       const dot = chip.querySelector('.bs-chip-dot');
@@ -202,10 +203,14 @@
         pill.style.color = 'var(--muted)';
       }
     }
-    // First time CDP comes up: kick off one auth check so the chips light up.
-    if (cdpUp && lastCdpUp !== true && !authCache) {
-      runAuthCheck().catch(() => {});
-    }
+    // Do NOT auto-fire an auth check here. `runAuthCheck()` spawns
+    // Playwright via /api/browser-scan/auth-check, which opens fresh
+    // tabs in the user's controlled browser for X / LinkedIn / Reddit /
+    // Google News. Firing it on every page load (whenever the CDP port
+    // happens to be up) made the browser sprout 4 tabs every time the
+    // web UI was opened — even if the user hadn't asked to scan
+    // anything yet. The chips stay ⚪ ("not checked") until the user
+    // clicks "Check sign-in" explicitly.
     if (!cdpUp && lastCdpUp === true) authCache = null;
     lastCdpUp = cdpUp;
     paintAuthChips();
@@ -215,7 +220,7 @@
     if (sidecarEl) {
       if (slug && platforms) {
         sidecarEl.innerHTML = `Sidecars for <code>${esc(slug)}</code>: ` +
-          ['x', 'linkedin', 'reddit']
+          ['x', 'linkedin', 'reddit', 'google']
             .map((p) => {
               const sc = platforms[p];
               if (!sc) return `<strong>${p}</strong>: <span style="color:var(--muted)">none</span>`;
@@ -312,7 +317,7 @@
       const other = entries.filter(([, v]) => !['signed-in', 'signed-out', 'needs-verification'].includes(v.state)).map(([k]) => PLATFORM_LABEL[k] || k);
       if (msg) {
         if (!signedOut.length && !needsVerify.length && !other.length) {
-          msg.innerHTML = `<span style="color:var(--ok,#2ea043);">Signed in to X, LinkedIn, and Reddit. Layer 0 ready.</span>`;
+          msg.innerHTML = `<span style="color:var(--ok,#2ea043);">Signed in to X, LinkedIn, Reddit, and Google News. Layer 0 ready.</span>`;
         } else {
           const parts = [];
           if (signedOut.length) parts.push(`Sign in to ${esc(signedOut.join(', '))} in the controlled browser.`);
@@ -347,7 +352,7 @@
         if (data.alreadyRunning) {
           msg.textContent = `Browser already running on CDP port (${data.browser || 'detected'}). Sign in if any tab still shows the login page.`;
         } else {
-          msg.innerHTML = `Browser launched (pid ${data.pid}). Sign in to X, LinkedIn, and Reddit in the new window, then leave it open.`;
+          msg.innerHTML = `Browser launched (pid ${data.pid}). Sign in to X, LinkedIn, and Reddit in the new window, then leave it open. (Google News works without sign-in.)`;
         }
       }
       let tries = 0;

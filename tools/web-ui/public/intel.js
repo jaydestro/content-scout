@@ -168,6 +168,9 @@
       // "all" explicitly.
       const params = new URLSearchParams({ include });
       if (include === 'all') params.set('includeMuted', '1');
+      // Always fetch team-member (product) rows too. The client-side
+      // team-mode filter decides whether to show, hide, or isolate them.
+      params.set('includeProduct', '1');
       const data = await fetch('/api/conversations?' + params.toString()).then((r) => r.json());
       _allConvs = Array.isArray(data.conversations) ? data.conversations : [];
       _platforms = new Set(_allConvs.map((c) => c.platform).filter(Boolean));
@@ -396,6 +399,7 @@
         ${checkbox}
         <span class="conv-dot" title="${esc(c.sentiment)}">${dot}</span>
         <strong>${esc(c.author || '(unknown)')}</strong>
+        ${c.community === 'product' ? '<span class="conv-team-badge" title="Member of the product team (from scout-config team-members list)">👥 Team</span>' : ''}
         <span class="conv-platform">${esc(c.platform || '')}</span>
         <span class="conv-date">${esc(c.date || '')}</span>
         <span class="conv-spacer"></span>
@@ -429,8 +433,18 @@
     const timeframe = document.getElementById('conv-timeframe')?.value || '';
     const jobsMode = document.getElementById('conv-jobs')?.value ?? 'hide';
     const needsReply = document.getElementById('conv-needs-reply')?.checked || false;
+    const teamMode = document.getElementById('conv-team-mode')?.value || 'community';
 
     let convs = _allConvs.slice();
+    // Team-mode filter: 'community' hides team-member rows (default — same
+    // as legacy behavior), 'team' shows only team rows, 'everyone' shows
+    // both. A row is considered "team" when the server tagged it with
+    // community === 'product'.
+    if (teamMode === 'community') {
+      convs = convs.filter((c) => c.community !== 'product');
+    } else if (teamMode === 'team') {
+      convs = convs.filter((c) => c.community === 'product');
+    }
     let jobsHidden = 0;
     if (jobsMode === 'hide') {
       const before = convs.length;
@@ -1303,7 +1317,7 @@
         renderConversations();
       });
     });
-    ['conv-q', 'conv-sentiment', 'conv-platform', 'conv-timeframe', 'conv-jobs', 'conv-needs-reply'].forEach((id) => {
+    ['conv-q', 'conv-sentiment', 'conv-platform', 'conv-timeframe', 'conv-jobs', 'conv-needs-reply', 'conv-team-mode'].forEach((id) => {
       const el = document.getElementById(id);
       if (el && !el.dataset.wired) {
         el.dataset.wired = '1';
@@ -1594,6 +1608,21 @@
     return 'other';
   }
 
+  // Wrap fetch with an AbortController-based timeout so a slow or hung
+  // /api/conversations response can't pin the "Needs your attention" card on
+  // "Loading…" forever and block the rest of the dashboard from feeling done.
+  async function fetchJsonWithTimeout(url, timeoutMs) {
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), timeoutMs);
+    try {
+      const r = await fetch(url, { signal: ac.signal });
+      if (!r.ok) throw new Error(`${url}: ${r.status}`);
+      return await r.json();
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
   async function loadSocialActivity() {
     const host = document.getElementById('dash-social-activity');
     const summary = document.getElementById('dash-social-summary');
@@ -1601,7 +1630,10 @@
     if (!host) return;
     host.innerHTML = '<p class="hint">Loading…</p>';
     try {
-      const data = await fetch('/api/conversations?includeProduct=1').then((r) => r.json());
+      // 8s ceiling — covers a cold index build on first dashboard load, but
+      // still fails fast enough that the user sees an actionable error
+      // instead of a stuck card.
+      const data = await fetchJsonWithTimeout('/api/conversations?includeProduct=1', 8000);
       const allEver = Array.isArray(data.conversations) ? data.conversations : [];
       // Dashboard card is intentionally scoped to the most recent 30 days.
       // Anything older lives in the Conversations view, which has its own
@@ -1635,40 +1667,16 @@
         return;
       }
 
-      // Pre-validate every URL we might render so dead links never reach the
-      // dashboard. Items whose URL is malformed or unreachable get their
-      // url stripped — the item itself stays (as plain text / no-link form)
-      // so we don't silently lose conversation context. Server caches probe
-      // results for 1h, so repeat loads are effectively free.
-      const urlSet = new Set();
-      for (const c of all) {
-        if (c && isValidPostUrl(c.url)) urlSet.add(c.url);
-      }
-      const urls = [...urlSet].slice(0, 24); // hard cap on per-load probes
-      const liveMap = new Map();
-      const PROBE_CONC = 6;
-      const PROBE_BUDGET_MS = 4000;
-      const deadline = Date.now() + PROBE_BUDGET_MS;
-      let pi = 0;
-      async function probeWorker() {
-        while (pi < urls.length) {
-          if (Date.now() > deadline) break;
-          const u = urls[pi++];
-          try {
-            const r = await checkUrlLive(u);
-            liveMap.set(u, !!(r && r.ok));
-          } catch {
-            liveMap.set(u, false);
-          }
-        }
-      }
-      await Promise.all(Array.from({ length: PROBE_CONC }, probeWorker));
-      // Strip URLs that failed the probe (or that we didn't probe due to the
-      // cap — treat those as unknown/dead to honor "never put dead links").
+      // URL liveness used to be probed *before* render — that added up to 4s
+      // of blocking time and meant a slow `/api/check-url` round-trip could
+      // hold the whole "Needs your attention" card on "Loading…" and make the
+      // dashboard feel broken. Now we render with the URLs we have, then
+      // probe in the background and strip dead links in place. The markup
+      // already tags every candidate link with `data-check-url`, so the
+      // background pass can find and downgrade them without re-rendering.
       for (const c of all) {
         if (!c) continue;
-        if (!isValidPostUrl(c.url)) { c.url = ''; continue; }
-        if (liveMap.get(c.url) !== true) c.url = '';
+        if (!isValidPostUrl(c.url)) c.url = '';
       }
 
       // Bucket by platform → community/product
@@ -1765,6 +1773,14 @@
         needsHtml ||
         '<p class="hint">No platform-specific conversations parsed yet.</p>';
 
+      // Background liveness probe: walk every `data-check-url` we just
+      // rendered, probe in the background, and downgrade dead links to
+      // plain text in place. This used to block render for up to 4s; now
+      // the card paints immediately and dead links quietly fall away once
+      // the probe completes. Server caches probe results for 1h, so
+      // subsequent dashboard loads finish near-instantly.
+      queueMicrotask(() => decayDeadDashLinks(host));
+
       // Social pulse links go to the Conversations view by default so
       // users can read the post inline. Ctrl/Cmd/middle-click still
       // opens the external source in a new tab.
@@ -1818,8 +1834,40 @@
         });
       });
     } catch (err) {
-      host.innerHTML = `<p class="hint">Failed to load conversations: ${esc(err.message || err)}</p>`;
+      const isTimeout = err && (err.name === 'AbortError' || /aborted/i.test(String(err.message || '')));
+      host.innerHTML = isTimeout
+        ? `<p class="hint">Couldn't load conversations in time — the server may still be indexing. <button type="button" class="link-btn" id="dash-social-retry">Retry</button></p>`
+        : `<p class="hint">Failed to load conversations: ${esc(err.message || err)} <button type="button" class="link-btn" id="dash-social-retry">Retry</button></p>`;
+      document.getElementById('dash-social-retry')?.addEventListener('click', () => loadSocialActivity());
     }
+  }
+
+  // Probe every rendered `data-check-url` in the host and remove the `href`
+  // / collapse the `<a>` to a plain `<span>` when the URL is unreachable.
+  // Runs in the background after the card paints — never blocks render.
+  async function decayDeadDashLinks(host) {
+    const anchors = Array.from(host.querySelectorAll('a.dash-link[data-check-url]'));
+    if (!anchors.length) return;
+    const urls = [...new Set(anchors.map((a) => a.dataset.checkUrl).filter(Boolean))].slice(0, 24);
+    const CONC = 6;
+    let i = 0;
+    async function worker() {
+      while (i < urls.length) {
+        const u = urls[i++];
+        let ok = false;
+        try { const r = await checkUrlLive(u); ok = !!(r && r.ok); } catch { ok = false; }
+        if (ok) continue;
+        anchors
+          .filter((a) => a.dataset.checkUrl === u && a.isConnected)
+          .forEach((a) => {
+            const span = document.createElement('span');
+            span.className = a.className;
+            span.textContent = a.textContent;
+            a.replaceWith(span);
+          });
+      }
+    }
+    await Promise.all(Array.from({ length: CONC }, worker));
   }
 
   function trim(s, n) {

@@ -29,11 +29,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { canonicalUrlKey } from './lib/report-index.mjs';
+import {
+  CACHED_BODIES_FILE,
+  resolveStateRead,
+  resolveStateWrite,
+} from './lib/paths.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const REPORTS_DIR = path.join(REPO_ROOT, 'reports');
-const CACHE_FILE = path.join(REPORTS_DIR, '.cached-bodies.json');
 
 const BSKY_API = 'https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread';
 const CONCURRENCY = 4;
@@ -62,17 +66,21 @@ function parseBskyUrl(url) {
 }
 
 async function loadCache() {
+  const file = await resolveStateRead(CACHED_BODIES_FILE, REPORTS_DIR);
+  if (!file) return {};
   try {
-    return JSON.parse(await fs.readFile(CACHE_FILE, 'utf8')) || {};
+    return JSON.parse(await fs.readFile(file, 'utf8')) || {};
   } catch {
     return {};
   }
 }
 
 async function saveCache(obj) {
-  const tmp = CACHE_FILE + '.tmp';
+  const file = await resolveStateWrite(CACHED_BODIES_FILE);
+  const tmp = file + '.tmp';
   await fs.writeFile(tmp, JSON.stringify(obj, null, 2) + '\n', 'utf8');
-  await fs.rename(tmp, CACHE_FILE);
+  await fs.rename(tmp, file);
+  return file;
 }
 
 async function fetchPostText({ handle, rkey }) {
@@ -182,8 +190,8 @@ async function main() {
     }
   }, CONCURRENCY);
 
-  await saveCache(cache);
-  console.log(`\nDone: ${ok} fetched, ${failed} failed. Cache: ${CACHE_FILE}`);
+  const cacheFile = await saveCache(cache);
+  console.log(`\nDone: ${ok} fetched, ${failed} failed. Cache: ${cacheFile}`);
 }
 
 main().catch((err) => {
