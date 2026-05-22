@@ -67,9 +67,9 @@
             <svg class="icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
             <span class="nav-label">Configs</span>
           </button>
-          <button data-view="run" type="button" aria-label="Run" title="Run">
+          <button data-view="run" type="button" aria-label="Scan" title="Scan">
             <svg class="icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            <span class="nav-label">Run</span>
+            <span class="nav-label">Scan</span>
           </button>
           <button data-view="reports" type="button" aria-label="Reports" title="Reports">
             <svg class="icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
@@ -145,9 +145,7 @@
                 <summary class="hint">Prefer the guided chat wizard?</summary>
                 <div class="embedded-cli-body">
                   <p class="hint">
-                    Chat with the agent right here, or
-                    <button id="setup-run-onboard" class="linklike" type="button">open /scout-onboard in the Run view</button>
-                    — or paste <code>/scout-onboard</code> into your editor's chat panel.
+                    Chat with the agent right here, or paste <code>/scout-onboard</code> into your editor's chat panel.
                   </p>
                   <div class="cli-toolbar">
                     <button id="onboard-cli-start" type="button">Start /scout-onboard</button>
@@ -567,6 +565,15 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             <button id="wiz-next" type="button">Next →</button>
           </div>
         </div>
+
+        <div class="card setup-tools">
+          <h3>Setup tools</h3>
+          <p class="hint">Once the wizard's done, use these to verify and revisit setup.</p>
+          <div class="view-toolbar" role="toolbar" aria-label="Setup tools">
+            <button type="button" data-launch-cmd="scout-doctor" data-launch-title="Health check" data-launch-desc="Validate config, .env keys, source reachability, and state integrity.">Run health check</button>
+            <button type="button" data-launch-cmd="scout-onboard" data-launch-title="Onboarding wizard" data-launch-desc="The onboarding wizard is interactive — run it in your AI chat (Copilot Chat or Claude Code) by typing /scout-onboard." data-launch-chat-only="true">Re-run onboarding (in chat)</button>
+          </div>
+        </div>
       </section>
       <!-- Dashboard -->
       <section id="view-dashboard" class="view">
@@ -741,23 +748,18 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
         </div>
       </section>
 
-      <!-- Run -->
+      <!-- Run — dedicated to /scout-scan (content discovery). Other commands
+           launch from their owning views (Setup, Reports, Social, Conversations)
+           via the modal runner at the bottom of <main>. -->
       <section id="view-run" class="view">
-        <h2>Run a command</h2>
+        <h2>Scan</h2>
+        <p class="hint view-intro">Run <code>/scout-scan</code> against one or more subjects to discover new content. Other tools (gaps, trends, calendar, SEO, doctor…) now live in their own sections — see the sidebar.</p>
         <div class="run-form">
           <label>
             Command
             <select id="run-command">
-              <option value="scout-onboard">/scout-onboard — interactive setup wizard</option>
               <option value="scout-scan" selected>/scout-scan — scan sources &amp; generate a report</option>
-              <option value="scout-calendar">/scout-calendar — weekly posting schedule</option>
-              <option value="scout-gaps">/scout-gaps — content gap analysis</option>
-              <option value="scout-trends">/scout-trends — month-over-month trends</option>
-              <option value="scout-creators">/scout-creators — creator trajectories &amp; interventions</option>
-              <option value="scout-doctor">/scout-doctor — validate config, keys, sources</option>
-              <option value="scout-replay">/scout-replay — re-run filters on a saved scan (no API calls)</option>
-              <option value="scout-seo">/scout-seo — SEO audit &amp; rewrite recommendations</option>
-              <option value="custom">Custom prompt</option>
+              <option value="custom">Custom prompt (advanced)</option>
             </select>
           </label>
           <div id="run-subject-wrap">
@@ -781,7 +783,7 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             <input id="run-extra" type="text" placeholder="e.g. a URL, item number, or additional context" />
           </label>
           <fieldset id="run-browser-scan-wrap" class="run-browser-scan">
-            <legend>★ Sign-in scan — X / LinkedIn / Reddit <span class="bs-recommended-badge">Recommended</span></legend>
+            <legend>★ Sign-in scan — X / LinkedIn / Reddit / Google News <span class="bs-recommended-badge">Recommended</span></legend>
             <p class="hint" id="run-browser-scan-intro">
               <strong>This is the single biggest quality boost you can give Content Scout.</strong>
               It reads results from a browser you're already signed in to, so scans see what <em>you'd</em> see when logged in —
@@ -796,6 +798,7 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
               <span class="bs-chip" data-platform="x">X <span class="bs-chip-dot">⚪</span></span>
               <span class="bs-chip" data-platform="linkedin">LinkedIn <span class="bs-chip-dot">⚪</span></span>
               <span class="bs-chip" data-platform="reddit">Reddit <span class="bs-chip-dot">⚪</span></span>
+              <span class="bs-chip" data-platform="google">Google News <span class="bs-chip-dot">⚪</span></span>
               <button type="button" id="bs-auth-check-btn" class="link-btn" title="Verify sign-in by attaching to the browser (slow, ~10s)">Check sign-in</button>
               <span id="bs-auth-time" class="hint"></span>
             </div>
@@ -869,18 +872,78 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
       <!-- Reports -->
       <section id="view-reports" class="view">
         <h2>Reports</h2>
-        <div class="split">
-          <aside>
-            <input type="search" id="reports-filter" class="list-filter" placeholder="Filter reports (name or content)…" autocomplete="off" />
-            <ul id="reports-list"></ul>
-          </aside>
-          <article id="reports-body" class="markdown">Select a report.</article>
+        <div class="reports-tabs" role="tablist" id="reports-tabs">
+          <button type="button" data-tab="content" role="tab" class="active" aria-selected="true">Content</button>
+          <button type="button" data-tab="mindshare" role="tab" aria-selected="false">Mindshare</button>
+          <button type="button" data-tab="trends" role="tab" aria-selected="false">Trends</button>
+          <button type="button" data-tab="gaps" role="tab" aria-selected="false">Gaps</button>
+          <button type="button" data-tab="replay" role="tab" aria-selected="false">Replay</button>
+          <button type="button" data-tab="seo" role="tab" aria-selected="false">SEO</button>
+          <button type="button" data-tab="cfps" role="tab" aria-selected="false">CFPs</button>
+          <button type="button" data-tab="conferences" role="tab" aria-selected="false">Conferences</button>
+          <button type="button" data-tab="ask" role="tab" aria-selected="false">Ask</button>
+        </div>
+
+        <!-- Action bar: contextual actions per tab (Compute now for Trends/Gaps, etc.) -->
+        <div class="reports-action-bar" id="reports-action-bar" role="region" aria-label="Tab actions"></div>
+
+        <!-- Browse panel (Content, Mindshare, Trends, Gaps, and "all other kinds") -->
+        <div class="tab-panel" data-panel="browse">
+          <div class="split">
+            <aside>
+              <input type="search" id="reports-filter" class="list-filter" placeholder="Filter reports (name or content)…" autocomplete="off" />
+              <ul id="reports-list"></ul>
+            </aside>
+            <article id="reports-body" class="markdown">Select a report.</article>
+          </div>
+        </div>
+
+        <!-- CFPs stub -->
+        <div class="tab-panel empty-state" data-panel="cfps" hidden>
+          <h3>Call for Papers tracker</h3>
+          <p>This tab is a placeholder. A CFP scanner (Sessionize, confs.tech, Linux Foundation events) hasn't been wired into the index yet.</p>
+          <p>Use the <strong>Ask</strong> tab to query the agent in the meantime — for example: <em>"Find open CFPs relevant to my product over the next 90 days."</em></p>
+        </div>
+
+        <!-- Conferences stub -->
+        <div class="tab-panel empty-state" data-panel="conferences" hidden>
+          <h3>Conferences</h3>
+          <p>This tab is a placeholder. A conference-calendar scanner hasn't been wired up yet — when it exists, deadlines, dates, and location will show here.</p>
+          <p>For now, ask the agent on the <strong>Ask</strong> tab.</p>
+        </div>
+
+        <!-- Ask the agent -->
+        <div class="tab-panel" data-panel="ask" hidden>
+          <div class="ask-form">
+            <p class="hint" id="ask-context-hint">Ask the agent for any analysis across your reports. Quick prompts below pre-fill common requests; edit them before sending if you like.</p>
+            <div class="ask-chips" id="ask-chips">
+              <button type="button" data-ask-chip="replay">Replay current report</button>
+              <button type="button" data-ask-chip="seo">SEO audit a URL…</button>
+              <button type="button" data-ask-chip="cfp">Find open CFPs</button>
+              <button type="button" data-ask-chip="conf">Upcoming conferences</button>
+              <button type="button" data-ask-chip="summary">Summarize last 30 days</button>
+              <button type="button" data-ask-chip="recommend">What should we write next?</button>
+            </div>
+            <label class="field">
+              <span>Prompt</span>
+              <textarea id="ask-prompt" rows="5" placeholder="Type a request for the agent (uses your active product slug as context)…"></textarea>
+            </label>
+            <div class="toolbar">
+              <button type="button" id="ask-send">Send to agent</button>
+              <button type="button" id="ask-stop" class="secondary" hidden>Stop</button>
+              <span class="hint" id="ask-meta"></span>
+            </div>
+            <pre id="ask-output" class="ask-output">No request sent yet.</pre>
+          </div>
         </div>
       </section>
 
       <!-- Social -->
       <section id="view-social" class="view">
         <h2>Social posts</h2>
+        <div class="view-toolbar" role="toolbar" aria-label="Social post tools">
+          <button type="button" data-launch-cmd="scout-calendar" data-launch-title="Posting calendar" data-launch-desc="Generate a weekly posting calendar from recent reports + social posts.">Generate posting calendar</button>
+        </div>
 
         <div class="card social-generate">
           <h3>✨ Create posts for me</h3>
@@ -1064,6 +1127,15 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
       <!-- Conversations -->
       <section id="view-conversations" class="view">
         <h2>Conversations &amp; mentions</h2>
+        <div class="view-toolbar" role="toolbar" aria-label="Conversation tools">
+          <button type="button" data-launch-cmd="scout-creators" data-launch-title="Creator trajectories" data-launch-desc="View creator trajectories, log outreach, track sentiment outcomes. (Best run in chat — this command is interactive.)" data-launch-chat-only="true">Creators &amp; interventions</button>
+        </div>
+        <div class="conv-tabs" role="tablist" aria-label="Conversation type">
+          <button type="button" class="conv-tab is-active" role="tab" aria-selected="true" data-conv-tab="all">All <span class="conv-tab-count" data-count-for="all">0</span></button>
+          <button type="button" class="conv-tab" role="tab" aria-selected="false" data-conv-tab="conversations">Conversations <span class="conv-tab-count" data-count-for="conversations">0</span></button>
+          <button type="button" class="conv-tab" role="tab" aria-selected="false" data-conv-tab="mentions">Mentions <span class="conv-tab-count" data-count-for="mentions">0</span></button>
+          <span class="conv-tab-hint hint">Conversations = threaded discussion (Reddit, HN, replies). Mentions = drive-by posts naming the product.</span>
+        </div>
         <div class="conv-toolbar">
           <input id="conv-q" type="search" placeholder="Search full archive (summary, author, platform)…" />
           <select id="conv-sentiment" aria-label="Filter by sentiment" title="Sentiment">
@@ -1090,6 +1162,11 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             <input type="checkbox" id="conv-needs-reply" />
             Needs reply (negative + mixed)
           </label>
+          <select id="conv-team-mode" aria-label="Team filter" title="Filter by team membership: community-only, team-only, or everyone">
+            <option value="community">Community only (hide team)</option>
+            <option value="team">My team only</option>
+            <option value="everyone">Everyone (community + team)</option>
+          </select>
           <select id="conv-show" aria-label="Show closed / muted" title="Show closed / dismissed / muted conversations">
             <option value="open">Hide closed &amp; muted</option>
             <option value="all">Show all (incl. closed &amp; muted)</option>
@@ -1107,6 +1184,14 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             title="Local-LLM sentiment reviewer status — click to refresh"
             data-state="unknown">
             🤖 LLM: <span class="conv-sentiment-status-label">checking…</span>
+          </button>
+          <button
+            type="button"
+            id="conv-recheck-bulk"
+            class="secondary"
+            title="Re-classify every visible row currently marked neutral using the local LLM"
+            hidden>
+            🤖 Re-check <span id="conv-recheck-bulk-count">0</span> neutrals
           </button>
           <span class="hint" id="conv-meta"></span>
         </div>
@@ -1195,6 +1280,35 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
         <div id="conv-list"><p class="hint">Loading…</p></div>
       </section>
     </main>
+
+    <!-- Modal runner — fired by [data-launch-cmd] buttons in any view. -->
+    <div id="cmd-modal" class="cmd-modal" hidden role="dialog" aria-modal="true" aria-labelledby="cmd-modal-title">
+      <div class="cmd-modal-backdrop" data-cmd-modal-close></div>
+      <div class="cmd-modal-panel">
+        <header class="cmd-modal-head">
+          <h3 id="cmd-modal-title">Run command</h3>
+          <button type="button" class="cmd-modal-x" data-cmd-modal-close aria-label="Close">×</button>
+        </header>
+        <p id="cmd-modal-desc" class="hint"></p>
+        <div id="cmd-modal-chat" class="cmd-modal-chat" hidden>
+          <p class="hint">Copy this prompt into your AI chat:</p>
+          <code id="cmd-modal-prompt" class="cmd-modal-prompt"></code>
+          <button type="button" id="cmd-modal-copy">Copy prompt</button>
+        </div>
+        <div id="cmd-modal-form" class="cmd-modal-form">
+          <label id="cmd-modal-extra-wrap" class="field" hidden>
+            <span id="cmd-modal-extra-label">Extra args</span>
+            <input type="text" id="cmd-modal-extra" />
+          </label>
+          <div class="cmd-modal-actions">
+            <button type="button" id="cmd-modal-start">Start</button>
+            <button type="button" id="cmd-modal-stop" class="secondary" hidden>Stop</button>
+            <span id="cmd-modal-meta" class="hint" aria-live="polite"></span>
+          </div>
+          <pre id="cmd-modal-output" class="cmd-modal-output" aria-live="polite"></pre>
+        </div>
+      </div>
+    </div>
 
     <!-- Bulk URLs dialog lives at <body> level so it can be opened from
          any view (Run, Social posts, etc.) without being suppressed by a

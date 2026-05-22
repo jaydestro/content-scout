@@ -326,6 +326,24 @@ For every conversation item, assign a sentiment. **Sentiment is about the author
 **Confidence on directional / migration items:**
 Migration/switching items always carry `sentiment_confidence: medium` at best unless the post text explicitly states the direction with both endpoints named. If only one endpoint is named, mark `low` and let the human confirm.
 
+**Common misclassification patterns — DO NOT trigger on these:**
+
+1. **Tutorials, talks, demos, books, and courses about our product default to 🟢 Positive** (or 🟡 Neutral if the author is genuinely neutral). The act of publishing educational content about our product is implicit advocacy — the author chose to invest hours teaching it. YouTube tutorials, blog walkthroughs, "let's build X with [our product]" posts, conference sessions, and book chapters all qualify. The lowest sentiment for a tutorial/educational item about our product is 🟡, never 🔴.
+
+2. **Tutorials with troubleshooting, "common pitfalls", or "gotchas" sections stay positive.** Acknowledging difficulty inside a teaching artifact is pedagogy, not critique. A "5 mistakes to avoid with [our product]" video by a community educator is 🟢, not 🔴 or "mixed".
+
+3. **Negation phrases in body text are NOT sentiment signals.** Phrases like "are not", "is not", "do not", "n't", "no longer", "without" only count when they negate an evaluative sentence whose subject is OUR product and whose predicate is evaluative (good/bad/recommended/working/fast/slow). Feature-description negations ("documents are not limited to X", "you do not need to provision throughput", "indexes are not required for…") are neutral framing — often positive, since they describe capabilities or remove friction.
+
+4. **Provocative or rhetorical titles are framing, not critique.** Titles like "Your EF Core Entities Are Not Your Domain Objects", "The Hidden Tax of Relational Development", "The Sharding Mistake That Crashes EVERY Database", "Why X Is Broken" are hooks designed to set up a teaching moment about our product. Always read the body before scoring. If the body teaches or recommends our product, the stance is 🟢 or 🟡.
+
+5. **Use 🟠 Mixed (or `sentiment: "mixed"`) only when both elements are present in the same item:** an explicit positive claim about our product AND an explicit reservation about our product. Absent that real trade-off, default to the single sentiment that is present, or 🟡 Neutral. Do not infer "mixed" from ambivalent-sounding wording, hedges, or the mere presence of a "limitations" subsection in a tutorial.
+
+6. **When sentiment is inferred from a single ambiguous phrase rather than an evaluative sentence, set `sentiment_confidence: low`** so the item lands in the human-triage bucket instead of skewing counts. Better to under-classify with low confidence than to over-classify with false confidence.
+
+7. **MUST classify every social item individually using its full body text.** When ingesting browser-scan sidecars (Layer 0) for X, LinkedIn, Bluesky, and Reddit, the canonical text for sentiment is the post's `body` field — NOT the title (which is empty for most social posts) and NOT a default. **Bulk-stamping `sentiment: "neutral", sentiment_confidence: "low"` across many items in a section is a quality failure**, not a safety move; it produces an all-yellow Conversations view that destroys the signal the report is supposed to surface. Read every body, apply the rules above, and emit `positive`/`neutral`/`negative` with `high`/`medium`/`low` confidence per-item. If body text is genuinely absent (rare — browser-scan always captures it), then-and-only-then is `neutral`/`low` acceptable, with a `provenance` note `"body_missing": true`.
+
+8. **The JSON sidecar's `sentiment_confidence` field is mandatory and case-sensitive lowercase** (`high`/`medium`/`low`). The web UI's bulk "Re-check N neutrals" button is a backstop for items the agent missed, not a substitute for doing the classification at scan time.
+
 #### Feature Request & Pain Point Flagging
 When scanning conversations, flag items that match these patterns:
 - **Feature request:** "I wish...", "it would be great if...", "is there a way to...", "does [product] support...", "feature request:", "please add"
@@ -426,6 +444,7 @@ When scanning sources via `web/fetch` or API calls, follow these rules to avoid 
 | Reddit | None required (cascading scanner) | Yes | Layer 0 = logged-in browser scan via `tools/browser-scan` if a fresh sidecar exists → Layer 1 = `old.reddit.com` RSS → Layer 2 = `old.reddit.com` HTML scrape → Layer 3 = Brave Search API if `BRAVE_SEARCH_API_KEY` set (Layer 3b = legacy Google PSE for pre-2026 projects only) → Layer 4 = manual import via `/scout-reddit-import`. OAuth creds optional pre-Layer-1 upgrade. **Always attempted — never skipped for missing keys.** |
 | X/Twitter | None required (cascading scanner) | Optional ($200/mo Basic for Layer 1) | Layer 0 = logged-in browser scan via `tools/browser-scan` if a fresh sidecar exists → Layer 1 = authenticated API → Layer 2 = Brave Search API (Layer 2b = legacy PSE) → Layer 3 = RSSHub feeds via Custom RSS → Layer 4 = web/fetch on referenced permalinks. **Always attempted at whatever layers have what they need.** |
 | LinkedIn | None required (free layered scanner) | Yes | Layer 0 = logged-in browser scan via `tools/browser-scan` if a fresh sidecar exists → Layer 1 = Brave Search API for `linkedin.com/posts/* linkedin.com/pulse/*` (Layer 1b = legacy PSE) → Layer 2 = RSSHub via Custom RSS → Layer 3 = web/fetch on referenced permalinks. No paid LinkedIn API used. **Always attempted at whatever layers have what they need.** |
+| Google (News + Web) | None required (browser scan only) | Yes | Layer 0 = `tools/browser-scan` runs two passes over the same logged-in browser context: **Google News** (`news.google.com/search?…+when:…`) for editorial coverage, then **Google Web Search** (`www.google.com/search?…&tbs=qdr:…`) for blogs / docs / repos. Items merge into a single `*-google.json` sidecar with a `subSource` discriminator (`google-news` / `google-web`); `source` is `google-news-browser` / `google-web-browser`. Web pass items typically have `post_date: null` — the `qdr` bucket already limits the window. No API-layer fallback; the browser scan is the only Google source. |
 | Hacker News | No | — | Works fine (Algolia API) |
 | Bluesky | App password | Yes (free) | Skipped only if `BLUESKY_HANDLE` or `BLUESKY_APP_PASSWORD` is missing. **If both are present, the agent MUST call `createSession` and run the search — "credentials present but API call not completed" is a bug, not an acceptable outcome.** |
 | Brave Search API | API key | Yes (2000/mo free) | Reddit Layer 3, LinkedIn Layer 1, X Layer 2 all skipped (cascade falls through to next layer or web/fetch fallback). |
@@ -1269,6 +1288,15 @@ If the config has no `## Social Post Standards` section, fall back to these mini
 #### Audience Awareness
 - Read `Target audience` from the config. Tailor technical depth, jargon, and framing to that audience.
 - If the audience is "backend developers", lean into implementation details. If "engineering managers", emphasize impact and outcomes. Adapt accordingly.
+
+#### Humanizer pass (mandatory)
+
+**Every social post variant MUST go through the humanizer skill before being saved.** The skill is vendored at `.claude/skills/humanizer/SKILL.md` (MIT, from https://github.com/blader/humanizer — see its `LICENSE`) and is treated as part of the post-generation flow, not optional cleanup.
+
+- Apply the skill's pattern list to LinkedIn, X, Bluesky, Reddit titles, Reddit bodies, and any OP-context comments. The patterns that bite social copy hardest: promotional adjectives ("vibrant", "groundbreaking", "seamless"), AI-vocabulary tells ("delve", "underscore", "showcase", "unlock", "leverage", "robust", "empower"), significance inflation ("a pivotal moment", "reshaping the landscape"), negative parallelisms ("It's not just X — it's Y"), em-dash overuse, and chatbot openers ("Excited to share", "Thrilled to announce").
+- Do the skill's audit prompt after the first pass ("What makes this so obviously AI-generated?") and revise once more.
+- The humanizer trims AI tells; it does **not** override the tuner contract. Tone, length caps, emoji budget, hashtag policy, and canonical brand name survive the pass unchanged.
+- If a variant still reads like a press release after two passes, drop it and write a different angle from scratch — do not save AI-sounding copy.
 
 #### Brand Name Enforcement
 - Read `Brand name — canonical form`, `Brand name — acceptable short form`, and `Brand name — never write` from the config.

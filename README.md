@@ -55,6 +55,12 @@ Plus `/scout-creators`, `/scout-doctor`, `/scout-keys`, `/scout-replay`, `/scout
 
 All API keys are optional — without them, the agent skips those sources. Keys live in `.env` (not in config files). See [docs/API-KEYS.md](docs/API-KEYS.md) and [docs/SOURCES.md](docs/SOURCES.md).
 
+### Humanizer skill (recommended, used by default)
+
+Content Scout vendors the [humanizer](https://github.com/blader/humanizer) skill (MIT) at [.claude/skills/humanizer/SKILL.md](.claude/skills/humanizer/SKILL.md) and runs every generated social post through it before saving. The skill strips the common tells of AI-generated copy — promotional adjectives, AI-vocabulary words ("delve", "underscore", "showcase"), significance inflation, em-dash overuse, negative parallelisms, and chatbot openers like "Excited to share…". Posts read like a practitioner wrote them, not like an LLM autocompleted a marketing brief.
+
+No setup is required — the skill is part of the repo and loads automatically with `/scout-post` and `/scout-scan`. If your editor lists user-level skills separately and prefers them over repo-vendored ones, install the upstream skill from `https://github.com/blader/humanizer` and the same patterns will apply.
+
 ## Roles
 
 Pick one role, multiple roles (merged), or a custom role during onboarding. Each role enables different features and report sections — Program Manager, Product Manager, Social Media Manager, Product Marketer, Developer Advocate, Community Manager, Technical Writer. See [docs/WORKFLOW.md](docs/WORKFLOW.md) for the full feature matrix.

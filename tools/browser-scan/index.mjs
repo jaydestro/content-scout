@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Content Scout — Browser Scan
-// Drives Microsoft Edge to scrape X, LinkedIn, and Reddit search results
-// from the logged-in UI. Writes normalized JSON sidecars that `scout scan`
-// ingests as Layer 0.
+// Drives Microsoft Edge to scrape X, LinkedIn, Reddit, and Google News
+// search results from the logged-in UI. Writes normalized JSON sidecars
+// that `scout scan` ingests as Layer 0.
 //
 // Default mode is CDP attach: you start Edge yourself with
 //   node tools/browser-scan/launch-edge.mjs
@@ -13,7 +13,7 @@
 //   node index.mjs launch                            # spawn Edge with debug port + login tabs
 //   node index.mjs scan --slug <slug>                # CDP attach by default
 //   node index.mjs scan --slug <slug> --mode launch  # legacy: Playwright launches its own profile
-//   node index.mjs login --platform x|linkedin|reddit   # legacy launch-mode helper (NOT recommended)
+//   node index.mjs login --platform x|linkedin|reddit|google   # legacy launch-mode helper (NOT recommended)
 //
 // See README.md for the full flow.
 
@@ -24,9 +24,11 @@ import { fileURLToPath } from 'node:url';
 import { scanX, openXLogin } from './platforms/x.mjs';
 import { scanLinkedIn, openLinkedInLogin } from './platforms/linkedin.mjs';
 import { scanReddit, openRedditLogin } from './platforms/reddit.mjs';
+import { scanGoogle, openGoogleLogin } from './platforms/google.mjs';
 import { loadConfig } from './lib/config.mjs';
 import { ensureProfileDir, launchEdge, attachEdge, newPage } from './lib/browser.mjs';
 import { filterHiring } from './lib/hiring-filter.mjs';
+import { browserScanSlugDir } from '../lib/paths.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -45,7 +47,7 @@ for (let i = 1; i < argv.length; i++) {
   }
 }
 
-const PLATFORMS = ['x', 'linkedin', 'reddit'];
+const PLATFORMS = ['x', 'linkedin', 'reddit', 'google'];
 const DEFAULT_CDP_PORT = 9222;
 
 function usageAndExit(code = 1) {
@@ -58,12 +60,12 @@ Usage:
       login tabs. Sign in once; leave Edge running.
 
   node index.mjs scan --slug <slug>
-                      [--platforms x,linkedin,reddit]
+                      [--platforms x,linkedin,reddit,google]
                       [--mode cdp|launch]              (default: cdp)
                       [--port 9222]                    (cdp port)
                       [--days 30] [--max-per-term 25] [--headed]
 
-  node index.mjs login --platform x|linkedin|reddit    (LEGACY launch-mode only)
+  node index.mjs login --platform x|linkedin|reddit|google    (LEGACY launch-mode only)
 
 Examples:
   node index.mjs launch
@@ -106,6 +108,7 @@ if (command === 'launch') {
     if (platform === 'x') await openXLogin(handle);
     else if (platform === 'linkedin') await openLinkedInLogin(handle);
     else if (platform === 'reddit') await openRedditLogin(handle);
+    else if (platform === 'google') await openGoogleLogin(handle);
     await new Promise((resolve) => browser.on('close', resolve));
   } finally {
     if (browser.isConnected && browser.isConnected()) await browser.close().catch(() => {});
@@ -142,7 +145,7 @@ if (command === 'launch') {
 
   const sinceMs = Date.now() - days * 24 * 60 * 60 * 1000;
   const stamp = formatStamp(new Date());
-  const outDir = path.join(ROOT, 'reports', '.browser-scan', slug);
+  const outDir = browserScanSlugDir(slug);
   fs.mkdirSync(outDir, { recursive: true });
 
   // Per-scan meta sidecar — captures hiring-drop counts so the agent can
@@ -199,6 +202,7 @@ if (command === 'launch') {
         sinceMs,
         maxPerTerm,
         slug,
+        outDir,
         // In CDP mode, hand the shared tab to the platform so it navigates
         // in place instead of opening + closing its own tab. In launch
         // mode each platform still owns its tab (separate Playwright
@@ -208,6 +212,7 @@ if (command === 'launch') {
       if (platform === 'x') items = await scanX(handle, ctx);
       else if (platform === 'linkedin') items = await scanLinkedIn(handle, ctx);
       else if (platform === 'reddit') items = await scanReddit(handle, ctx);
+      else if (platform === 'google') items = await scanGoogle(handle, ctx);
     } catch (e) {
       console.error(`[browser-scan] ${platform}: error — ${e.message}`);
     } finally {
@@ -257,7 +262,7 @@ if (command === 'launch') {
   }
   if (sharedHandle) await sharedHandle.browser.close().catch(() => {});
 
-  console.log(`[browser-scan] Done. scout scan will pick up results from reports/.browser-scan/${slug}/ on its next run.`);
+  console.log(`[browser-scan] Done. scout scan will pick up results from ${outDir} on its next run.`);
   process.exit(0);
 } else {
   usageAndExit();

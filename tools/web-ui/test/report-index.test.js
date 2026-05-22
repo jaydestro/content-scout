@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseProductTeamNamesFromConfig, parseReport, parseReportFromJson } from '../../lib/report-index.mjs';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { parseProductTeamNamesFromConfig, parseReport, parseReportFromJson, loadReport } from '../../lib/report-index.mjs';
 
 test('parseReport drops conversation rows that duplicate numbered content URLs', () => {
   const report = String.raw`
@@ -116,4 +119,38 @@ test('parseProductTeamNamesFromConfig extracts name-only team members', () => {
 `);
 
   assert.deepEqual(names, ['Rakhi Thejraj', 'James Codella']);
+});
+
+test('loadReport backfills empty conversation summaries from .cached-bodies.json', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cs-cached-bodies-'));
+  try {
+    const json = {
+      generated_at: '2026-05-11',
+      items: [
+        {
+          section: 'social',
+          date: '2026-05-11T10:00:00Z',
+          title: '',
+          url: 'https://bsky.app/profile/example.bsky.social/post/abc123',
+          author: { display_name: 'Example User', platform: 'bluesky' },
+          sentiment: 'neutral',
+        },
+      ],
+    };
+    const fileName = '2026-05-11-1000-test-product-content.md';
+    await fs.writeFile(path.join(tmp, fileName.replace(/\.md$/, '.json')), JSON.stringify(json), 'utf8');
+    await fs.writeFile(path.join(tmp, '.cached-bodies.json'), JSON.stringify({
+      'bsky.app/profile/example.bsky.social/post/abc123': {
+        body: 'Hello from the cache — full post text restored.',
+        fetchedAt: '2026-05-21T00:00:00Z',
+        source: 'bluesky-api',
+      },
+    }), 'utf8');
+
+    const parsed = await loadReport(tmp, fileName);
+    assert.equal(parsed.conversations.length, 1);
+    assert.equal(parsed.conversations[0].summary, 'Hello from the cache — full post text restored.');
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
 });

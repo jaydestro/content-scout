@@ -22,9 +22,19 @@
 //
 // Platform "*" matches any platform — useful for muting a handle that
 // posts the same noise on multiple networks.
+//
+// Storage lives at <repo>/.local/state/muted-accounts.json. Reads
+// transparently fall back to the legacy path
+// <repo>/reports/.muted-accounts.json when the new file does not yet
+// exist; first write naturally migrates it.
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import {
+  MUTED_ACCOUNTS_FILE,
+  resolveStateRead,
+  resolveStateWrite,
+} from '../../lib/paths.mjs';
 
 export const MUTED_FILE_NAME = '.muted-accounts.json';
 export const NO_TRIAGE_REASON = 'microsoft-employee';
@@ -43,7 +53,8 @@ export function muteKey(platform, handle) {
 }
 
 export async function loadMuted(reportsDir) {
-  const file = path.join(reportsDir, MUTED_FILE_NAME);
+  const file = await resolveStateRead(MUTED_ACCOUNTS_FILE, reportsDir);
+  if (!file) return emptyState();
   try {
     const raw = await fs.readFile(file, 'utf8');
     const data = JSON.parse(raw);
@@ -63,9 +74,8 @@ export async function loadMuted(reportsDir) {
   }
 }
 
-export async function saveMuted(reportsDir, state) {
-  const file = path.join(reportsDir, MUTED_FILE_NAME);
-  await fs.mkdir(reportsDir, { recursive: true });
+export async function saveMuted(_reportsDir, state) {
+  const file = await resolveStateWrite(MUTED_ACCOUNTS_FILE);
   const out = {
     version: 1,
     items: state && state.items && typeof state.items === 'object' ? state.items : {},

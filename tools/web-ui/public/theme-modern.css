@@ -377,6 +377,78 @@ aside li[data-name] .entry-open:hover {
   background: rgba(129,140,248,0.12);
 }
 
+/* --- Aside list rows: rich layout (May 2026 redesign) ---
+   Reports + social lists now show kind badge + title + summary instead of
+   the raw timestamp-slug filename. The grid above still applies when the
+   row uses the legacy `.entry-name` markup; the rules below take over
+   when the row uses the newer `.entry-row` / `.entry-title` layout. */
+aside li[data-name]:has(.entry-row) {
+  display: block;
+  padding: 0.55rem 0.85rem 0.6rem;
+}
+aside li[data-name] .entry-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+aside li[data-name] .entry-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--text);
+}
+aside li[data-name] .entry-kind {
+  flex: 0 0 auto;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(129,140,248,0.16);
+  color: #c7d2fe;
+  border: 1px solid rgba(129,140,248,0.35);
+  white-space: nowrap;
+}
+aside li[data-name] .entry-kind.kind-mindshare    { background: rgba(34,197,94,0.14);  color: #bbf7d0; border-color: rgba(34,197,94,0.35); }
+aside li[data-name] .entry-kind.kind-trends       { background: rgba(245,158,11,0.14); color: #fde68a; border-color: rgba(245,158,11,0.35); }
+aside li[data-name] .entry-kind.kind-gaps         { background: rgba(244,114,182,0.14); color: #fbcfe8; border-color: rgba(244,114,182,0.35); }
+aside li[data-name] .entry-kind.kind-supplemental { background: rgba(148,163,184,0.16); color: #e2e8f0; border-color: rgba(148,163,184,0.35); }
+aside li[data-name] .entry-kind.kind-calendar     { background: rgba(56,189,248,0.14); color: #bae6fd; border-color: rgba(56,189,248,0.35); }
+aside li[data-name] .entry-kind.kind-social-solo  { background: rgba(168,85,247,0.14); color: #e9d5ff; border-color: rgba(168,85,247,0.35); }
+aside li[data-name] .entry-kind.kind-alt-text     { background: rgba(20,184,166,0.14); color: #99f6e4; border-color: rgba(20,184,166,0.35); }
+aside li[data-name] .entry-kind.kind-seo          { background: rgba(239,68,68,0.14);  color: #fecaca; border-color: rgba(239,68,68,0.35); }
+aside li[data-name] .entry-subtitle {
+  margin-top: 0.2rem;
+  font-size: 0.72rem;
+  color: var(--muted-2, #9aa3b2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+aside li[data-name] .entry-summary {
+  margin-top: 0.25rem;
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--muted, #b6bdcc);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+aside li[data-name] .entry-meta {
+  margin-top: 0.3rem;
+  font-size: 0.7rem;
+  color: var(--muted-2, #8a8a99);
+}
+aside li[data-name]:has(.entry-row).selected .entry-title {
+  color: var(--text);
+}
+
 /* --- Inline doc viewer toolbar (Reports / Social) ------ */
 .doc-toolbar {
   display: flex;
@@ -1407,6 +1479,38 @@ aside li[data-name] .entry-open:hover {
 
 
 /* === Conversations view === */
+#view-conversations .conv-tabs {
+  display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center;
+  margin: 0.25rem 0 0.5rem;
+}
+#view-conversations .conv-tab {
+  appearance: none;
+  background: var(--surface, #14172250);
+  color: var(--text, #e6e8f0);
+  border: 1px solid var(--border, #2a2e44);
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+#view-conversations .conv-tab:hover { border-color: var(--accent, #6366f1); }
+#view-conversations .conv-tab.is-active {
+  background: var(--accent, #6366f1);
+  color: #fff;
+  border-color: var(--accent, #6366f1);
+}
+#view-conversations .conv-tab-count {
+  opacity: 0.75;
+  margin-left: 0.35rem;
+  font-variant-numeric: tabular-nums;
+}
+#view-conversations .conv-tab.is-active .conv-tab-count { opacity: 0.9; }
+#view-conversations .conv-tab-hint {
+  margin-left: 0.5rem;
+  font-size: 0.78rem;
+}
+
 #view-conversations .conv-toolbar {
   display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;
   margin: 0.5rem 0 1rem; padding: 0.75rem; background: var(--surface-2, #1a1d2b);
@@ -1438,16 +1542,73 @@ aside li[data-name] .entry-open:hover {
 .conv-row-head { display: flex; gap: 0.5rem; align-items: baseline; flex-wrap: wrap; }
 .conv-row-head .conv-dot { font-size: 0.9rem; }
 .conv-row-head .conv-platform { color: var(--muted, #94a3b8); font-size: 0.85rem; padding: 0 0.4rem; border: 1px solid var(--border, #2a2e44); border-radius: 999px; }
+.conv-row-head .conv-team-badge {
+  color: var(--accent, #818cf8);
+  background: rgba(129, 140, 248, 0.12);
+  border: 1px solid var(--accent, #818cf8);
+  font-size: 0.78rem;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
 .conv-row-head .conv-date { color: var(--muted, #94a3b8); font-size: 0.85rem; }
 .conv-row-head .conv-spacer { flex: 1; }
 .conv-row-head a { color: var(--accent, #818cf8); }
-.conv-summary { margin: 0.5rem 0 0; line-height: 1.45; }
+.conv-summary {
+  margin: 0.5rem 0 0;
+  line-height: 1.45;
+  white-space: pre-line;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.conv-row.is-selected .conv-summary {
+  -webkit-line-clamp: unset;
+  display: block;
+}
 .conv-actions { margin-top: 0.5rem; }
 .conv-reply-btn {
   background: var(--accent, #818cf8); color: #0a0d1a; border: 0; padding: 0.4rem 0.75rem;
   border-radius: 6px; cursor: pointer; font-weight: 600;
 }
 .conv-reply-btn:hover { filter: brightness(1.1); }
+
+/* Inline links inside summary text and the "View on X ↗" pill — let
+   users jump to the original post so they can see what they're about
+   to reply to. Links rendered by renderSummaryHtml() (markdown
+   `[text](url)` and autolinked bare URLs) get the same dashed-underline
+   treatment. */
+.conv-summary a {
+  color: var(--accent, #818cf8);
+  text-decoration: none;
+  border-bottom: 1px dashed currentColor;
+  transition: filter 0.12s;
+  word-break: break-word;
+}
+.conv-summary a:hover,
+.conv-summary a:focus-visible {
+  filter: brightness(1.2);
+  border-bottom-style: solid;
+}
+.conv-open-link {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.78rem;
+  background: var(--surface-2, #1a1d2e);
+  border: 1px solid var(--border, #2a2e44);
+  border-radius: 999px;
+  color: var(--accent, #818cf8);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.conv-open-link:hover,
+.conv-open-link:focus-visible {
+  border-color: var(--accent, #818cf8);
+  background: var(--surface, #14172250);
+}
 
 /* Local-LLM sentiment re-check */
 .conv-recheck-btn {
@@ -1457,6 +1618,28 @@ aside li[data-name] .entry-open:hover {
 }
 .conv-recheck-btn:hover { background: var(--surface-2, #1a1d2e); border-color: var(--accent, #818cf8); }
 .conv-recheck-btn:disabled { opacity: 0.6; cursor: progress; }
+.conv-recheck-note-toggle {
+  background: transparent; color: var(--muted, #94a3b8);
+  border: 1px solid var(--border, #2a2e44); padding: 0.35rem 0.55rem;
+  border-radius: 6px; cursor: pointer; font-size: 0.82rem; margin-left: 0.25rem;
+}
+.conv-recheck-note-toggle:hover { background: var(--surface-2, #1a1d2e); color: var(--text, #e2e8f0); }
+.conv-recheck-note-toggle[aria-expanded="true"] { background: var(--surface-2, #1a1d2e); color: var(--text, #e2e8f0); border-color: var(--accent, #818cf8); }
+.conv-recheck-note {
+  margin-top: 0.5rem; padding: 0.5rem 0.65rem;
+  background: var(--surface-2, #1a1d2e);
+  border: 1px solid var(--border, #2a2e44); border-radius: 6px;
+}
+.conv-recheck-note-label { display: block; font-size: 0.82rem; color: var(--text, #e2e8f0); margin-bottom: 0.3rem; }
+.conv-recheck-note-input {
+  width: 100%; box-sizing: border-box;
+  background: var(--surface, #0f1220); color: var(--text, #e2e8f0);
+  border: 1px solid var(--border, #2a2e44); border-radius: 4px;
+  padding: 0.4rem 0.5rem; font-family: inherit; font-size: 0.85rem;
+  resize: vertical;
+}
+.conv-recheck-note-input:focus { outline: none; border-color: var(--accent, #818cf8); }
+.conv-verdict-note { margin-top: 0.35rem; font-style: italic; }
 .conv-sentiment-verdict {
   margin-top: 0.6rem; padding: 0.55rem 0.75rem;
   background: var(--surface-2, #1a1d2e);
@@ -2794,3 +2977,120 @@ a.help-dot {
 .inline-thumb-actions .thumb-btn-ghost {
   background: transparent;
 }
+
+/* --- Reports view: tabbed IA ---------------------------------------
+   Tab strip across the top of #view-reports; per-tab action bar lives
+   directly under it; one shared list+article split is reused for all
+   "browse" tabs (content / mindshare / trends / gaps), while CFPs /
+   Conferences / Ask each render their own panel. */
+#view-reports .reports-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  border-bottom: 1px solid var(--border, rgba(148,163,184,0.2));
+  margin: 0 0 0.75rem 0;
+  padding: 0 0 0.15rem 0;
+}
+#view-reports .reports-tabs button {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--muted-2, #9aa3b2);
+  padding: 0.45rem 0.85rem;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  margin: 0;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+#view-reports .reports-tabs button:hover {
+  color: var(--text);
+}
+#view-reports .reports-tabs button.active {
+  color: var(--text);
+  border-bottom-color: var(--accent, #818cf8);
+  font-weight: 600;
+}
+#view-reports .reports-action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 1.6rem;
+  margin: 0 0 0.6rem 0;
+  font-size: 0.85rem;
+}
+#view-reports .reports-action-bar:empty {
+  display: none;
+}
+#view-reports .reports-action-bar .field-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted-2, #9aa3b2);
+}
+#view-reports .reports-action-bar input[type="number"] {
+  width: 5rem;
+}
+#view-reports .tab-panel.empty-state {
+  padding: 1.25rem 1rem;
+  color: var(--muted-2, #9aa3b2);
+  border: 1px dashed var(--border, rgba(148,163,184,0.25));
+  border-radius: 0.5rem;
+  background: rgba(148,163,184,0.04);
+}
+#view-reports .tab-panel.empty-state h3 {
+  margin: 0 0 0.4rem 0;
+  color: var(--text);
+}
+#view-reports .ask-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+#view-reports .ask-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+#view-reports .ask-chips button {
+  font-size: 0.78rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(129,140,248,0.1);
+  color: #c7d2fe;
+  border: 1px solid rgba(129,140,248,0.3);
+  cursor: pointer;
+}
+#view-reports .ask-chips button:hover {
+  background: rgba(129,140,248,0.2);
+}
+#view-reports .ask-form textarea {
+  width: 100%;
+  font-family: inherit;
+  font-size: 0.9rem;
+  padding: 0.5rem;
+  border-radius: 0.4rem;
+  background: rgba(15,23,42,0.4);
+  color: var(--text);
+  border: 1px solid var(--border, rgba(148,163,184,0.25));
+  resize: vertical;
+}
+#view-reports .ask-output {
+  background: rgba(15,23,42,0.55);
+  border: 1px solid var(--border, rgba(148,163,184,0.2));
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.8rem;
+  max-height: 26rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--text);
+}
+
+/* Kind-badge colors for new doc kinds */
+aside li[data-name] .entry-kind.kind-replay     { background: rgba(99,102,241,0.16); color: #c7d2fe; border-color: rgba(99,102,241,0.35); }
+aside li[data-name] .entry-kind.kind-cfp        { background: rgba(14,165,233,0.16); color: #bae6fd; border-color: rgba(14,165,233,0.35); }
+aside li[data-name] .entry-kind.kind-conference { background: rgba(217,70,239,0.16); color: #f5d0fe; border-color: rgba(217,70,239,0.35); }

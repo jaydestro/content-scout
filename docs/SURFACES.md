@@ -44,6 +44,22 @@ startup.
 
 ### Web UI (advanced, visual, bulk, real-time)
 
+> **IA note (May 2026 refactor):** the web UI **Scan** view (formerly "Run") is
+> scoped to `/scout-scan` only — that's the workhorse, single-purpose content
+> discovery flow with subjects, date range, and the ★ sign-in scan preflight.
+> Every other slash command launches from the owning view via a modal runner:
+>
+> | Command | Owning view |
+> |---|---|
+> | `/scout-scan` (+ `custom`) | Scan |
+> | `/scout-doctor`, `/scout-onboard` | Setup |
+> | `/scout-gaps`, `/scout-trends`, `/scout-replay`, `/scout-seo` | Reports |
+> | `/scout-calendar` | Social posts |
+> | `/scout-creators` | Conversations |
+>
+> Interactive commands (`/scout-onboard`, `/scout-creators`) open a "copy this
+> prompt into your AI chat" handoff rather than trying to run inside the modal.
+
 The web UI is **not** "the agent with buttons" — it owns capabilities that
 chat can't do well:
 

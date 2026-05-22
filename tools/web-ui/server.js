@@ -15,13 +15,33 @@ import { findMissingPrompts, findUnreferencedPrompts } from './lib/prompt-health
 import { describeImage, formatVisionReport, probeVision, getVisionProvider } from './lib/vision.js';
 import { reviewSentiment, probeSentiment, getSentimentProvider } from './lib/sentiment-review.js';
 import { searchCorpus } from '../lib/corpus-search.mjs';
+import { extractDocMeta } from '../lib/doc-meta.mjs';
+import {
+  runGaps,
+  runTrends,
+  runReplay,
+  runSeoAudit,
+  parseTopicTagsFromConfig,
+} from '../lib/analytics.mjs';
 import {
   loadReport,
   parseReport,
   parseReportFromJson,
   normalizeSentiment,
   classifyItem,
+  canonicalUrlKey,
 } from '../lib/report-index.mjs';
+import {
+  SENTIMENT_OVERRIDES_FILE,
+  WEB_SETTINGS_FILE,
+  STATE_DIR,
+  stateFilePath,
+  resolveStateRead,
+  resolveStateWrite,
+  browserScanReadDirs,
+  BROWSER_SCAN_DIR as BROWSER_SCAN_SIDECAR_DIR,
+  LEGACY_BROWSER_SCAN_DIR,
+} from '../lib/paths.mjs';
 import {
   ALLOWED_REASONS,
   convoKey,
@@ -58,6 +78,7 @@ const SOCIAL_DIR = path.join(REPO_ROOT, 'social-posts');
 const ENV_FILE = path.join(REPO_ROOT, '.env');
 const ENV_EXAMPLE = path.join(REPO_ROOT, '.env.example');
 const SETTINGS_FILE = path.join(__dirname, '.scout-web-settings.json');
+const SETTINGS_FILE_NEW = stateFilePath(WEB_SETTINGS_FILE);
 
 const PORT = Number(process.env.PORT || 4477);
 // Bind to loopback by default. Set SCOUT_HOST=0.0.0.0 to expose on the LAN
@@ -114,9 +135,21 @@ const AGENT_PRESETS = {
 };
 
 // --- Settings persistence -----------------------------------------
+// Settings live at .local/state/web-settings.json. Reads fall back to the
+// legacy tools/web-ui/.scout-web-settings.json so the first run after the
+// path-refactor doesn't lose the saved agent/runner.
 async function loadSettings() {
+  let raw;
   try {
-    const raw = await fs.readFile(SETTINGS_FILE, 'utf8');
+    raw = await fs.readFile(SETTINGS_FILE_NEW, 'utf8');
+  } catch {
+    try {
+      raw = await fs.readFile(SETTINGS_FILE, 'utf8');
+    } catch {
+      return { agent: null, runner: '' };
+    }
+  }
+  try {
     const data = JSON.parse(raw);
     return {
       agent: typeof data.agent === 'string' ? data.agent : null,
@@ -128,7 +161,8 @@ async function loadSettings() {
 }
 
 async function saveSettings(settings) {
-  await fs.writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2) + '\n', 'utf8');
+  await fs.mkdir(STATE_DIR, { recursive: true });
+  await fs.writeFile(SETTINGS_FILE_NEW, JSON.stringify(settings, null, 2) + '\n', 'utf8');
 }
 
 // Effective runner: env var wins, then saved settings.
@@ -488,16 +522,58 @@ app.use(createSuggestionsRouter({ repoRoot: REPO_ROOT }));
 // (see top-of-file imports). Users can enrich the resulting markdown via the
 // Configs editor or by running /scout-onboard in a chat agent.
 
+// In-memory cache for the parsed doc-meta blob attached to each list entry.
+// Reports/social markdown can be 5–50 KB; parsing every file on every
+// dashboard refresh would dominate cold-load time. Key by full path + mtimeMs
+// so any save invalidates the entry automatically.
+const docMetaCache = new Map();
+
+async function readDocMeta(fullPath, mtimeMs, name) {
+  const key = `${fullPath}:${mtimeMs}`;
+  const hit = docMetaCache.get(key);
+  if (hit) return hit;
+  try {
+    // Only the first ~8 KB is needed for H1 + summary + date-range metadata.
+    const fh = await fs.open(fullPath, 'r');
+    try {
+      const buf = Buffer.alloc(8192);
+      const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
+      const raw = buf.slice(0, bytesRead).toString('utf8');
+      const meta = extractDocMeta(raw, name);
+      docMetaCache.set(key, meta);
+      // Soft cap so a noisy workspace doesn't grow the cache unbounded.
+      if (docMetaCache.size > 2000) {
+        const firstKey = docMetaCache.keys().next().value;
+        if (firstKey) docMetaCache.delete(firstKey);
+      }
+      return meta;
+    } finally {
+      await fh.close();
+    }
+  } catch {
+    return extractDocMeta('', name);
+  }
+}
+
 async function listMarkdownFiles(dir) {
   try {
     const files = (await fs.readdir(dir)).filter((f) => f.endsWith('.md'));
-    // Stat in parallel — directory may have 100+ entries and a sequential
-    // await per-file was a measurable chunk of the dashboard's cold load.
+    // Stat + meta-parse in parallel — directory may have 100+ entries and a
+    // sequential await per-file was a measurable chunk of the dashboard's
+    // cold load. Meta is cached by (path, mtimeMs) so steady-state refreshes
+    // hit RAM.
     const stats = await Promise.all(
       files.map(async (f) => {
         try {
-          const stat = await fs.stat(path.join(dir, f));
-          return { name: f, mtime: stat.mtime.toISOString(), size: stat.size };
+          const full = path.join(dir, f);
+          const stat = await fs.stat(full);
+          const meta = await readDocMeta(full, stat.mtimeMs, f);
+          return {
+            name: f,
+            mtime: stat.mtime.toISOString(),
+            size: stat.size,
+            meta,
+          };
         } catch {
           return null;
         }
@@ -597,7 +673,8 @@ async function detectExternalActivity(windowSec = 90) {
   const dirs = [
     { dir: path.join(REPO_ROOT, 'reports'), kind: 'report', exts: ['.md', '.json'] },
     { dir: path.join(REPO_ROOT, 'social-posts'), kind: 'social post', exts: ['.md'] },
-    { dir: path.join(REPO_ROOT, '.scout-state'), kind: 'state', exts: null },
+    { dir: path.join(REPO_ROOT, 'reports', '.scout-state'), kind: 'state', exts: null },
+    { dir: path.join(STATE_DIR, 'scout-state'), kind: 'state', exts: null },
   ];
   const now = Date.now();
   let best = null;
@@ -2673,6 +2750,7 @@ app.post('/api/sentiment/review', express.json({ limit: '64kb' }), async (req, r
         platform: String(body.platform || '').slice(0, 80),
         productName,
         currentSentiment: String(body.currentSentiment || 'unknown').toLowerCase(),
+        userNote: String(body.userNote || '').slice(0, 500),
       },
       env,
       { runner, cwd: REPO_ROOT },
@@ -2681,6 +2759,90 @@ app.post('/api/sentiment/review', express.json({ limit: '64kb' }), async (req, r
       return res.status(502).json({ ...result, ok: false });
     }
     res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Bulk re-check sentiment for many conversation rows in one request. Used by
+// the Conversations toolbar "Re-check N neutrals" button. Persists results to
+// reports/.sentiment-overrides.json so they survive a server restart and get
+// applied during loadReport(). Runs items serially to avoid hammering a local
+// Ollama model with parallel requests.
+app.post('/api/sentiment/review-bulk', express.json({ limit: '2mb' }), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const items = Array.isArray(body.items) ? body.items : [];
+    if (!items.length) return res.status(400).json({ error: 'items[] required' });
+    const MAX = 100;
+    const limited = items.slice(0, MAX);
+    const env = await readEnvObject();
+    if (getSentimentProvider(env) === 'none') {
+      return res.status(400).json({
+        error: 'No sentiment provider configured. Set SENTIMENT_PROVIDER=agent|ollama|openai|custom in .env.',
+      });
+    }
+    const productName = body.productName
+      ? String(body.productName).trim()
+      : await resolveProductName(body.slug || '');
+    const { runner } = await getRunner();
+    // Sentiment overrides live at .local/state/sentiment-overrides.json;
+    // the resolver auto-migrates from the legacy reports/.sentiment-overrides.json
+    // on first read.
+    const overridesReadPath = await resolveStateRead(SENTIMENT_OVERRIDES_FILE, REPORTS_DIR);
+    let overrides = {};
+    try {
+      if (overridesReadPath) {
+        overrides = JSON.parse(await fs.readFile(overridesReadPath, 'utf8')) || {};
+      }
+    } catch {}
+    const results = [];
+    for (const raw of limited) {
+      const summary = String(raw?.summary || '').trim();
+      const url = String(raw?.url || '').trim();
+      const key = raw?.key || canonicalUrlKey(url);
+      if (!summary) {
+        results.push({ key, ok: false, error: 'empty summary' });
+        continue;
+      }
+      try {
+        const r = await reviewSentiment(
+          {
+            summary,
+            author: String(raw?.author || '').slice(0, 200),
+            platform: String(raw?.platform || '').slice(0, 80),
+            productName,
+            currentSentiment: String(raw?.currentSentiment || 'unknown').toLowerCase(),
+          },
+          env,
+          { runner, cwd: REPO_ROOT },
+        );
+        if (r?.error) {
+          results.push({ key, ok: false, error: r.error });
+        } else {
+          results.push({ key, ok: true, ...r });
+          if (url) {
+            overrides[url] = {
+              sentiment: r.sentiment,
+              confidence: r.confidence,
+              rationale: r.rationale,
+              provider: r.provider,
+              model: r.model,
+              reviewedAt: new Date().toISOString(),
+            };
+          }
+        }
+      } catch (err) {
+        results.push({ key, ok: false, error: err.message });
+      }
+    }
+    try {
+      const overridesWritePath = await resolveStateWrite(SENTIMENT_OVERRIDES_FILE);
+      await fs.writeFile(overridesWritePath, JSON.stringify(overrides, null, 2));
+    } catch (err) {
+      return res.json({ ok: true, results, persistError: err.message });
+    }
+    res.json({ ok: true, results, persisted: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -2872,20 +3034,22 @@ async function runBrowserScanPreflight(run, slugs, force = false, days = 0) {
   }
   pushRunOutput(run, `[browser-scan] Attached to ${probe.browser || 'browser'} on CDP port 9222.\n`);
 
-  const sidecarRoot = path.join(REPORTS_DIR, '.browser-scan');
   const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
   for (const slug of slugs) {
-    // Freshness check unless forced.
+    // Freshness check unless forced. Consult both the new and legacy
+    // sidecar dirs and use the freshest mtime across either.
     if (!force) {
       let freshest = 0;
-      try {
-        const files = await fs.readdir(path.join(sidecarRoot, slug));
-        for (const f of files) {
-          if (!/^\d{4}-\d{2}-\d{2}-\d{4}-(x|linkedin|reddit)\.json$/.test(f)) continue;
-          const stat = await fs.stat(path.join(sidecarRoot, slug, f));
-          if (stat.mtimeMs > freshest) freshest = stat.mtimeMs;
-        }
-      } catch { /* no dir yet → freshest stays 0 */ }
+      for (const slugDir of browserScanReadDirs(slug)) {
+        try {
+          const files = await fs.readdir(slugDir);
+          for (const f of files) {
+            if (!/^\d{4}-\d{2}-\d{2}-\d{4}-(x|linkedin|reddit|google)\.json$/.test(f)) continue;
+            const stat = await fs.stat(path.join(slugDir, f));
+            if (stat.mtimeMs > freshest) freshest = stat.mtimeMs;
+          }
+        } catch { /* no dir yet → skip */ }
+      }
       if (freshest && Date.now() - freshest < SIX_HOURS_MS) {
         const ageMin = Math.floor((Date.now() - freshest) / 60000);
         pushRunOutput(
@@ -2897,7 +3061,7 @@ async function runBrowserScanPreflight(run, slugs, force = false, days = 0) {
     }
     pushRunOutput(
       run,
-      `[browser-scan] ${slug}: scanning X / LinkedIn / Reddit${days > 0 ? ` (last ${days}d)` : ''}…\n`,
+      `[browser-scan] ${slug}: scanning X / LinkedIn / Reddit / Google News${days > 0 ? ` (last ${days}d)` : ''}…\n`,
     );
     const scanArgs = [path.join(BROWSER_SCAN_DIR, 'index.mjs'), 'scan', '--slug', slug];
     if (days > 0) scanArgs.push('--days', String(days));
@@ -3290,20 +3454,22 @@ app.get('/api/browser-scan/status', async (req, res) => {
   if (!BROWSER_SCAN_INSTALLED) return res.json({ installed: false });
   const port = Number(req.query.port || 9222);
   const cdp = await probeCdpPort(port);
-  // List sidecars per slug under reports/.browser-scan/{slug}/
-  const sidecarRoot = path.join(REPORTS_DIR, '.browser-scan');
+  // List sidecars per slug across new (.local/state/browser-scan) and
+  // legacy (reports/.browser-scan) dirs. Newer stamp wins per platform.
+  const sidecarRoots = [BROWSER_SCAN_SIDECAR_DIR, LEGACY_BROWSER_SCAN_DIR];
   const bySlug = {};
-  try {
-    const slugs = await fs.readdir(sidecarRoot);
+  for (const sidecarRoot of sidecarRoots) {
+    let slugs = [];
+    try { slugs = await fs.readdir(sidecarRoot); } catch { continue; }
     for (const slug of slugs) {
       if (!isValidSlug(slug)) continue;
       const slugDir = path.join(sidecarRoot, slug);
       let files = [];
       try { files = await fs.readdir(slugDir); } catch { continue; }
-      const platforms = {};
+      const platforms = bySlug[slug] || {};
       for (const f of files) {
         if (!f.endsWith('.json')) continue;
-        const m = f.match(/^(\d{4}-\d{2}-\d{2}-\d{4})-(x|linkedin|reddit)\.json$/);
+        const m = f.match(/^(\d{4}-\d{2}-\d{2}-\d{4})-(x|linkedin|reddit|google)\.json$/);
         if (!m) continue;
         const platform = m[2];
         const stamp = m[1];
@@ -3316,7 +3482,7 @@ app.get('/api/browser-scan/status', async (req, res) => {
       }
       bySlug[slug] = platforms;
     }
-  } catch { /* no sidecar dir yet */ }
+  }
   res.json({
     installed: true,
     port,
@@ -3423,7 +3589,7 @@ app.post('/api/browser-scan/scan', async (req, res) => {
   const args = [path.join(BROWSER_SCAN_DIR, 'index.mjs'), 'scan', '--slug', slug];
   if (port) { args.push('--port', String(Number(port))); }
   if (Array.isArray(platforms) && platforms.length) {
-    const valid = platforms.filter((p) => ['x', 'linkedin', 'reddit'].includes(p));
+    const valid = platforms.filter((p) => ['x', 'linkedin', 'reddit', 'google'].includes(p));
     if (valid.length) args.push('--platforms', valid.join(','));
   }
   // Optional date-range scope. Clamp to a sane 1..365 day window.
@@ -3456,6 +3622,94 @@ app.post('/api/browser-scan/scan', async (req, res) => {
   child.on('close', (code) => { run.child = null; closeRun(run, code === 0 ? 'success' : `exited ${code}`); });
   child.on('error', (err) => { pushRunOutput(run, `[browser-scan] ${err.message}\n`); run.child = null; closeRun(run, 'error'); });
   res.json({ ok: true, id, command });
+});
+
+// --- In-browser analytics endpoints --------------------------------
+// Same artifacts the /scout-{gaps,trends,replay,seo} agent commands
+// produce — but computed in pure Node from data already on disk so the
+// Reports view's Trends/Gaps tabs can run with one click. No LLM, no
+// subprocess. See tools/lib/analytics.mjs for the engine.
+
+app.get('/api/analytics/gaps', async (req, res) => {
+  try {
+    const slug = String(req.query.slug || '');
+    const windowDays = Math.max(1, Math.min(365, parseInt(req.query.windowDays, 10) || 30));
+    const idx = await getIndex();
+    let configRaw = '';
+    if (slug && isValidSlug(slug)) {
+      try { configRaw = (await readConfig(slug)).raw; } catch { /* missing config — empty tag list */ }
+    }
+    const result = runGaps({ items: idx.items, configRaw, windowDays, slug });
+    await fs.writeFile(path.join(REPORTS_DIR, result.fileName), result.markdown, 'utf8');
+    res.json({ ok: true, fileName: result.fileName, data: result.data });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+app.get('/api/analytics/trends', async (req, res) => {
+  try {
+    const slug = String(req.query.slug || '');
+    const months = Math.max(2, Math.min(12, parseInt(req.query.months, 10) || 4));
+    const idx = await getIndex();
+    const result = runTrends({
+      items: idx.items,
+      conversations: idx.conversations,
+      months,
+      slug,
+    });
+    await fs.writeFile(path.join(REPORTS_DIR, result.fileName), result.markdown, 'utf8');
+    res.json({ ok: true, fileName: result.fileName, data: result.data });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+app.post('/api/analytics/replay', express.json(), async (req, res) => {
+  try {
+    const { sourceFile, overrides } = req.body || {};
+    if (!sourceFile || !isValidFilename(sourceFile)) {
+      return res.status(400).json({ error: 'sourceFile is required' });
+    }
+    const parsed = await loadReport(REPORTS_DIR, sourceFile);
+    if (!parsed) return res.status(404).json({ error: `report not found: ${sourceFile}` });
+    const result = runReplay({ parsed, sourceFile, overrides: overrides || {} });
+    await fs.writeFile(path.join(REPORTS_DIR, result.fileName), result.markdown, 'utf8');
+    res.json({ ok: true, fileName: result.fileName, data: result.data });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+app.post('/api/analytics/seo', express.json(), async (req, res) => {
+  try {
+    const { urls, slug } = req.body || {};
+    if (!Array.isArray(urls) || urls.length === 0) {
+      return res.status(400).json({ error: 'urls array is required' });
+    }
+    // Cap to 5 URLs per call so a stray paste can't fan out into a
+    // long blocking fetch storm.
+    const targets = urls.slice(0, 5).map((u) => String(u).trim()).filter(Boolean);
+    const pages = await Promise.all(
+      targets.map(async (url) => {
+        try {
+          const r = await fetch(url, {
+            headers: { 'user-agent': 'Mozilla/5.0 (compatible; ContentScout/1.0; +https://github.com/jagordon/content-scout)' },
+            redirect: 'follow',
+          });
+          if (!r.ok) return { url, error: `HTTP ${r.status}` };
+          return { url, html: await r.text() };
+        } catch (e) {
+          return { url, error: String(e.message || e) };
+        }
+      })
+    );
+    const result = runSeoAudit({ pages, slug: isValidSlug(slug) ? slug : '' });
+    await fs.writeFile(path.join(REPORTS_DIR, result.fileName), result.markdown, 'utf8');
+    res.json({ ok: true, fileName: result.fileName, data: result.data });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
 });
 
 app.listen(PORT, HOST, async () => {

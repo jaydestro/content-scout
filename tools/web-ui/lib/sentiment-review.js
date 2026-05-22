@@ -42,9 +42,18 @@ const SENTIMENT_VALUES = new Set([
 const CONFIDENCE_VALUES = new Set(['high', 'medium', 'low']);
 
 // Default per-call timeout for spawned agent CLIs. The agent has to boot,
-// load its system prompt, hit the model, and print a single JSON object —
-// 90s is generous for first-call cold start on slower machines.
-const AGENT_TIMEOUT_MS = 90_000;
+// load its system prompt, hit the model, and print a single JSON object.
+// 180s covers Copilot CLI / Claude Code cold starts on slower machines
+// without changing snappy-path behavior. Override with
+// SENTIMENT_AGENT_TIMEOUT_MS (milliseconds) in .env if your runner is
+// consistently slower.
+const DEFAULT_AGENT_TIMEOUT_MS = 180_000;
+
+function resolveAgentTimeoutMs(env = process.env) {
+  const raw = Number(env.SENTIMENT_AGENT_TIMEOUT_MS);
+  if (Number.isFinite(raw) && raw >= 5_000 && raw <= 30 * 60_000) return raw;
+  return DEFAULT_AGENT_TIMEOUT_MS;
+}
 
 // Parse the human-readable label for a configured agent runner. The binary
 // name (claude, copilot, codex, gemini, cursor-agent) is what the user
@@ -58,11 +67,23 @@ function agentLabel(runner) {
   return base.replace(/\.(exe|cmd|bat)$/i, '');
 }
 
-function buildPrompt({ productName, summary, author, platform, currentSentiment }) {
+function buildPrompt({ productName, summary, author, platform, currentSentiment, userNote }) {
   const product = productName || 'the product';
   const cur = currentSentiment && SENTIMENT_VALUES.has(currentSentiment)
     ? currentSentiment
     : 'unknown';
+  const note = String(userNote || '').trim().slice(0, 500);
+  const noteBlock = note
+    ? [
+        ``,
+        `Reviewer note (context the human added when requesting this re-check —`,
+        `treat as a HINT to consider, not as ground truth; the post text above is`,
+        `still authoritative):`,
+        `"""`,
+        note,
+        `"""`,
+      ]
+    : [];
   return [
     `You are a sentiment classifier reviewing a social post about a specific product.`,
     ``,
@@ -75,16 +96,37 @@ function buildPrompt({ productName, summary, author, platform, currentSentiment 
     `"""`,
     String(summary || '').slice(0, 4000),
     `"""`,
+    ...noteBlock,
     ``,
     `Classify the AUTHOR'S STANCE TOWARD ${product}. Use exactly one of:`,
     `- positive: praise, success story, recommendation, "this worked great",`,
-    `  OR the author is migrating FROM a competitor TO ${product}.`,
+    `  OR the author is migrating FROM a competitor TO ${product},`,
+    `  OR the author published a tutorial, how-to, talk, demo, book, or course`,
+    `  teaching ${product} (educational content about a product is implicit advocacy`,
+    `  by the author — they chose to invest time teaching it).`,
     `- neutral: question, how-to, informational, announcement, comparison`,
-    `  without a verdict.`,
+    `  without a verdict, retweet without commentary.`,
     `- negative: complaint, frustration, bug report about ${product},`,
     `  OR the author is migrating FROM ${product} TO a competitor.`,
-    `- mixed: both positive and negative aspects.`,
+    `- mixed: ONLY when the post contains BOTH an explicit positive claim AND`,
+    `  an explicit reservation about ${product} in the same item (a real`,
+    `  trade-off statement). Do NOT use mixed for tutorials that include a`,
+    `  "common pitfalls" or "gotchas" section — that is teaching, not critique.`,
     `- unknown: not enough context, or the post is not really about ${product}.`,
+    ``,
+    `Common misclassification traps — DO NOT trigger on these:`,
+    `- Negation phrases in body text ("are not", "is not", "do not", "n't",`,
+    `  "no longer", "without") are stance signals ONLY when they negate an`,
+    `  evaluative sentence whose subject is ${product}. Feature descriptions`,
+    `  ("documents are not limited to X", "you do not need to provision Y")`,
+    `  and rhetorical titles ("Your Entities Are Not Your Domain Objects",`,
+    `  "The Hidden Tax of X") are framing devices, not critique.`,
+    `- Provocative or motivational titles in tutorials ("The Mistake That`,
+    `  Crashes Every Database", "Why X Is Broken") are rhetorical hooks`,
+    `  setting up a teaching moment about ${product}. Read the body before`,
+    `  scoring; if the body teaches ${product}, the stance is positive/neutral.`,
+    `- Difficulty or learning-curve mentions in tutorials are not negative`,
+    `  toward ${product} — they are why the tutorial exists.`,
     ``,
     `Directional rule (critical): "migrate from", "switch from", "moved from"`,
     `are ambiguous on their own. If ${product} is the DESTINATION, classify`,
@@ -147,6 +189,7 @@ export async function reviewSentiment(input, env = process.env, opts = {}) {
     platform: String(input?.platform || ''),
     productName: String(input?.productName || ''),
     currentSentiment: String(input?.currentSentiment || 'unknown'),
+    userNote: String(input?.userNote || '').slice(0, 500),
   };
   if (!payload.summary.trim()) {
     return {
@@ -200,7 +243,7 @@ async function reviewWithAgent(prompt, payload, env, opts) {
   const command = stripPromptPlaceholder(runner) || runner;
   const cwd = (opts && opts.cwd) || process.cwd();
   const label = agentLabel(runner);
-  const timeoutMs = (opts && Number(opts.timeoutMs)) || AGENT_TIMEOUT_MS;
+  const timeoutMs = (opts && Number(opts.timeoutMs)) || resolveAgentTimeoutMs(env);
 
   let stdout = '';
   let stderr = '';
@@ -244,7 +287,7 @@ async function reviewWithAgent(prompt, payload, env, opts) {
     return {
       provider: 'agent',
       model: label,
-      error: `Agent (${label || 'runner'}) timed out after ${Math.round(timeoutMs / 1000)}s. Try a smaller/faster model, or set SENTIMENT_PROVIDER=ollama in .env to use a direct local LLM.`,
+      error: `Agent (${label || 'runner'}) timed out after ${Math.round(timeoutMs / 1000)}s. Raise SENTIMENT_AGENT_TIMEOUT_MS in .env (current: ${timeoutMs}), pick a faster model, or set SENTIMENT_PROVIDER=ollama for a direct local LLM.`,
     };
   }
   const parsed = tryParseJson(stdout);

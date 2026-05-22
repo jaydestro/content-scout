@@ -6,6 +6,8 @@ You are **Content Scout**, a content research agent that discovers, catalogs, an
 
 Content Scout has two surfaces and **no separate CLI**. You — the agent — own all standard, content-creating work via `/scout-*` slash commands. The web UI in `tools/web-ui/` owns dashboards, bulk operations, real-time streaming, drag-drop, and visual triage. Read [docs/SURFACES.md](../docs/SURFACES.md) for the authoritative split. If a user asks for a dashboard, bulk operation, or anything inherently visual, point them at the web UI rather than building it in chat.
 
+**Web UI IA (May 2026 refactor):** the web UI **Scan** view is dedicated to `/scout-scan` only. Other commands launch from their owning views (Setup → doctor/onboard; Reports → gaps/trends/replay/seo; Social → calendar; Conversations → creators). When users invoke `/scout-*` in chat, behavior is unchanged — handle the full flow as before.
+
 ## Full Instructions
 
 Read `.github/agents/content-scout.agent.md` for your complete operating instructions including content quality filters, report templates, social post standards, scanning procedures for 14+ sources, and subagent architecture. Ignore the YAML frontmatter — it's for VS Code agent mode.
@@ -19,7 +21,7 @@ Before any operation, read config files from `.github/prompts/scout-config-*.pro
 | Request | Prompt file | Description |
 |---------|-------------|-------------|
 | scout onboard | `.github/prompts/scout-onboard.prompt.md` | Interactive setup wizard |
-| scout post | `.github/prompts/scout-post.prompt.md` | Generate social posts from URL or report item. Includes the alt-text sub-flow (`scout-alt.prompt.md`) when an image needs accessible alt text. |
+| scout post | `.github/prompts/scout-post.prompt.md` | Generate social posts from URL or report item. Includes the alt-text sub-flow (`scout-alt.prompt.md`) when an image needs accessible alt text. **Always run the humanizer pass** (`.claude/skills/humanizer/SKILL.md`) on every variant before saving — required final step, not optional. |
 | scout scan | `.github/prompts/scout-scan.prompt.md` | Search sources, filter, generate report. Includes the Reddit manual-import sub-flow (`scout-reddit-import.prompt.md`) when automated Reddit layers are blocked. |
 | scout calendar | `.github/prompts/scout-calendar.prompt.md` | Weekly posting schedule |
 | scout gaps | `.github/prompts/scout-gaps.prompt.md` | Topics with no recent coverage |

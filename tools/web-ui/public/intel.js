@@ -4,10 +4,15 @@
  * Backed by /api/conversations, /api/authors, /api/source-health, /api/sentiment-summary.
  */
 (function () {
+  // Emoji convention matches the agent spec (see
+  // .github/agents/content-scout.agent.md, "Sentiment Classification"):
+  // 🟢 positive · 🟡 neutral · 🔴 negative · 🟠 mixed (rare; requires
+  // explicit trade-off). ⚪ would also be valid for neutral but the agent
+  // emits 🟡, so we mirror that here for visual consistency with reports.
   const SENTIMENT_DOT = {
     positive: '🟢',
-    neutral: '⚪',
-    mixed: '🟡',
+    neutral: '🟡',
+    mixed: '🟠',
     negative: '🔴',
     unknown: '·',
   };
@@ -17,6 +22,53 @@
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
     }[c]));
 
+  // Render a summary string as HTML: escape everything, convert
+  // [text](url) markdown links and bare http(s) URLs into anchors that
+  // open in a new tab, and preserve newlines. Trailing punctuation
+  // (.,;:!?) is stripped from autolinked URLs so prose like "see foo.com."
+  // doesn't capture the period. Only http(s) URLs are linked.
+  const _SAFE_URL = /^https?:\/\//i;
+  function renderSummaryHtml(text) {
+    const raw = String(text == null ? '' : text);
+    if (!raw) return '';
+    // Tokenize so each link's url + text are escaped independently and
+    // never re-scanned for autolinks.
+    const parts = [];
+    let i = 0;
+    const mdLink = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+    let m;
+    while ((m = mdLink.exec(raw)) !== null) {
+      if (m.index > i) parts.push({ t: 'text', v: raw.slice(i, m.index) });
+      parts.push({ t: 'link', href: m[2], label: m[1] });
+      i = m.index + m[0].length;
+    }
+    if (i < raw.length) parts.push({ t: 'text', v: raw.slice(i) });
+    const out = [];
+    for (const p of parts) {
+      if (p.t === 'link') {
+        if (_SAFE_URL.test(p.href)) {
+          out.push(`<a href="${esc(p.href)}" target="_blank" rel="noopener">${esc(p.label)}</a>`);
+        } else {
+          out.push(esc(`[${p.label}](${p.href})`));
+        }
+        continue;
+      }
+      // Autolink bare URLs in plain-text segments.
+      const segments = p.v.split(/(https?:\/\/[^\s<>"')]+)/g);
+      for (const seg of segments) {
+        if (_SAFE_URL.test(seg)) {
+          const trail = seg.match(/[.,;:!?)]+$/);
+          const url = trail ? seg.slice(0, -trail[0].length) : seg;
+          out.push(`<a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a>`);
+          if (trail) out.push(esc(trail[0]));
+        } else {
+          out.push(esc(seg));
+        }
+      }
+    }
+    return out.join('');
+  }
+
   // ============================================================
   // Conversations view
   // ============================================================
@@ -25,6 +77,32 @@
   // Keys of conversations the user has checkbox-selected. Cleared on each
   // re-render so it tracks the currently visible set.
   let _selectedKeys = new Set();
+  // Active tab: 'all' | 'conversations' | 'mentions'. The split is based
+  // on _convKind() — section name + engagement signals + platform.
+  let _activeTab = 'all';
+
+  // Classify a conversation row as 'conversation' (threaded discussion the
+  // team might want to reply to) or 'mention' (drive-by post just naming
+  // the product). Heuristic:
+  //   - section "conversations" or "tracked_conv" → conversation
+  //   - reddit/hn/stackoverflow/discord platforms → conversation (forums)
+  //   - engagement.replies > 0 → conversation (someone is talking)
+  //   - everything else under "social"/"mentions" → mention
+  function _convKind(c) {
+    const sec = String(c.section || '').toLowerCase();
+    if (sec === 'conversations' || sec === 'tracked_conv' || sec === 'mentions') {
+      return sec === 'mentions' ? 'mention' : 'conversation';
+    }
+    const plat = String(c.platform || '').toLowerCase();
+    if (/^(reddit|hacker.?news|hn|stack.?overflow|stackexchange|discord|slack|github|dev\.to)/.test(plat)) {
+      return 'conversation';
+    }
+    // engagement string format: "replies:1 retweets:0 likes:0"
+    const eng = String(c.engagement || '');
+    const m = eng.match(/replies:(\d+)/i) || eng.match(/comments:(\d+)/i);
+    if (m && parseInt(m[1], 10) > 0) return 'conversation';
+    return 'mention';
+  }
   // Currently chosen `include` mode for /api/conversations.
   function _currentInclude() {
     return document.getElementById('conv-show')?.value || 'open';
@@ -90,6 +168,9 @@
       // "all" explicitly.
       const params = new URLSearchParams({ include });
       if (include === 'all') params.set('includeMuted', '1');
+      // Always fetch team-member (product) rows too. The client-side
+      // team-mode filter decides whether to show, hide, or isolate them.
+      params.set('includeProduct', '1');
       const data = await fetch('/api/conversations?' + params.toString()).then((r) => r.json());
       _allConvs = Array.isArray(data.conversations) ? data.conversations : [];
       _platforms = new Set(_allConvs.map((c) => c.platform).filter(Boolean));
@@ -257,9 +338,12 @@
 
   function _convRowHtml(c) {
     const dot = SENTIMENT_DOT[c.sentiment] || '·';
+    const kind = _convKind(c);
+    const platLabel = c.platform || 'source';
     const link = c.url
-      ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">Open ↗</a>`
+      ? `<a class="conv-open-link" href="${esc(c.url)}" target="_blank" rel="noopener" title="Open original ${esc(platLabel)} post in a new tab">View on ${esc(platLabel)} ↗</a>`
       : '';
+    const summaryHtml = renderSummaryHtml(c.summary || '');
     const replyBtn =
       c.url && (c.sentiment === 'negative' || c.sentiment === 'mixed') && !c.isClosed
         ? `<button type="button" class="conv-reply-btn" data-url="${esc(
@@ -305,7 +389,8 @@
         ? `<button type="button" class="conv-unmute-btn" data-author="${esc(author)}" data-platform="${esc(c.platform || '')}">Unmute</button>`
         : '';
     const recheckBtn = !c.isClosed && (c.summary || '').trim()
-      ? `<button type="button" class="conv-recheck-btn" data-key="${esc(key)}" title="Ask the local agent LLM to re-classify this row's sentiment">🤖 Re-check sentiment</button>`
+      ? `<button type="button" class="conv-recheck-btn" data-key="${esc(key)}" title="Ask the local agent LLM to re-classify this row's sentiment">🤖 Re-check sentiment</button>
+         <button type="button" class="conv-recheck-note-toggle" data-key="${esc(key)}" title="Add a short note the LLM should consider (e.g. 'author works for a competitor', 'this is satire')" aria-expanded="false">📝 Add note</button>`
       : '';
     const selectedClass = key && _selectedKeys.has(key) ? ' is-selected' : '';
     const rowAttrs = key ? ` data-key="${esc(key)}" tabindex="0" role="button" aria-pressed="${_selectedKeys.has(key) ? 'true' : 'false'}"` : '';
@@ -314,14 +399,27 @@
         ${checkbox}
         <span class="conv-dot" title="${esc(c.sentiment)}">${dot}</span>
         <strong>${esc(c.author || '(unknown)')}</strong>
+        ${c.community === 'product' ? '<span class="conv-team-badge" title="Member of the product team (from scout-config team-members list)">👥 Team</span>' : ''}
         <span class="conv-platform">${esc(c.platform || '')}</span>
         <span class="conv-date">${esc(c.date || '')}</span>
         <span class="conv-spacer"></span>
         ${link}
       </div>
-      <div class="conv-summary">${esc(c.summary || '')}</div>
+      <div class="conv-summary">${summaryHtml}</div>
       ${closedBanner}${noTriageBanner}${mutedBanner}
       <div class="conv-actions">${replyBtn}${actionBtn}${noTriageBtn}${muteBtn}${recheckBtn}</div>
+      <div class="conv-recheck-note" data-key="${esc(key)}" hidden>
+        <label class="conv-recheck-note-label" for="conv-recheck-note-input-${esc(key)}">
+          Note to LLM <span class="hint">(optional, max 500 chars — treated as a hint, not ground truth)</span>
+        </label>
+        <textarea
+          id="conv-recheck-note-input-${esc(key)}"
+          class="conv-recheck-note-input"
+          data-key="${esc(key)}"
+          rows="2"
+          maxlength="500"
+          placeholder="e.g. author is a known competitor advocate; this is satire; thread context says X"></textarea>
+      </div>
       <div class="conv-sentiment-verdict" data-key="${esc(key)}" hidden></div>
     </div>`;
   }
@@ -335,8 +433,18 @@
     const timeframe = document.getElementById('conv-timeframe')?.value || '';
     const jobsMode = document.getElementById('conv-jobs')?.value ?? 'hide';
     const needsReply = document.getElementById('conv-needs-reply')?.checked || false;
+    const teamMode = document.getElementById('conv-team-mode')?.value || 'community';
 
     let convs = _allConvs.slice();
+    // Team-mode filter: 'community' hides team-member rows (default — same
+    // as legacy behavior), 'team' shows only team rows, 'everyone' shows
+    // both. A row is considered "team" when the server tagged it with
+    // community === 'product'.
+    if (teamMode === 'community') {
+      convs = convs.filter((c) => c.community !== 'product');
+    } else if (teamMode === 'team') {
+      convs = convs.filter((c) => c.community === 'product');
+    }
     let jobsHidden = 0;
     if (jobsMode === 'hide') {
       const before = convs.length;
@@ -365,6 +473,29 @@
           (c.author || '').toLowerCase().includes(q) ||
           (c.platform || '').toLowerCase().includes(q)
       );
+    }
+
+    // Tab counts reflect everything that passed the other filters, so the
+    // user sees how many items each tab would show without switching.
+    let countAll = 0, countConv = 0, countMen = 0;
+    for (const c of convs) {
+      countAll++;
+      if (_convKind(c) === 'conversation') countConv++;
+      else countMen++;
+    }
+    const setCount = (tab, n) => {
+      const el = document.querySelector(`.conv-tab-count[data-count-for="${tab}"]`);
+      if (el) el.textContent = String(n);
+    };
+    setCount('all', countAll);
+    setCount('conversations', countConv);
+    setCount('mentions', countMen);
+
+    // Apply the active-tab filter last so it doesn't skew the per-tab counts.
+    if (_activeTab === 'conversations') {
+      convs = convs.filter((c) => _convKind(c) === 'conversation');
+    } else if (_activeTab === 'mentions') {
+      convs = convs.filter((c) => _convKind(c) === 'mention');
     }
 
     // Split into recent (≤14d) vs older (bucketed by ISO week). When the
@@ -513,7 +644,23 @@
         _recheckSentiment(btn.dataset.key, btn);
       });
     });
+    list.querySelectorAll('.conv-recheck-note-toggle').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const key = btn.dataset.key;
+        const wrap = list.querySelector(`.conv-recheck-note[data-key="${CSS.escape(key)}"]`);
+        if (!wrap) return;
+        const willShow = wrap.hidden;
+        wrap.hidden = !willShow;
+        btn.setAttribute('aria-expanded', willShow ? 'true' : 'false');
+        if (willShow) {
+          const ta = wrap.querySelector('textarea');
+          if (ta) ta.focus();
+        }
+      });
+    });
     _updateBulkBar();
+    _updateRecheckBulkButton();
   }
 
   // ----- Sentiment re-check (local-LLM second opinion) -----------
@@ -574,6 +721,8 @@
     verdictEl.innerHTML = `<span class="hint">${esc(waitMsg)}</span>`;
     try {
       const slug = _slugFromReport(c.report);
+      const noteEl = document.querySelector(`.conv-recheck-note-input[data-key="${CSS.escape(key)}"]`);
+      const userNote = noteEl ? String(noteEl.value || '').trim().slice(0, 500) : '';
       const payload = {
         summary: c.summary || '',
         author: c.author || '',
@@ -581,6 +730,7 @@
         slug,
         currentSentiment: c.sentiment || 'unknown',
       };
+      if (userNote) payload.userNote = userNote;
       const res = await fetch('/api/sentiment/review', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -592,7 +742,7 @@
         verdictEl.innerHTML = `<span class="conv-verdict-error">⚠️ ${esc(data?.error || data?.message || `HTTP ${res.status}`)}</span>`;
         return;
       }
-      _renderVerdict(verdictEl, c, data);
+      _renderVerdict(verdictEl, c, data, { userNote });
     } catch (err) {
       verdictEl.classList.remove('is-loading');
       verdictEl.innerHTML = `<span class="conv-verdict-error">⚠️ ${esc(err.message || err)}</span>`;
@@ -601,7 +751,7 @@
     }
   }
 
-  function _renderVerdict(el, conv, data) {
+  function _renderVerdict(el, conv, data, opts = {}) {
     const llmSent = (data.sentiment || 'unknown').toLowerCase();
     const llmDot = SENTIMENT_DOT[llmSent] || '·';
     const curSent = (conv.sentiment || 'unknown').toLowerCase();
@@ -613,6 +763,9 @@
     const headline = agrees
       ? `<span class="conv-verdict-agrees">✓ LLM agrees</span>`
       : `<span class="conv-verdict-disagrees">⚠ LLM disagrees</span>`;
+    const noteUsed = opts.userNote
+      ? `<div class="conv-verdict-note hint">📝 With note: ${esc(opts.userNote)}</div>`
+      : '';
     el.innerHTML = `
       <div class="conv-verdict-row conv-verdict-${verdictClass}">
         ${headline}
@@ -622,8 +775,147 @@
         </span>
         <span class="conv-verdict-meta hint">${confLabel}${model}</span>
       </div>
+      ${noteUsed}
       ${data.rationale ? `<div class="conv-verdict-rationale">${esc(data.rationale)}</div>` : ''}
     `;
+  }
+
+  // ----- Bulk re-check sentiment for all visible neutrals --------
+
+  // Walk the DOM after every render to figure out how many visible rows are
+  // currently flagged neutral. Update the toolbar button label and visibility.
+  function _updateRecheckBulkButton() {
+    const btn = document.getElementById('conv-recheck-bulk');
+    if (!btn) return;
+    const lbl = document.getElementById('conv-recheck-bulk-count');
+    const list = document.getElementById('conv-list');
+    if (!list) {
+      btn.hidden = true;
+      return;
+    }
+    const keys = _visibleNeutralKeys();
+    if (!keys.length) {
+      btn.hidden = true;
+      return;
+    }
+    btn.hidden = false;
+    if (lbl) lbl.textContent = String(keys.length);
+    btn.dataset.count = String(keys.length);
+  }
+
+  function _visibleNeutralKeys() {
+    const list = document.getElementById('conv-list');
+    if (!list) return [];
+    const keys = [];
+    list.querySelectorAll('.conv-row.sent-neutral').forEach((row) => {
+      if (row.classList.contains('conv-closed') || row.classList.contains('conv-muted')) return;
+      const key = row.dataset.key;
+      if (!key) return;
+      const c = _findConvByKey(key);
+      if (!c || !c.url || !(c.summary || '').trim()) return;
+      keys.push(key);
+    });
+    return keys;
+  }
+
+  async function _recheckBulkNeutrals(btn) {
+    const keys = _visibleNeutralKeys();
+    if (!keys.length) return;
+    const max = 100;
+    const trimmed = keys.slice(0, max);
+    if (keys.length > max) {
+      if (!confirm(`${keys.length} visible neutrals — only the first ${max} will be re-checked in this batch. Continue?`)) return;
+    } else if (trimmed.length > 25) {
+      if (!confirm(`Re-check ${trimmed.length} neutral conversation${trimmed.length === 1 ? '' : 's'} with the local LLM? This can take 1–2 minutes.`)) return;
+    }
+    const origLabel = btn?.innerHTML;
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `🤖 Reviewing 0 / ${trimmed.length}…`;
+    }
+    // Group by report so we can resolve productName once per report.
+    const bySlug = new Map();
+    for (const key of trimmed) {
+      const c = _findConvByKey(key);
+      if (!c) continue;
+      const slug = _slugFromReport(c.report) || '';
+      if (!bySlug.has(slug)) bySlug.set(slug, []);
+      bySlug.get(slug).push(c);
+    }
+    let done = 0;
+    let agreed = 0;
+    let changed = 0;
+    let errored = 0;
+    for (const [slug, items] of bySlug.entries()) {
+      const payload = {
+        slug,
+        items: items.map((c) => ({
+          key: c.key,
+          url: c.url,
+          summary: c.summary || '',
+          author: c.author || '',
+          platform: c.platform || '',
+          currentSentiment: c.sentiment || 'unknown',
+        })),
+      };
+      try {
+        const res = await fetch('/api/sentiment/review-bulk', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || data?.error) {
+          errored += items.length;
+          done += items.length;
+          if (btn) btn.innerHTML = `🤖 Reviewing ${done} / ${trimmed.length}… (error: ${esc(data?.error || res.status)})`;
+          continue;
+        }
+        for (const r of data.results || []) {
+          done++;
+          if (!r.ok) { errored++; continue; }
+          const conv = _findConvByKey(r.key);
+          if (!conv) continue;
+          const newSent = (r.sentiment || conv.sentiment || 'unknown').toLowerCase();
+          if (newSent !== conv.sentiment) {
+            conv.sentiment = newSent;
+            conv.sentimentConfidence = (r.confidence || 'medium').toLowerCase();
+            conv.sentimentOverridden = true;
+            changed++;
+          } else {
+            agreed++;
+          }
+          // Update the row's dot in place so the user sees progress live.
+          const row = document.querySelector(`.conv-row[data-key="${CSS.escape(r.key)}"]`);
+          if (row) {
+            row.classList.remove('sent-neutral', 'sent-positive', 'sent-negative', 'sent-mixed', 'sent-unknown');
+            row.classList.add(`sent-${newSent}`);
+            const dotEl = row.querySelector('.conv-dot');
+            if (dotEl) {
+              dotEl.textContent = SENTIMENT_DOT[newSent] || '·';
+              dotEl.title = newSent;
+            }
+            const verdictEl = row.querySelector('.conv-sentiment-verdict');
+            if (verdictEl) {
+              verdictEl.hidden = false;
+              _renderVerdict(verdictEl, conv, r);
+            }
+          }
+        }
+        if (btn) btn.innerHTML = `🤖 Reviewing ${done} / ${trimmed.length}… (${changed} changed)`;
+      } catch (err) {
+        errored += items.length;
+        done += items.length;
+        if (btn) btn.innerHTML = `🤖 Reviewing ${done} / ${trimmed.length}… (error: ${esc(err.message || err)})`;
+      }
+    }
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origLabel || '🤖 Re-check <span id="conv-recheck-bulk-count">0</span> neutrals';
+    }
+    const msg = `Re-checked ${done} conversation${done === 1 ? '' : 's'}: ${changed} re-classified, ${agreed} confirmed neutral${errored ? `, ${errored} errored` : ''}.`;
+    if (typeof window !== 'undefined' && window.alert) alert(msg);
+    _updateRecheckBulkButton();
   }
 
   // ----- Close / reopen plumbing ---------------------------------
@@ -998,7 +1290,34 @@
   }
 
   function wireConversationsUI() {
-    ['conv-q', 'conv-sentiment', 'conv-platform', 'conv-timeframe', 'conv-jobs', 'conv-needs-reply'].forEach((id) => {
+    // Tabs: All / Conversations / Mentions. Persisted to localStorage.
+    try {
+      const savedTab = localStorage.getItem('cs.conv.activeTab');
+      if (savedTab === 'all' || savedTab === 'conversations' || savedTab === 'mentions') {
+        _activeTab = savedTab;
+      }
+    } catch {}
+    document.querySelectorAll('.conv-tab').forEach((btn) => {
+      if (btn.dataset.wired) return;
+      btn.dataset.wired = '1';
+      const tab = btn.dataset.convTab;
+      // Sync initial active state with restored _activeTab.
+      const isActive = tab === _activeTab;
+      btn.classList.toggle('is-active', isActive);
+      btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      btn.addEventListener('click', () => {
+        if (!tab || tab === _activeTab) return;
+        _activeTab = tab;
+        try { localStorage.setItem('cs.conv.activeTab', tab); } catch {}
+        document.querySelectorAll('.conv-tab').forEach((b) => {
+          const on = b.dataset.convTab === tab;
+          b.classList.toggle('is-active', on);
+          b.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        renderConversations();
+      });
+    });
+    ['conv-q', 'conv-sentiment', 'conv-platform', 'conv-timeframe', 'conv-jobs', 'conv-needs-reply', 'conv-team-mode'].forEach((id) => {
       const el = document.getElementById(id);
       if (el && !el.dataset.wired) {
         el.dataset.wired = '1';
@@ -1070,6 +1389,11 @@
       sentStatusBtn.dataset.wired = '1';
       sentStatusBtn.addEventListener('click', () => _refreshSentimentStatus());
       _refreshSentimentStatus();
+    }
+    const recheckBulkBtn = document.getElementById('conv-recheck-bulk');
+    if (recheckBulkBtn && !recheckBulkBtn.dataset.wired) {
+      recheckBulkBtn.dataset.wired = '1';
+      recheckBulkBtn.addEventListener('click', () => _recheckBulkNeutrals(recheckBulkBtn));
     }
     const mutedCloseBtn = document.getElementById('conv-muted-close');
     if (mutedCloseBtn && !mutedCloseBtn.dataset.wired) {
@@ -1284,6 +1608,21 @@
     return 'other';
   }
 
+  // Wrap fetch with an AbortController-based timeout so a slow or hung
+  // /api/conversations response can't pin the "Needs your attention" card on
+  // "Loading…" forever and block the rest of the dashboard from feeling done.
+  async function fetchJsonWithTimeout(url, timeoutMs) {
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), timeoutMs);
+    try {
+      const r = await fetch(url, { signal: ac.signal });
+      if (!r.ok) throw new Error(`${url}: ${r.status}`);
+      return await r.json();
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
   async function loadSocialActivity() {
     const host = document.getElementById('dash-social-activity');
     const summary = document.getElementById('dash-social-summary');
@@ -1291,7 +1630,10 @@
     if (!host) return;
     host.innerHTML = '<p class="hint">Loading…</p>';
     try {
-      const data = await fetch('/api/conversations?includeProduct=1').then((r) => r.json());
+      // 8s ceiling — covers a cold index build on first dashboard load, but
+      // still fails fast enough that the user sees an actionable error
+      // instead of a stuck card.
+      const data = await fetchJsonWithTimeout('/api/conversations?includeProduct=1', 8000);
       const allEver = Array.isArray(data.conversations) ? data.conversations : [];
       // Dashboard card is intentionally scoped to the most recent 30 days.
       // Anything older lives in the Conversations view, which has its own
@@ -1325,40 +1667,16 @@
         return;
       }
 
-      // Pre-validate every URL we might render so dead links never reach the
-      // dashboard. Items whose URL is malformed or unreachable get their
-      // url stripped — the item itself stays (as plain text / no-link form)
-      // so we don't silently lose conversation context. Server caches probe
-      // results for 1h, so repeat loads are effectively free.
-      const urlSet = new Set();
-      for (const c of all) {
-        if (c && isValidPostUrl(c.url)) urlSet.add(c.url);
-      }
-      const urls = [...urlSet].slice(0, 24); // hard cap on per-load probes
-      const liveMap = new Map();
-      const PROBE_CONC = 6;
-      const PROBE_BUDGET_MS = 4000;
-      const deadline = Date.now() + PROBE_BUDGET_MS;
-      let pi = 0;
-      async function probeWorker() {
-        while (pi < urls.length) {
-          if (Date.now() > deadline) break;
-          const u = urls[pi++];
-          try {
-            const r = await checkUrlLive(u);
-            liveMap.set(u, !!(r && r.ok));
-          } catch {
-            liveMap.set(u, false);
-          }
-        }
-      }
-      await Promise.all(Array.from({ length: PROBE_CONC }, probeWorker));
-      // Strip URLs that failed the probe (or that we didn't probe due to the
-      // cap — treat those as unknown/dead to honor "never put dead links").
+      // URL liveness used to be probed *before* render — that added up to 4s
+      // of blocking time and meant a slow `/api/check-url` round-trip could
+      // hold the whole "Needs your attention" card on "Loading…" and make the
+      // dashboard feel broken. Now we render with the URLs we have, then
+      // probe in the background and strip dead links in place. The markup
+      // already tags every candidate link with `data-check-url`, so the
+      // background pass can find and downgrade them without re-rendering.
       for (const c of all) {
         if (!c) continue;
-        if (!isValidPostUrl(c.url)) { c.url = ''; continue; }
-        if (liveMap.get(c.url) !== true) c.url = '';
+        if (!isValidPostUrl(c.url)) c.url = '';
       }
 
       // Bucket by platform → community/product
@@ -1455,6 +1773,14 @@
         needsHtml ||
         '<p class="hint">No platform-specific conversations parsed yet.</p>';
 
+      // Background liveness probe: walk every `data-check-url` we just
+      // rendered, probe in the background, and downgrade dead links to
+      // plain text in place. This used to block render for up to 4s; now
+      // the card paints immediately and dead links quietly fall away once
+      // the probe completes. Server caches probe results for 1h, so
+      // subsequent dashboard loads finish near-instantly.
+      queueMicrotask(() => decayDeadDashLinks(host));
+
       // Social pulse links go to the Conversations view by default so
       // users can read the post inline. Ctrl/Cmd/middle-click still
       // opens the external source in a new tab.
@@ -1508,8 +1834,40 @@
         });
       });
     } catch (err) {
-      host.innerHTML = `<p class="hint">Failed to load conversations: ${esc(err.message || err)}</p>`;
+      const isTimeout = err && (err.name === 'AbortError' || /aborted/i.test(String(err.message || '')));
+      host.innerHTML = isTimeout
+        ? `<p class="hint">Couldn't load conversations in time — the server may still be indexing. <button type="button" class="link-btn" id="dash-social-retry">Retry</button></p>`
+        : `<p class="hint">Failed to load conversations: ${esc(err.message || err)} <button type="button" class="link-btn" id="dash-social-retry">Retry</button></p>`;
+      document.getElementById('dash-social-retry')?.addEventListener('click', () => loadSocialActivity());
     }
+  }
+
+  // Probe every rendered `data-check-url` in the host and remove the `href`
+  // / collapse the `<a>` to a plain `<span>` when the URL is unreachable.
+  // Runs in the background after the card paints — never blocks render.
+  async function decayDeadDashLinks(host) {
+    const anchors = Array.from(host.querySelectorAll('a.dash-link[data-check-url]'));
+    if (!anchors.length) return;
+    const urls = [...new Set(anchors.map((a) => a.dataset.checkUrl).filter(Boolean))].slice(0, 24);
+    const CONC = 6;
+    let i = 0;
+    async function worker() {
+      while (i < urls.length) {
+        const u = urls[i++];
+        let ok = false;
+        try { const r = await checkUrlLive(u); ok = !!(r && r.ok); } catch { ok = false; }
+        if (ok) continue;
+        anchors
+          .filter((a) => a.dataset.checkUrl === u && a.isConnected)
+          .forEach((a) => {
+            const span = document.createElement('span');
+            span.className = a.className;
+            span.textContent = a.textContent;
+            a.replaceWith(span);
+          });
+      }
+    }
+    await Promise.all(Array.from({ length: CONC }, worker));
   }
 
   function trim(s, n) {

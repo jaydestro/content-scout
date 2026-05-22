@@ -30,10 +30,10 @@ test('buildPrompt: caps summary length to 4000 chars', () => {
   const long = 'x'.repeat(8000);
   const p = buildPrompt({ productName: 'Foo', summary: long, currentSentiment: 'unknown' });
   // Summary section is truncated at 4000 chars. The full prompt also carries
-  // ~1100 chars of classification rules and JSON schema, so any value under
-  // 4000 + 2000 = 6000 confirms the cap fired (a non-capped prompt would be
-  // 8000 + 1100+ ≈ 9100).
-  assert.ok(p.length < 6000, `prompt length ${p.length} should be < 6000`);
+  // the classification rules, nuance/misclassification guidance, and JSON
+  // schema (~2500 chars). Any value under 4000 + 3500 = 7500 confirms the
+  // cap fired (a non-capped prompt would be 8000 + 2500+ ≈ 10500).
+  assert.ok(p.length < 7500, `prompt length ${p.length} should be < 7500`);
   assert.ok(p.length > 4000, `prompt length ${p.length} should still include the prompt header`);
 });
 
@@ -47,6 +47,33 @@ test('buildPrompt: falls back gracefully when fields are missing', () => {
 test('buildPrompt: rejects unknown current sentiment values', () => {
   const p = buildPrompt({ productName: 'Foo', summary: 'hi', currentSentiment: 'sparkly' });
   assert.match(p, /Current classification: unknown/);
+});
+
+test('buildPrompt: omits reviewer-note block when userNote is empty/whitespace', () => {
+  const a = buildPrompt({ productName: 'Foo', summary: 'hi' });
+  const b = buildPrompt({ productName: 'Foo', summary: 'hi', userNote: '   ' });
+  assert.doesNotMatch(a, /Reviewer note/);
+  assert.doesNotMatch(b, /Reviewer note/);
+});
+
+test('buildPrompt: appends reviewer note as hint, not ground truth', () => {
+  const p = buildPrompt({
+    productName: 'Foo',
+    summary: 'hi',
+    userNote: 'author is a known competitor advocate',
+  });
+  assert.match(p, /Reviewer note/);
+  assert.match(p, /treat as a HINT/);
+  assert.match(p, /author is a known competitor advocate/);
+});
+
+test('buildPrompt: truncates reviewer note to 500 chars', () => {
+  const long = 'n'.repeat(2000);
+  const p = buildPrompt({ productName: 'Foo', summary: 'hi', userNote: long });
+  // Count "n"s appearing in the note block — capped at 500.
+  const noteRun = p.match(/n{50,}/g);
+  assert.ok(noteRun, 'expected a run of n in prompt');
+  assert.ok(noteRun[0].length <= 500, `note run ${noteRun[0].length} > 500`);
 });
 
 // ---- tryParseJson -------------------------------------------------
