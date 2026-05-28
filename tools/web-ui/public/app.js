@@ -2073,6 +2073,11 @@ $('env-save').addEventListener('click', async () => {
 });
 
 // --- Dashboard -----------------------------------------------------
+// Exposed on window so runs-queue.js can refresh the active view when a
+// scan finishes. app.js is a module, so top-level fns aren't auto-global.
+window.loadDashboard = () => loadDashboard();
+window.loadReports = () => loadReports();
+window.loadSocial = () => loadSocial();
 async function loadDashboard() {
   let status, configs, reports, runs;
   try {
@@ -2462,19 +2467,82 @@ function updateRunPreview() {
   if (el) el.textContent = buildPrompt();
 }
 
+// Saved custom-prompt text (lives in memory + the modal's textarea).
+// Editing happens via the run-custom-prompt-dialog modal, not inline.
+let savedCustomPrompt = '';
+function refreshCustomPromptSummary() {
+  const preview = $('run-custom-prompt-preview');
+  if (!preview) return;
+  const text = (savedCustomPrompt || '').trim();
+  if (!text) {
+    preview.textContent = '(none yet)';
+    preview.classList.add('is-empty');
+  } else {
+    preview.textContent = text.length > 80 ? text.slice(0, 77) + '…' : text;
+    preview.classList.remove('is-empty');
+  }
+}
+function openCustomPromptDialog() {
+  const dlg = $('run-custom-prompt-dialog');
+  const ta = $('run-custom-prompt-text');
+  if (!dlg || !ta) return;
+  ta.value = savedCustomPrompt;
+  if (typeof dlg.showModal === 'function') dlg.showModal();
+  else dlg.setAttribute('open', '');
+  setTimeout(() => ta.focus(), 0);
+}
 $('run-command').addEventListener('change', (e) => {
   const custom = e.target.value === 'custom';
-  $('run-prompt-wrap').hidden = !custom;
-  $('run-extra-wrap').hidden = custom;
+  // "Additional context" textarea is for non-custom commands; the modal
+  // owns the custom-prompt body when the user picks Custom.
+  $('run-prompt-wrap').hidden = custom;
+  $('run-extra-wrap') && ($('run-extra-wrap').hidden = custom);
+  const summary = $('run-custom-prompt-summary');
+  if (summary) summary.hidden = !custom;
   const subjectWrap = $('run-subject-wrap');
   if (subjectWrap) subjectWrap.hidden = custom;
   const rangeWrap = $('run-range-wrap');
   if (rangeWrap) rangeWrap.hidden = custom || !COMMANDS_WITH_RANGE.has(e.target.value);
-  const bsWrap = $('run-browser-scan-wrap');
-  if (bsWrap) bsWrap.hidden = e.target.value !== 'scout-scan';
+  syncBrowserScanVisibility();
+  if (custom && !savedCustomPrompt.trim()) openCustomPromptDialog();
   updateRunPreview();
 });
 $('run-extra').addEventListener('input', updateRunPreview);
+$('run-custom-prompt-edit')?.addEventListener('click', openCustomPromptDialog);
+$('run-custom-prompt-save')?.addEventListener('click', (e) => {
+  // Form is method="dialog", so the click closes the dialog. Capture text first.
+  savedCustomPrompt = ($('run-custom-prompt-text')?.value || '').trim();
+  refreshCustomPromptSummary();
+  updateRunPreview();
+});
+$('run-custom-prompt-cancel')?.addEventListener('click', () => {
+  $('run-custom-prompt-dialog')?.close?.();
+});
+// Example-snippet buttons inside the dialog: insert (or append) into the
+// textarea so users can mix-and-match without re-typing the command shape.
+document.getElementById('run-custom-prompt-examples-list')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-snippet]');
+  if (!btn) return;
+  e.preventDefault();
+  const ta = $('run-custom-prompt-text');
+  if (!ta) return;
+  const snippet = btn.dataset.snippet || '';
+  ta.value = ta.value.trim() ? `${ta.value.trim()}\n${snippet}` : snippet;
+  ta.focus();
+});
+$('run-custom-browser-scan')?.addEventListener('change', syncBrowserScanVisibility);
+function syncBrowserScanVisibility() {
+  const bsWrap = $('run-browser-scan-wrap');
+  if (!bsWrap) return;
+  const cmd = $('run-command').value;
+  if (cmd === 'scout-scan') { bsWrap.hidden = false; return; }
+  if (cmd === 'custom' && $('run-custom-browser-scan')?.checked) {
+    bsWrap.hidden = false;
+    return;
+  }
+  bsWrap.hidden = true;
+}
+refreshCustomPromptSummary();
 
 // --- Date range helper ---------------------------------------------
 // Produces a natural-language phrase the prompts already understand
@@ -2605,9 +2673,10 @@ $('run-start').addEventListener('click', startRun);
 
 function buildPrompt() {
   const cmd = $('run-command').value;
-  if (cmd === 'custom') return $('run-prompt').value.trim();
+  if (cmd === 'custom') return savedCustomPrompt.trim();
   const slug = $('run-slug').value;
   const extra = $('run-extra').value.trim();
+  const context = ($('run-prompt')?.value || '').trim();
   const range = COMMANDS_WITH_RANGE.has(cmd) ? dateRangePhrase() : '';
   // If user picked "All subjects" and there's more than one config, pass "all"
   // explicitly so the agent doesn't interactively prompt.
@@ -2615,25 +2684,29 @@ function buildPrompt() {
     ? $('run-subject-list').querySelectorAll('input[name="run-slug-choice"]').length - 1
     : 0;
   const target = slug || (configCount > 1 ? 'all' : '');
-  return [`/${cmd}`, target, range, extra].filter(Boolean).join(' ');
+  return [`/${cmd}`, target, range, extra, context].filter(Boolean).join(' ');
 }
 
 async function startRun() {
   const cmd = $('run-command').value;
   const range = COMMANDS_WITH_RANGE.has(cmd) ? dateRangePhrase() : '';
   const extra = $('run-extra').value.trim();
-  const combinedExtra = [range, extra].filter(Boolean).join(' ');
+  const context = ($('run-prompt')?.value || '').trim();
+  const combinedExtra = [range, extra, context].filter(Boolean).join(' ');
   const args =
     cmd === 'custom'
-      ? { prompt: $('run-prompt').value.trim() }
+      ? { prompt: savedCustomPrompt.trim() }
       : { slug: $('run-slug').value, extra: combinedExtra };
   $('run-output').textContent = '';
   $('run-meta').textContent = 'Starting…';
-  // Browser-scan preflight option — only meaningful for /scout-scan.
+  // Browser-scan preflight option — /scout-scan always, custom only if opted in.
+  const customWantsBrowserScan = cmd === 'custom' && $('run-custom-browser-scan')?.checked;
   const browserScan =
     cmd === 'scout-scan'
       ? (document.querySelector('input[name="run-browser-scan"]:checked')?.value || 'auto')
-      : undefined;
+      : customWantsBrowserScan
+        ? (document.querySelector('input[name="run-browser-scan"]:checked')?.value || 'auto')
+        : undefined;
   // Scope the browser-scan preflight to the user's date-range pick so
   // the logged-in scrapers stay in the same window the agent will use.
   const rangeDays = COMMANDS_WITH_RANGE.has(cmd) ? rangeDaysFromPreset() : undefined;
@@ -2973,6 +3046,7 @@ function setReportsActiveTab(tab) {
   });
   renderReportsActionBar(tab);
   if (TAB_TO_KIND[tab]) applyReportsTabFilter();
+  if (tab === 'cfps' || tab === 'conferences') loadCfpConferences(tab);
 }
 
 function applyReportsTabFilter() {
@@ -3057,6 +3131,20 @@ function renderReportsActionBar(tab) {
     $('btn-seo-compute')?.addEventListener('click', () => computeAnalytics('seo'));
   } else if (tab === 'content' || tab === 'mindshare') {
     bar.innerHTML = `<span class="hint">Browse existing ${escapeAttr(tab)} reports. New scans land here automatically after <code>/scout-scan</code> completes.</span>`;
+  } else if (tab === 'cfps') {
+    bar.innerHTML = `
+      <span class="hint">Open Calls for Papers parsed from your latest <code>/scout-scan</code> content report.</span>
+      <button type="button" id="btn-cfps-refresh" class="ghost">Refresh</button>
+      <span class="hint" id="cfp-conf-status"></span>
+    `;
+    $('btn-cfps-refresh')?.addEventListener('click', () => loadCfpConferences('cfps', true));
+  } else if (tab === 'conferences') {
+    bar.innerHTML = `
+      <span class="hint">Conferences from your active scout-config &mdash; deadlines and submission links come from the known-events table.</span>
+      <button type="button" id="btn-conf-refresh" class="ghost">Refresh</button>
+      <span class="hint" id="cfp-conf-status"></span>
+    `;
+    $('btn-conf-refresh')?.addEventListener('click', () => loadCfpConferences('conferences', true));
   } else {
     bar.innerHTML = '';
   }
@@ -3116,6 +3204,102 @@ async function computeAnalytics(kind) {
   } catch (err) {
     if (status) status.textContent = `error: ${err.message || err}`;
   }
+}
+
+// --- CFPs + Conferences tabs ----------------------------------------
+// Both tabs hit the same /api/cfp-conferences endpoint and cache the
+// payload for the active slug so tab-switches don't refetch unless the
+// user clicks Refresh.
+let _cfpConfCache = { slug: '', data: null };
+
+async function loadCfpConferences(tab, force) {
+  const slug = (window.activeRoleSlug && window.activeRoleSlug()) || '';
+  const status = $('cfp-conf-status');
+  if (!slug) {
+    const body = $(tab === 'cfps' ? 'cfps-body' : 'conferences-body');
+    if (body) body.innerHTML = '<p class="hint">Pick a subject in the header first.</p>';
+    return;
+  }
+  if (!force && _cfpConfCache.slug === slug && _cfpConfCache.data) {
+    renderCfpConferences(tab, _cfpConfCache.data);
+    return;
+  }
+  if (status) status.textContent = 'Loading…';
+  try {
+    const res = await fetch(`/api/cfp-conferences?slug=${encodeURIComponent(slug)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    _cfpConfCache = { slug, data };
+    renderCfpConferences(tab, data);
+    if (status) status.textContent = data.report ? `Source: ${data.report}` : '';
+  } catch (err) {
+    if (status) status.textContent = `error: ${err.message || err}`;
+  }
+}
+
+function renderCfpConferences(tab, data) {
+  if (tab === 'cfps') {
+    const body = $('cfps-body');
+    if (!body) return;
+    const cfps = data.cfps || [];
+    if (!cfps.length) {
+      body.innerHTML = `
+        <p class="hint">No open Calls for Papers found in the latest content report${
+          data.report ? ` (<code>${escape(data.report)}</code>)` : ''
+        }.</p>
+        <p class="hint">Make sure <strong>Conference CFP tracking</strong> is enabled in your config, then run <code>/scout-scan</code>. The agent populates an &ldquo;## Open Calls for Papers&rdquo; section that this tab parses.</p>
+      `;
+      return;
+    }
+    body.innerHTML = `
+      <h3>Open Calls for Papers</h3>
+      <p class="hint">Parsed from <code>${escape(data.report || '')}</code>. Re-run <code>/scout-scan</code> to refresh.</p>
+      <ul class="cfp-list">
+        ${cfps.map(renderCfpRow).join('')}
+      </ul>
+    `;
+  } else {
+    const body = $('conferences-body');
+    if (!body) return;
+    const conferences = data.conferences || [];
+    if (!conferences.length) {
+      body.innerHTML = `
+        <p class="hint">No conferences listed in your active config. Add a <strong>Conferences &amp; Events</strong> table to your scout-config to populate this tab.</p>
+      `;
+      return;
+    }
+    body.innerHTML = `
+      <h3>Conferences &amp; Events</h3>
+      <p class="hint">From your active scout-config &mdash; ${conferences.length} event${conferences.length === 1 ? '' : 's'}.</p>
+      <table class="cfp-conf-table">
+        <thead><tr><th>Event</th><th>Dates</th><th>Location</th><th>Links</th></tr></thead>
+        <tbody>
+          ${conferences.map(renderConferenceRow).join('')}
+        </tbody>
+      </table>
+    `;
+  }
+}
+
+function renderCfpRow(c) {
+  const links = [];
+  if (c.cfp) links.push(`<a href="${escapeAttr(c.cfp)}" target="_blank" rel="noopener">CFP</a>`);
+  if (c.site) links.push(`<a href="${escapeAttr(c.site)}" target="_blank" rel="noopener">Site</a>`);
+  for (const l of c.links || []) {
+    links.push(`<a href="${escapeAttr(l.url)}" target="_blank" rel="noopener">${escape(l.label || 'link')}</a>`);
+  }
+  const linksHtml = links.length ? ` &mdash; ${links.join(' &middot; ')}` : '';
+  const note = c.note ? `<div class="hint">${escape(c.note)}</div>` : '';
+  const dateLoc = c.dateLoc ? ` <span class="hint">(${escape(c.dateLoc)})</span>` : '';
+  return `<li><strong>${escape(c.name)}</strong>${dateLoc}${linksHtml}${note}</li>`;
+}
+
+function renderConferenceRow(c) {
+  const links = [];
+  if (c.cfp) links.push(`<a href="${escapeAttr(c.cfp)}" target="_blank" rel="noopener">CFP</a>`);
+  if (c.site) links.push(`<a href="${escapeAttr(c.site)}" target="_blank" rel="noopener">Site</a>`);
+  const linksCell = links.length ? links.join(' &middot; ') : '<span class="hint">&mdash;</span>';
+  return `<tr><td>${escape(c.name)}</td><td>${escape(c.dates || '')}</td><td>${escape(c.location || '')}</td><td>${linksCell}</td></tr>`;
 }
 
 async function loadReports() {
@@ -3495,6 +3679,8 @@ async function renderSocialImageGallery(root, fileName) {
   if (!form) return;
   const urlInput = $('social-gen-url');
   const ctxInput = $('social-gen-context');
+  const refineSel = $('social-gen-refine');
+  const refineHint = $('social-gen-refine-hint');
   const startBtn = $('social-gen-start');
   const stopBtn = $('social-gen-stop');
   const status = $('social-gen-status');
@@ -3535,18 +3721,71 @@ async function renderSocialImageGallery(root, fileName) {
     });
   }
 
+  // Populate the "Refine an existing post" select from the social posts API.
+  // Refreshed whenever the Social view loads and after each successful run.
+  async function refreshRefineOptions() {
+    if (!refineSel) return;
+    try {
+      const { social } = await api('/api/reports');
+      const prev = refineSel.value;
+      const opts = ['<option value="">— Create new (default) —</option>']
+        .concat((social || []).slice(0, 50).map((r) => {
+          const name = r.name || '';
+          return `<option value="${name}">${name}</option>`;
+        }));
+      refineSel.innerHTML = opts.join('');
+      if (prev && [...refineSel.options].some((o) => o.value === prev)) {
+        refineSel.value = prev;
+      }
+    } catch {}
+  }
+  refreshRefineOptions();
+  // Re-populate whenever the Social view becomes active.
+  window.addEventListener('scout:social-loaded', refreshRefineOptions);
+  // Toggle the refine-mode hint.
+  refineSel?.addEventListener('change', () => {
+    if (refineHint) refineHint.hidden = !refineSel.value;
+  });
+  // "Use latest" quick action — mirrors `/scout-post update` from chat:
+  // selects the most recent social-posts file (first non-placeholder option)
+  // and focuses the context box so the user can type their tweak.
+  $('social-gen-refine-latest')?.addEventListener('click', async () => {
+    if (!refineSel) return;
+    // Refresh first in case the list is stale, then pick the newest.
+    await refreshRefineOptions();
+    const firstFile = [...refineSel.options].find((o) => o.value);
+    if (!firstFile) {
+      setStatus('No social-posts files found to refine', 'error');
+      return;
+    }
+    refineSel.value = firstFile.value;
+    if (refineHint) refineHint.hidden = false;
+    ctxInput?.focus();
+    setStatus(`Refining ${firstFile.value} — describe your tweak in the context box`, 'ok');
+  });
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const url = urlInput.value.trim();
     const ctx = ctxInput.value.trim();
+    const refineTarget = (refineSel?.value || '').trim();
     const notLive = !!$('social-gen-not-live')?.checked;
-    if (!url && !ctx) {
-      setStatus('Provide a URL, source copy, or both', 'error');
-      return;
-    }
-    if ((!url || notLive) && ctx.length < 20) {
-      setStatus('Source copy is too short — paste the announcement text, draft, or detailed notes', 'error');
-      return;
+    if (refineTarget) {
+      // Refine mode: only the refinement instructions are required. URL is
+      // optional (keeps the original CTA unless the user supplies a new one).
+      if (!ctx) {
+        setStatus('Refine mode needs refinement instructions in the context box', 'error');
+        return;
+      }
+    } else {
+      if (!url && !ctx) {
+        setStatus('Provide a URL, source copy, or both', 'error');
+        return;
+      }
+      if ((!url || notLive) && ctx.length < 20) {
+        setStatus('Source copy is too short — paste the announcement text, draft, or detailed notes', 'error');
+        return;
+      }
     }
 
     // Read tuner controls (all optional — fall back to sensible defaults).
@@ -3589,7 +3828,19 @@ async function renderSocialImageGallery(root, fileName) {
       ` [thumbnails: ${thumbStyle}]` +
       (thumbNotes ? ` [thumbnail-notes: ${thumbNotes}]` : '');
     let extra;
-    if (url && !notLive) {
+    if (refineTarget) {
+      // Refine mode: edit the named file in place. Per scout-post.prompt.md
+      // "Refine mode", the [refine: <path>] tuner switches the agent to
+      // inline-edit + humanizer-only behavior. URL stays optional.
+      const refineToken = ` [refine: social-posts/${refineTarget}]`;
+      if (url && !notLive) {
+        extra = `${url} — ${ctx}${tuners}${refineToken}`;
+      } else if (url && notLive) {
+        extra = `${url} (link not live yet — use copy below as source of truth, do not fetch the URL) — ${ctx}${tuners}${refineToken}`;
+      } else {
+        extra = `${ctx}${tuners}${refineToken}`;
+      }
+    } else if (url && !notLive) {
       extra = ctx ? `${url} — ${ctx}${tuners}` : `${url}${tuners}`;
     } else if (url && notLive) {
       // URL is known but the page isn't live yet. Use the URL as the CTA in
@@ -3639,6 +3890,8 @@ async function renderSocialImageGallery(root, fileName) {
         stream = null;
         // Refresh the social posts list — a new file may have been written
         loadSocial().catch(() => {});
+        // Refresh the refine-target dropdown to pick up the new/edited file.
+        refreshRefineOptions();
       });
       stream.onerror = () => { stream && stream.close(); stream = null; setRunning(false); };
     } catch (err) {

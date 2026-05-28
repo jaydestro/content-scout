@@ -1471,6 +1471,100 @@ function enrichCfp(text) {
   };
 }
 
+// Parse the "## Conferences & Events" table out of a scout-config-*.prompt.md.
+// Returns rows of { name, dates, location, links } where `links` is enriched
+// from the same CONFERENCE_LINKS table used by enrichCfp() so the dashboard
+// can render real site/CFP links instead of bare names.
+function parseConferencesFromConfig(rawConfig) {
+  const lines = rawConfig.split(/\r?\n/);
+  const start = lines.findIndex((l) => /^##\s+Conferences\s*&\s*Events/i.test(l));
+  if (start < 0) return [];
+  const rows = [];
+  // Find the first pipe-table header after the section heading.
+  let i = start + 1;
+  while (i < lines.length && !/^##\s+/.test(lines[i])) {
+    if (/^\s*\|/.test(lines[i]) && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1] || '')) {
+      // Skip header + separator, then walk body rows.
+      let j = i + 2;
+      while (j < lines.length && /^\s*\|/.test(lines[j])) {
+        const cells = lines[j]
+          .split('|')
+          .slice(1, -1)
+          .map((s) => s.trim());
+        const [name, dates, location] = [cells[0] || '', cells[1] || '', cells[2] || ''];
+        if (name) {
+          let site = '';
+          let cfp = '';
+          for (const entry of CONFERENCE_LINKS) {
+            if (entry.match.test(name)) {
+              site = entry.site || '';
+              cfp = entry.cfp || '';
+              break;
+            }
+          }
+          rows.push({ name, dates, location, site, cfp });
+        }
+        j++;
+      }
+      break;
+    }
+    i++;
+  }
+  return rows;
+}
+
+// Locate the most recent content-report markdown for a given slug.
+async function findLatestContentReport(slug) {
+  if (!isValidSlug(slug)) return null;
+  const reports = await listMarkdownFiles(REPORTS_DIR);
+  return reports
+    .filter(
+      (r) =>
+        /-content\.md$/.test(r.name) &&
+        (r.name.includes(`-${slug}-`) || r.name.includes(`-${slug}.`))
+    )
+    .sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''))[0] || null;
+}
+
+// CFPs + Conferences for the active subject. CFPs come from the latest
+// content report's "## Open Calls for Papers" section (populated by
+// /scout-scan when "Conference CFP tracking" is on); conferences come
+// from the active scout-config-*.prompt.md "## Conferences & Events"
+// table. Read-only; no writes.
+app.get('/api/cfp-conferences', async (req, res) => {
+  const slug = String(req.query.slug || '').trim();
+  if (!isValidSlug(slug)) {
+    return res.status(400).json({ error: 'invalid slug' });
+  }
+  try {
+    const out = {
+      slug,
+      cfps: [],
+      conferences: [],
+      report: null,
+      reportMtime: null,
+    };
+    // CFPs from latest content report.
+    const latest = await findLatestContentReport(slug);
+    if (latest) {
+      try {
+        const raw = await fs.readFile(path.join(REPORTS_DIR, latest.name), 'utf8');
+        out.report = latest.name;
+        out.reportMtime = latest.mtime;
+        out.cfps = parseActionItems(raw).cfps;
+      } catch {}
+    }
+    // Conferences from active config.
+    try {
+      const cfg = await readConfig(slug);
+      out.conferences = parseConferencesFromConfig(cfg.raw);
+    } catch {}
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
 app.get('/api/reports/:name', async (req, res) => {
   try {
     res.json(await readMarkdown(REPORTS_DIR, req.params.name));
