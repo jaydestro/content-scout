@@ -157,13 +157,18 @@ natural URL-dedup:
    editorial / press coverage. Items carry `platform: "google-news"`,
    `source: "google-news-browser"`, `subSource: "google-news"`, and a
    structured `post_date`.
-2. **Google Web Search** (`www.google.com/search?q=…&tbs=qdr:…`) —
+2. **Google Web Search** (`www.google.com/search?q=…&tbs=cdr:1,cd_min:…,cd_max:…`) —
    surfaces blog posts, docs, repo READMEs, and anything else the
-   organic SERP indexes. Items carry `platform: "google-web"`,
-   `source: "google-web-browser"`, `subSource: "google-web"`. The SERP
-   rarely exposes per-result dates, so `post_date` is usually `null` —
-   the `tbs=qdr:{d|w|m|y}` bucket (derived from `--days`) already
-   limits the window server-side.
+   organic SERP indexes. Runs a **general** (non-`site:`-restricted) web
+   search of each configured search term. Items carry `platform:
+   "google-web"`, `source: "google-web-browser"`, `subSource:
+   "google-web"`. The SERP rarely exposes per-result dates, so
+   `post_date` is usually `null` — instead the pass pins Google's
+   **custom date range** (`tbs=cdr:1,cd_min:M/D/YYYY,cd_max:M/D/YYYY`)
+   to the exact scan window, so results are bounded to the range you
+   asked for rather than a coarse hour/day/week/month/year bucket. The
+   window is the rolling `--days` lookback by default, or the exact
+   `--since`/`--until` range when those flags are passed.
 
 A CAPTCHA in one pass only stops that pass; items already collected
 (from either pass) are still written to the sidecar.

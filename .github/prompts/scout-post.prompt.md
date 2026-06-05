@@ -41,6 +41,39 @@ The user must provide **at least one** of: a URL, a report item number, or sourc
 
 In modes 2 and 3 the post content rules are unchanged — same tone, length, hashtag, mention-author, and platform tuners apply. The only differences are: no URL fetch, the warning callout at the top of the file, and (mode 3 only) the `{LINK}` placeholder.
 
+## Refine mode (edit an existing post file inline)
+
+### Picker entry point — `/scout-post update` (and synonyms)
+
+When the user invokes any of these without naming a specific file:
+
+- `/scout-post update` (or `/scout-post refine`, `/scout-post tweak`, `/scout-post adjust`)
+- A bare chat message like "update the last posts", "refine those posts", "tweak my last social posts", "adjust the previous post file"
+
+…**do not start editing yet.** First list the candidate files so the user can confirm which one to refine:
+
+1. Find the most recent `social-posts/*.md` files (exclude `*-posting-calendar.md` and `*-alt-*.md`). Sort by mtime, descending. Show the top 5.
+2. Render each as a numbered, clickable workspace-relative link with the slug, kind (solo / bulk / draft), and a relative timestamp (e.g., "2h ago", "yesterday").
+3. If the currently open editor file matches one of those, mark it with "(open)" and recommend it as the default.
+4. Ask one question: "Which file do you want to refine? Reply with a number, paste the path, or say 'new' to create a fresh one. Add your refinement notes on the same line or the next one."
+5. Once the user picks, proceed with the refine flow below using `[refine: social-posts/<name>]`.
+
+Skip the picker (go straight to refine) only when the user's message already names a specific `social-posts/*.md` file or already includes `[refine: ...]`.
+
+### Refine flow
+
+When the input contains `[refine: <relative-path>]` (e.g., `[refine: social-posts/2026-05-27-1430-azure-documentdb-solo-...md]`) **or** the user's chat message names an existing `social-posts/*.md` file and asks to refine / tweak / adjust / update those posts:
+
+1. **Do not create a new file.** Read the named file, edit it in place, and preserve its existing structure (front matter, headers, variant ordering, file path, timestamp).
+2. Treat the user's accompanying free-form text as additional context layered on top of the original tuners + product config. Apply globally across every variant unless the user names a specific platform/option.
+3. If the user supplies new tuner values in the same input (any of the `[tone: ...]` / `[length: ...]` / `[platforms: ...]` / etc. tokens), let those override the originals. Tuners not respecified stay as-is.
+4. URL is optional in refine mode — keep the original URL/CTA unless the user explicitly supplies a replacement.
+5. Re-run the humanizer pass on every edited variant before saving (mandatory, same as initial generation).
+6. Skip thumbnail re-rendering unless the user explicitly asks for new thumbnails or changes the `[thumbnails: ...]` tuner.
+7. Confirm with a one-line diff summary and the file link. Do not restate full post bodies unless asked.
+
+If the file named in `[refine: ...]` does not exist, fall back to the normal create flow and warn once.
+
 ## Output File Naming
 
 - **Bulk (from a report, no specific URL)**: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-social-posts.md`

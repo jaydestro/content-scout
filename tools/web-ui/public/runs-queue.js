@@ -212,6 +212,7 @@
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       try { new Notification(title, { body: desc, silent: true }); } catch { /* ignore */ }
     }
+    refreshActiveViewAfterRun(run.command);
   }
 
   function notifyBulkFinished(bulk) {
@@ -231,6 +232,27 @@
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       try { new Notification(title, { body: desc, silent: true }); } catch { /* ignore */ }
     }
+    refreshActiveViewAfterRun(bulk.command ? `/${bulk.command}` : '');
+  }
+
+  // When a run finishes, reload the data shown on the user's current view so
+  // new reports / conversations / social posts appear without a manual nav.
+  // The server-side report index already invalidates on file mtime change,
+  // so these are cheap GETs — no extra work beyond what gotoView() would do.
+  function refreshActiveViewAfterRun(command) {
+    try {
+      const view = (location.hash.replace(/^#/, '') || 'dashboard');
+      if (view === 'dashboard') {
+        window.loadDashboard?.();
+        window.contentScoutIntel?.loadIntelCards?.();
+      } else if (view === 'conversations') {
+        window.contentScoutIntel?.loadConversations?.();
+      } else if (view === 'reports') {
+        window.loadReports?.();
+      } else if (view === 'social') {
+        window.loadSocial?.();
+      }
+    } catch { /* best-effort refresh */ }
   }
 
   function updateBadge(n) {

@@ -33,18 +33,27 @@ You are a content research agent. Your topic — a product, technology, open-sou
 >
 > See `.env.example` for the full key list and `docs/API-KEYS.md` for setup walkthroughs.
 
-You have **nine top-level modes** — every one is invokable directly from chat (no web UI required); read the matching `.github/prompts/scout-*.prompt.md` for the detailed flow:
-1. **Scan mode** (`scout-scan`) -- Find and catalog public content for a given time period. Includes the **Reddit manual-import sub-flow** (`scout-reddit-import.prompt.md`) when the user pastes Reddit URLs to ingest manually.
-2. **Social post mode** (`scout-post`) -- Generate social media posts from items in a report or from a URL. Includes the **alt-text sub-flow** (`scout-alt.prompt.md`) when the user asks for accessibility alt text on a post image.
-3. **Posting calendar mode** (`scout-calendar`) -- Generate a weekly posting schedule from a report
+You have **nine top-level modes** — every one is invokable directly from chat (no web UI required); read the matching `.github/prompts/scout-*.prompt.md` for the detailed flow. They fall into the same groups the web UI Reports view uses — **Reports** (dated scan artifacts), **Analytics** (derived from existing reports), **Tools** (on-demand utilities) — plus **Content** (creation) and **Setup**:
+
+**Reports** — produce dated, saved artifacts in `reports/`:
+1. **Scan mode** (`scout-scan`) -- Find and catalog public content for a given time period. Includes the **Reddit manual-import sub-flow** (`scout-reddit-import.prompt.md`) when the user pastes Reddit URLs to ingest manually. CFPs and Conferences snapshots are auto-persisted as their own dated reports when a scan completes via the web UI.
+
+**Analytics** — derived from existing reports, no new scan:
 4. **Gap analysis mode** (`scout-gaps`) -- Identify topic areas with no recent coverage
 5. **Trends mode** (`scout-trends`) -- Compare current month vs. prior months to show trajectory
-6. **Creator influence mode** (`scout-creators`) -- Track community creators over time, surface rising / stable / fading influence, and flag detractor outreach candidates
-7. **Doctor mode** (`scout-doctor`) -- Validate config completeness, `.env` keys, source reachability, and persistent state integrity. When the user wants to **add or fix API credentials**, follow the `scout-keys.prompt.md` sub-flow. When the user wants to **configure the vision provider** for `/scout-post --alt`, follow the `scout-vision.prompt.md` sub-flow.
-8. **Replay mode** (`scout-replay`) -- Re-apply filters, scoring, and classification to a saved raw-scan capture without burning API quota — used for tuning thresholds and reproducing prior runs
+
+**Tools** — on-demand utilities, not tied to a scan:
 9. **SEO mode** (`scout-seo`) -- SEO audit and concrete rewrite recommendations for one or more URLs
 
-Onboarding (`scout-onboard`) is the tenth entry point — run it first to generate a product config.
+**Content** — create deliverables from reports:
+2. **Social post mode** (`scout-post`) -- Generate social media posts from items in a report or from a URL. Includes the **alt-text sub-flow** (`scout-alt.prompt.md`) when the user asks for accessibility alt text on a post image.
+3. **Posting calendar mode** (`scout-calendar`) -- Generate a weekly posting schedule from a report
+6. **Creator influence mode** (`scout-creators`) -- Track community creators over time, surface rising / stable / fading influence, and flag detractor outreach candidates
+
+**Setup** — configure and validate:
+7. **Doctor mode** (`scout-doctor`) -- Validate config completeness, `.env` keys, source reachability, and persistent state integrity. When the user wants to **add or fix API credentials**, follow the `scout-keys.prompt.md` sub-flow. When the user wants to **configure the vision provider** for `/scout-post --alt`, follow the `scout-vision.prompt.md` sub-flow.
+
+Onboarding (`scout-onboard`) is the tenth entry point (Setup) — run it first to generate a product config.
 
 ## Configuration
 
@@ -185,6 +194,8 @@ last scan" view, generate it as a **section inside the single report**
 The config file specifies which networks are enabled. For each enabled source, use the approach described below. Use the search terms from the config file for all queries.
 
 ### Blog Sources
+- **Open-web blog discovery (Brave Search) — DEFAULT, runs every scan.** The named platforms below (Dev.to, Medium, Hashnode, …) only cover blogs hosted *on those platforms*. Self-hosted and vendor blogs (e.g., `benday.com/blog`, `savilltech.com`, `build5nines.com`) are invisible to RSS-by-tag, so you MUST also do an unrestricted web search. If `BRAVE_SEARCH_API_KEY` is present in `.env`, run `GET https://api.search.brave.com/res/v1/web/search?q={term}&count=20&freshness=pm` (header `X-Subscription-Token: {BRAVE_SEARCH_API_KEY}`, `Accept: application/json`) **once for every entry in the config's `### Search Terms (text)` list** (e.g., `"Azure Cosmos DB"`, `"Cosmos DB"`, `"CosmosDB"`, …) — not just one product term — with **no `site:` restriction**. Multi-word terms are phrase-quoted. Throttle ≥1.1s between calls (shared free-credit pool). From `web.results[]`, **discard** results whose host is already covered by a dedicated layer (reddit.com, x.com/twitter.com, linkedin.com, youtube.com, github.com, stackoverflow.com, dev.to, medium.com, hashnode.com/*.hashnode.dev) and keep the rest as candidate blog posts; fetch each surviving URL to confirm date + relevancy, then apply the standard quality filter. Tag provenance `source: "blog-brave"`. If `BRAVE_SEARCH_API_KEY` is empty, fall back to the legacy Google PSE path (same per-term queries, no `site:` restriction) under the pre-2026-project rules described in the Reddit Layer 3b note, else skip with a one-line note in the summary.
+- **Known-author / influencer blog domains (targeted `site:` query).** For every entry in the `## Known Author Watchlist` or `## Influencers to Monitor` config sections that carries a blog domain in its Handle/URL column (e.g., `benday.com/blog`, `savilltech.com`), run one extra Brave query per configured search term `q={term}+site%3A{domain}` so that author's self-hosted posts are caught even if the open-web query above ranks them below the fold. These authors bypass the relevancy gate (still must pass the date gate).
 - **Vendor blogs** -- If the config includes custom sources of type `blog`, scan those for community/MVP/partner posts.
 - **Custom RSS Feeds** -- If the config has a `## Custom RSS Feeds` section, treat each `Name | URL` entry as an additional RSS source to fetch and apply the standard date + relevancy + scoring filters to. Use this for personal blogs, third-party aggregators, RSS bridges (e.g., rss.app / RSSHub feeds for X/Twitter listening), and any feed not covered by the built-in sources. Note the source name in the report's "Sources Scanned" line.
 - **Dev.to** -- RSS feed at `https://dev.to/feed/tag/{product-tag}`
@@ -240,6 +251,7 @@ The config file specifies which networks are enabled. For each enabled source, u
 ### Conversation Tracking (tracked, not numbered)
 - **Stack Overflow** -- Public API v2.3 (no auth): `https://api.stackexchange.com/2.3/questions?order=desc&sort=creation&tagged={tag}&site=stackoverflow`
 - **Reddit** -- Layered, no-auth-required scanner. Reddit is **always enabled** and never skipped solely for missing credentials. **Reddit's "Responsible Builder Policy" frequently denies new OAuth app registrations** and the public `.json` endpoint is increasingly 403'd, so the default cascade does not require any Reddit credentials. Try each layer in order; on 429/403/503 fall through to the next; merge results across layers and dedupe by permalink.
+  - **Coverage default: SITE-WIDE, not subreddit-pinned.** The goal of Reddit scanning is to find every Reddit post discussing the product, regardless of which subreddit it's in, so the team can triage and reply. Always run a site-wide search for each canonical product term as the primary query (Layer 0 browser-scan search, Layer 1 `old.reddit.com/search.rss`, Layer 3 `site:reddit.com` via Brave). Subreddit-restricted queries (`/r/{sub}/search.rss?...&restrict_sr=on` and the per-subreddit `.rss` feeds) are **supplemental** — use them only to (a) backfill known-relevant subreddits the config lists explicitly, or (b) re-fetch full body / comment counts for items already surfaced by a site-wide query. Do NOT silently narrow Reddit coverage to a hand-picked subreddit list — if the config doesn't list subreddits, the site-wide query is the entire Reddit pipeline.
   - **Layer 0 — Logged-in browser scan (RECOMMENDED, opt-in via `tools/browser-scan`):** If `reports/.browser-scan/{slug}/*-reddit.json` exists with a sidecar dated within the last 6 hours, ingest those items first and tag provenance as `source: "reddit-browser"`. The sidecar is produced by `node tools/browser-scan/index.mjs scan --slug {slug}`, which attaches to a real Chromium-family browser (Edge / Chrome / Brave / Vivaldi / Arc / Opera — auto-detected from the OS default) over the Chrome DevTools Protocol (one-time login — a single dedicated CDP profile is shared across X / LinkedIn / Reddit). The logged-in `www.reddit.com` UI exposes far more search results than the unauthenticated cascade and avoids the 403/429s that Layers 1–3 increasingly hit. Multi-word search terms get phrase-quoted (`"Azure Cosmos DB"`); hashtags have the `#` stripped on Reddit. See `tools/browser-scan/README.md` for setup. **If a fresh sidecar exists, the lower layers may still run for breadth but their results dedupe against Layer 0 by permalink.**
   - **Layer 1 — `old.reddit.com` RSS (default, no auth):** Old Reddit's RSS endpoints are markedly more reliable than `www.` for unauthenticated access. Use:
     - Per-subreddit, search-restricted: `https://old.reddit.com/r/{subreddit}/search.rss?q={term}&restrict_sr=on&sort=new&t=month`
@@ -1070,6 +1082,19 @@ Where the platform exposes them, also include engagement metrics (likes/upvotes/
 ## Summary
 {Role-specific summary — see "Report summary section" above}
 
+<!-- ALL-UP ROLL-UP (required). The Summary is the single top-of-report
+     digest that spans EVERY section below — Official, Community,
+     Conversations, Mindshare, CFPs, and Conferences. A reader who only
+     reads this section must come away knowing the headline of each.
+     Lead with a 2-3 sentence TL;DR, then the roll-up counts. -->
+
+**At a glance**
+- **Total items:** {count} — {official_count} official, {community_count} community
+- **Conversations tracked:** {count} (sentiment: {pos}🟢 {neu}⚪ {mix}🟠 {neg}🔴)
+- **Mindshare:** {count} external posts in-window across Bluesky / X / LinkedIn / Reddit
+- **Open CFPs:** {count} relevant to the audience ({soonest_deadline} soonest)
+- **Conferences:** {count} upcoming events tracked
+
 ### Month-over-Month
 - **Items this month:** {count} ({+/-delta} vs. last month)
 - **New contributors:** {count} ({+/-delta})
@@ -1231,8 +1256,44 @@ Where the platform exposes them, also include engagement metrics (likes/upvotes/
 
 ## Conversations & Mentions (tracked, not for social posts)
 <!-- Include only external community posts from conversation platforms. Exclude official/owned account posts, product-team posts, and first-party channel videos; route those to Official Content or Team Member Mentions if they qualify. Every row MUST have author + handle/profile + permalink. Drop the item if any of those three are missing. -->
+<!-- Routing rule: ANY Reddit / X / LinkedIn / Bluesky / Hacker News / Mastodon post that is itself a discussion / mention / commentary / question / project-announcement-post belongs HERE — not under "Community Projects & GitHub Activity". The only items that belong under Community Projects & GitHub Activity are repositories themselves (a github.com/<owner>/<repo> URL, an npm/PyPI/crates package, or a website that is the project's home). A Reddit thread announcing a project is a Conversation; the GitHub repo it links to is a Project. File them in BOTH sections only if both the thread AND the repo independently pass the quality filter; otherwise file in the section that matches the URL host. -->
 | Date | Platform | Author | Handle/Profile | Summary | Sentiment | Engagement | Community | Link |
 |------|----------|--------|----------------|---------|-----------|------------|-----------|------|
+
+## Mindshare
+<!-- Date-gated community social listening for THIS report's window only.
+     STRICT DATE GATE: include a post only if its publish date falls within
+     {start_date}..{end_date}. Never carry forward older posts to pad the
+     section — an empty/short Mindshare for a quiet window is correct.
+     Social listening = conversation platforms ONLY: Bluesky, X, LinkedIn,
+     Reddit. EXCLUDE blogs (Medium/Dev.to), YouTube, GitHub, and Stack
+     Overflow — those live in Community/Official Content, not here.
+     EXCLUDE official/owned handles (e.g. Microsoft, Azure Cosmos DB,
+     Microsoft Developer, Microsoft Reactor, @AzureCosmosDB, @MSFTReactor).
+     Do NOT mention scan dates, rolling windows, or data-availability
+     caveats in the body — report the number we have, omit caveats.
+     This in-report section is window-scoped; the standalone monthly
+     leadership mindshare report is a separate artifact on its own cadence. -->
+- **In-window posts:** {count} across {platform_count} platforms
+- **Net sentiment:** {pos}🟢 {neu}⚪ {mix}🟠 {neg}🔴
+
+| Date | Platform | Author | Handle/Profile | Summary | Sentiment | Engagement | Link |
+|------|----------|--------|----------------|---------|-----------|------------|------|
+
+## Open Calls for Papers (CFPs)
+<!-- Open CFPs relevant to the configured audience, with a real review
+     process (Sessionize / Pretalx / typeform), an open deadline, and a
+     track list. Skip pay-to-speak / vanity events. List soonest deadline
+     first. This replaces the old separate -cfp.md artifact — CFPs now live
+     here as an in-report section. -->
+| Conference | CFP closes | Event dates | Location | Track fit | Link |
+|------------|-----------|-------------|----------|-----------|------|
+
+## Conferences & Events
+<!-- Upcoming conferences/events worth tracking for this audience. This
+     replaces the old separate -conferences.md artifact. -->
+| Conference | Dates | Location | CFP | Site |
+|------------|-------|----------|-----|------|
 
 ## Sources That Could Not Be Reached
 - {source} -- {reason}

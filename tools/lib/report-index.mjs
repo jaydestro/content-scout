@@ -52,6 +52,110 @@ function isTeamMemberSection(section) {
   return /team\s+member\s+mentions/i.test(String(section || ''));
 }
 
+function isConversationSection(section) {
+  return /conversations|community questions|mentions|social/i.test(String(section || ''))
+    && !isTeamMemberSection(section);
+}
+
+// Parse a single "numbered conversation" block in the form:
+//
+//   **11.** 🔴 **[LinkedIn] Title text**
+//   *Author Name, Affiliation · May 26, 2026*
+//   Free-form summary across one or more lines, possibly with `code`.
+//   🔗 https://example.com/path
+//   `#tag-1` `#tag-2` · 🔴 bug report
+//
+// Blocks are separated by `---` rules or a blank line followed by the next
+// `**N.**` heading. Returns { entry, nextIdx } where `entry` is the
+// conversation object shape used by parseReport(), or null on no match.
+function parseNumberedConversationBlock(lines, startIdx) {
+  const head = lines[startIdx] || '';
+  const headMatch = head.match(
+    /^\s*\*\*\d+\.\*\*\s*(\S+)?\s*\*\*(?:\[([^\]]+)\]\s*)?(.+?)\*\*\s*$/
+  );
+  if (!headMatch) return null;
+  const sentimentMark = headMatch[1] || '';
+  const platformTag = (headMatch[2] || '').trim();
+  const title = (headMatch[3] || '').trim();
+
+  // Find the end of the block: next `**N.**` heading, next markdown rule, or
+  // next ## heading, or a "Below-threshold" / bold sub-header line.
+  let end = lines.length;
+  for (let k = startIdx + 1; k < lines.length; k++) {
+    const l = lines[k];
+    if (/^\s*\*\*\d+\.\*\*\s/.test(l)) { end = k; break; }
+    if (/^\s*---\s*$/.test(l)) { end = k; break; }
+    if (/^##+\s+/.test(l)) { end = k; break; }
+    if (/^\s*\*\*[^*]+:\*\*\s*$/.test(l) && k > startIdx + 1) { end = k; break; }
+  }
+  const body = lines.slice(startIdx + 1, end);
+
+  let author = '';
+  let date = '';
+  let url = '';
+  const summaryParts = [];
+  let tags = [];
+  let tagLineSentiment = '';
+  let score = null;
+
+  for (const raw of body) {
+    const l = raw.trim();
+    if (!l) continue;
+    // Italic byline: *Author · Date* (date is the last `·`-separated chunk).
+    if (!author && /^\*[^*].*\*\s*$/.test(l)) {
+      const inner = l.replace(/^\*|\*$/g, '').trim();
+      const parts = inner.split(/\s+·\s+/);
+      if (parts.length >= 2) {
+        date = parts[parts.length - 1].trim();
+        author = parts.slice(0, -1).join(' · ').trim();
+      } else {
+        author = inner;
+      }
+      continue;
+    }
+    // URL line: 🔗 https://...
+    const urlMatch = l.match(/https?:\/\/\S+/);
+    if (!url && (l.startsWith('🔗') || urlMatch)) {
+      if (urlMatch) url = urlMatch[0].replace(/[)\].,;]+$/, '');
+      if (l.startsWith('🔗')) continue;
+    }
+    // Tag/sentiment trailer: `#tag` `#tag` · 🔴 label  OR  · score 7/9
+    if (/^`#/.test(l) || /^`[^`]+`(\s+`[^`]+`)*/.test(l)) {
+      tags = (l.match(/`([^`]+)`/g) || []).map((s) => s.slice(1, -1));
+      const sentimentInTrailer = l.match(/(🟢|🔴|🟠|🟡|⚪)/);
+      if (sentimentInTrailer) tagLineSentiment = sentimentInTrailer[1];
+      const scoreMatch = l.match(/score\s+(\d+)\s*\/\s*9/i);
+      if (scoreMatch) score = parseInt(scoreMatch[1], 10);
+      continue;
+    }
+    // Skip lines that are only a URL.
+    if (urlMatch && l.replace(urlMatch[0], '').replace(/^🔗\s*/, '').trim() === '') continue;
+    summaryParts.push(l);
+  }
+
+  const sentiment = normalizeSentiment(sentimentMark || tagLineSentiment);
+  const summary = summaryParts.join(' ').replace(/\s+/g, ' ').trim() || title;
+  const platform = platformTag || 'Unknown';
+
+  return {
+    nextIdx: end,
+    entry: {
+      date,
+      platform,
+      author,
+      summary,
+      title,
+      sentiment,
+      community: 'community',
+      communityRaw: '',
+      engagement: '',
+      url,
+      tags,
+      score,
+    },
+  };
+}
+
 function isProductAuthorName(name) {
   const text = String(name || '').trim();
   if (!text) return false;
@@ -198,19 +302,38 @@ export function normalizeSentiment(cell) {
 }
 
 // Classify a non-conversation item to a coarse kind ('blog'|'video'|'repo'|
-// 'reddit'|'hn'|'bluesky'|'x'|'stackoverflow'|'other'). Used by the web UI
-// to render section badges. Matches on section name, source, and URL host.
+// 'reddit'|'hn'|'bluesky'|'x'|'linkedin'|'stackoverflow'|'other'). Used by
+// the web UI to render section badges. URL/source is checked first so a
+// social post filed under e.g. "Community Projects & Tools" still classifies
+// as the platform it came from rather than matching "project" in the
+// section name and getting bucketed as `repo`.
 export function classifyItem(section, source, url) {
-  const s = (section + ' ' + source + ' ' + url).toLowerCase();
-  if (/youtube\.com|youtu\.be|video/i.test(s)) return 'video';
-  if (/dev\.to|medium\.com|hashnode|dzone|infoq|blog|article/i.test(s)) return 'blog';
-  if (/github\.com|repo|project/i.test(s)) return 'repo';
-  if (/reddit/i.test(s)) return 'reddit';
-  if (/hacker news|news\.ycombinator/i.test(s)) return 'hn';
-  if (/bluesky|bsky/i.test(s)) return 'bluesky';
-  if (/twitter|^x$|\bx\/|x\.com/i.test(s)) return 'x';
-  if (/stack overflow|stackoverflow/i.test(s)) return 'stackoverflow';
-  if (/conf|talk|session|stream/i.test(s)) return 'video';
+  const u = (url || '').toLowerCase();
+  const src = (source || '').toLowerCase();
+  // URL-host checks first — most reliable signal.
+  if (/youtube\.com|youtu\.be/.test(u)) return 'video';
+  if (/reddit\.com|redd\.it/.test(u)) return 'reddit';
+  if (/bsky\.app|bluesky/.test(u)) return 'bluesky';
+  if (/linkedin\.com/.test(u)) return 'linkedin';
+  if (/(^|\/\/)(www\.)?x\.com\//.test(u) || /twitter\.com/.test(u)) return 'x';
+  if (/news\.ycombinator\.com/.test(u)) return 'hn';
+  if (/stackoverflow\.com|stackexchange\.com/.test(u)) return 'stackoverflow';
+  if (/github\.com/.test(u)) return 'repo';
+  // Then source-name checks.
+  if (/youtube/.test(src)) return 'video';
+  if (/reddit/.test(src)) return 'reddit';
+  if (/bluesky|bsky/.test(src)) return 'bluesky';
+  if (/linkedin/.test(src)) return 'linkedin';
+  if (/^x$|x\/twitter|twitter/.test(src)) return 'x';
+  if (/hacker\s*news/.test(src)) return 'hn';
+  if (/stack\s*overflow/.test(src)) return 'stackoverflow';
+  if (/dev\.to|medium|hashnode|dzone|infoq|tech\s*community|blog/.test(src)) return 'blog';
+  // Finally fall back to section name. Use precise word boundaries so
+  // "Projects" doesn't collide with "github" or "repo".
+  const sec = (section || '').toLowerCase();
+  if (/\bvideo\b|\btalk\b|\bsession\b|\bstream\b/.test(sec)) return 'video';
+  if (/\bblog\b|\barticle\b|tutorials?/.test(sec)) return 'blog';
+  if (/\brepos?\b/.test(sec)) return 'repo';
   return 'other';
 }
 
@@ -293,6 +416,73 @@ export function parseReportFromJson(rawOrObj, fileName, options = {}) {
     }
   }
 
+  // Newer sidecars (schema introduced 2026-05) emit conversations in
+  // dedicated top-level `conversations` and `team_member_mentions` arrays
+  // instead of inlining them in `items` with a conversation `section`.
+  // Read both so the Conversations & Mentions view shows the latest scans.
+  const stringifyEngagement = (eng) =>
+    eng && typeof eng === 'object'
+      ? Object.entries(eng)
+          .filter(([, v]) => v != null && v !== '')
+          .map(([k, v]) => `${k}:${v}`)
+          .join(' ')
+      : '';
+  const platformFromUrl = (url) => {
+    const u = String(url || '').toLowerCase();
+    if (/(^|\/\/|\.)x\.com|twitter\.com/.test(u)) return 'x';
+    if (/bsky\.app|bluesky/.test(u)) return 'bluesky';
+    if (/linkedin\.com/.test(u)) return 'linkedin';
+    if (/reddit\.com/.test(u)) return 'reddit';
+    return '';
+  };
+
+  for (const c of Array.isArray(data.conversations) ? data.conversations : []) {
+    const url = c.url || '';
+    const authorName =
+      (c.author && (c.author.display_name || c.author.handle)) || c.account || '';
+    const platform =
+      (c.author && c.author.platform) || platformFromUrl(url) || c.provenance?.source || 'Unknown';
+    const community = (c.group || '').toLowerCase();
+    const isProduct =
+      /^(official|product|first[\s-]?party|microsoft|brand|company)$/.test(community) ||
+      isProductAuthor(authorName, options);
+    conversations.push({
+      date: c.date || '',
+      platform: platform || 'Unknown',
+      author: authorName,
+      summary: (c.summary || c.title || '').toString().trim(),
+      sentiment: normalizeSentiment(c.sentiment),
+      sentimentConfidence:
+        typeof c.sentiment_confidence === 'string' ? c.sentiment_confidence.toLowerCase() : null,
+      community: isProduct ? 'product' : 'community',
+      communityRaw: community,
+      engagement: stringifyEngagement(c.engagement),
+      url,
+      section: 'conversations',
+    });
+  }
+
+  for (const t of Array.isArray(data.team_member_mentions) ? data.team_member_mentions : []) {
+    const url = t.url || '';
+    const authorName =
+      (t.author && (t.author.display_name || t.author.handle)) || t.account || '';
+    conversations.push({
+      date: t.date || '',
+      platform:
+        (t.author && t.author.platform) || platformFromUrl(url) || t.provenance?.source || 'Unknown',
+      author: authorName,
+      summary: (t.summary || t.title || '').toString().trim(),
+      sentiment: normalizeSentiment(t.sentiment),
+      sentimentConfidence:
+        typeof t.sentiment_confidence === 'string' ? t.sentiment_confidence.toLowerCase() : null,
+      community: 'product',
+      communityRaw: 'team-member',
+      engagement: stringifyEngagement(t.engagement),
+      url,
+      section: 'team member mentions',
+    });
+  }
+
   const skippedSources = Array.isArray(data.skipped_sources)
     ? data.skipped_sources.map((s) =>
         typeof s === 'string'
@@ -333,6 +523,48 @@ export function parseReport(raw, fileName, options = {}) {
     if (headerMatch) {
       currentSection = headerMatch[1].trim();
       continue;
+    }
+    // Numbered-conversation block format (preferred by newer reports that
+    // don't emit a JSON sidecar and don't use the legacy markdown table).
+    if (/^\s*\*\*\d+\.\*\*\s/.test(line) && !isTeamMemberSection(currentSection)) {
+      const parsed = parseNumberedConversationBlock(lines, i);
+      if (parsed) {
+        const e = parsed.entry;
+        if (isConversationSection(currentSection)) {
+          sentimentTotals[e.sentiment] = (sentimentTotals[e.sentiment] || 0) + 1;
+          const isProduct = isProductAuthor(e.author, options);
+          conversations.push({
+            date: e.date,
+            platform: e.platform,
+            author: e.author,
+            summary: e.summary,
+            sentiment: e.sentiment,
+            community: isProduct ? 'product' : 'community',
+            communityRaw: '',
+            engagement: '',
+            url: e.url,
+            section: currentSection,
+          });
+        } else {
+          const dedupKey = e.url || `${e.title}::${e.author}`;
+          if (!seenItems.has(dedupKey)) {
+            seenItems.add(dedupKey);
+            items.push({
+              title: e.title || e.summary,
+              url: e.url,
+              date: e.date,
+              ep: Number.isFinite(e.score) ? e.score : null,
+              author: e.author || '',
+              source: e.platform || '',
+              tags: e.tags || [],
+              section: currentSection,
+              kind: classifyItem(currentSection, e.platform, e.url),
+            });
+          }
+        }
+        i = parsed.nextIdx - 1;
+        continue;
+      }
     }
     if (!/^\s*\|/.test(line)) continue;
     const next = lines[i + 1] || '';

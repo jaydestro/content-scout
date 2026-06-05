@@ -3021,6 +3021,69 @@ a.help-dot {
   border-bottom-color: var(--accent, #818cf8);
   font-weight: 600;
 }
+/* Group labels ("Reports" / "Analytics" / "Tools") and separators that
+   split the tab strip into its three logical clusters. */
+#view-reports .reports-tabs-label {
+  align-self: center;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-2, #9aa3b2);
+  opacity: 0.7;
+  padding: 0 0.35rem 0 0.15rem;
+  user-select: none;
+}
+#view-reports .reports-tabs-sep {
+  align-self: center;
+  width: 1px;
+  height: 1.1rem;
+  margin: 0 0.3rem;
+  background: var(--border, rgba(148, 163, 184, 0.3));
+}
+/* In-doc section nav: jumps the open scan report to its ## headings
+   (All · Mindshare · CFPs · Conferences). Sticky so it stays reachable
+   while scrolling a long report. */
+.reports-doc {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+#view-reports .reports-section-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface, #11161f);
+  padding: 0.3rem 0 0.45rem 0;
+  margin: 0 0 0.5rem 0;
+  border-bottom: 1px dashed var(--border, rgba(148, 163, 184, 0.25));
+}
+#view-reports .reports-section-nav button {
+  appearance: none;
+  background: var(--surface-2, rgba(148, 163, 184, 0.08));
+  border: 1px solid var(--border, rgba(148, 163, 184, 0.2));
+  color: var(--muted-2, #9aa3b2);
+  padding: 0.25rem 0.7rem;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 999px;
+  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+#view-reports .reports-section-nav button:hover {
+  color: var(--text);
+}
+#view-reports .reports-section-nav button.active {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent, #818cf8) 18%, transparent);
+  border-color: var(--accent, #818cf8);
+  font-weight: 600;
+}
 #view-reports .reports-action-bar {
   display: flex;
   flex-wrap: wrap;
@@ -3099,6 +3162,5 @@ a.help-dot {
 }
 
 /* Kind-badge colors for new doc kinds */
-aside li[data-name] .entry-kind.kind-replay     { background: rgba(99,102,241,0.16); color: #c7d2fe; border-color: rgba(99,102,241,0.35); }
 aside li[data-name] .entry-kind.kind-cfp        { background: rgba(14,165,233,0.16); color: #bae6fd; border-color: rgba(14,165,233,0.35); }
 aside li[data-name] .entry-kind.kind-conference { background: rgba(217,70,239,0.16); color: #f5d0fe; border-color: rgba(217,70,239,0.35); }

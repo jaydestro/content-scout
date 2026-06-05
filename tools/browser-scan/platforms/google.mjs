@@ -41,6 +41,7 @@ function whenFor(days) {
 // Map a `--days N` lookback to Google Web's `tbs=qdr:…` parameter.
 // Buckets: h (hour), d (day), w (week), m (month), y (year). Same
 // "smallest bucket that still covers" rule as whenFor — never under-fetch.
+// Kept as a fallback for when an explicit custom range can't be built.
 function qdrFor(days) {
   if (!days || days <= 0) return 'w';
   if (days <= 1) return 'd';
@@ -48,6 +49,25 @@ function qdrFor(days) {
   if (days <= 31) return 'm';
   if (days <= 365) return 'y';
   return 'y';
+}
+
+// Format a timestamp as Google's custom-date-range token: M/D/YYYY with
+// NO leading zeros (e.g. 5/1/2026), which is what the SERP's
+// `tbs=cdr:1,cd_min:…,cd_max:…` parameter expects.
+function gDate(ms) {
+  const d = new Date(ms);
+  return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+}
+
+// Build Google Web's custom date-range `tbs` value from the exact scan
+// window. This is precise to the day — unlike the coarse qdr buckets —
+// so it matches "the range we asked for" (e.g. a specific calendar
+// month) instead of rounding a 31-day request up to a full year.
+// Produces e.g. `cdr:1,cd_min:5/1/2026,cd_max:5/31/2026`.
+function cdrFor(sinceMs, untilMs) {
+  const min = gDate(sinceMs);
+  const max = gDate(untilMs || Date.now());
+  return `cdr:1,cd_min:${min},cd_max:${max}`;
 }
 
 const ARTICLE_SELECTORS = [
@@ -107,7 +127,7 @@ export async function openGoogleLogin(browser) {
 }
 
 export async function scanGoogle(browser, ctx) {
-  const { searchTerms, sinceMs, maxPerTerm, outDir } = ctx;
+  const { searchTerms, sinceMs, untilMs, maxPerTerm, outDir } = ctx;
   const items = new Map(); // url -> item (shared across News + Web passes; dedup by URL)
 
   const page = ctx.page || (await newPage(browser));
@@ -117,7 +137,9 @@ export async function scanGoogle(browser, ctx) {
   // `sinceMs`, not days, so back-calc.
   const days = sinceMs ? Math.max(1, Math.round((Date.now() - sinceMs) / (24 * 60 * 60 * 1000))) : 30;
   const when = whenFor(days);
-  const qdr = qdrFor(days);
+  // Precise custom date range for the Web SERP — bounded by the exact
+  // window the caller asked for (sinceMs … untilMs, default now).
+  const cdr = cdrFor(sinceMs || Date.now() - days * 24 * 60 * 60 * 1000, untilMs);
 
   // ---- Pass 1: Google News ----
   await scanGoogleNewsPass(page, { searchTerms, sinceMs, maxPerTerm, outDir, when, items });
@@ -127,7 +149,7 @@ export async function scanGoogle(browser, ctx) {
   await sleep(5000);
 
   // ---- Pass 2: Google Web Search ----
-  await scanGoogleWebPass(page, { searchTerms, sinceMs, maxPerTerm, outDir, qdr, items });
+  await scanGoogleWebPass(page, { searchTerms, sinceMs, untilMs, maxPerTerm, outDir, cdr, items });
 
   if (ownsPage) await page.close();
   return [...items.values()];
@@ -174,11 +196,14 @@ async function scanGoogleNewsPass(page, { searchTerms, sinceMs, maxPerTerm, outD
   }
 }
 
-async function scanGoogleWebPass(page, { searchTerms, sinceMs, maxPerTerm, outDir, qdr, items }) {
+async function scanGoogleWebPass(page, { searchTerms, sinceMs, untilMs, maxPerTerm, outDir, cdr, items }) {
   for (const term of searchTerms) {
     const query = buildSearchQuery(term, 'google-news'); // same shaping rules apply
     if (!query) continue;
-    const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&tbs=qdr:${qdr}&hl=en-US&gl=US&num=20`;
+    // Use Google's custom date range (`tbs=cdr:1,cd_min:…,cd_max:…`) so the
+    // SERP is bounded to exactly the window we asked for — e.g.
+    // https://www.google.com/search?q=%22azure+cosmos+db%22&tbs=cdr:1,cd_min:5/1/2026,cd_max:5/31/2026
+    const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&tbs=${encodeURIComponent(cdr)}&hl=en-US&gl=US&num=20`;
 
     try {
       await page.goto(url, { waitUntil: 'domcontentloaded' });
@@ -205,10 +230,16 @@ async function scanGoogleWebPass(page, { searchTerms, sinceMs, maxPerTerm, outDi
     for (const item of fresh) {
       if (!item.url || items.has(item.url)) continue;
       // Web SERP rarely surfaces structured dates per result. We trust
-      // `tbs=qdr:` to have done the date filtering server-side and
-      // don't apply a client-side sinceMs check (post_date will be null
-      // for most web items, and the qdr bucket already covers the
-      // requested window).
+      // `tbs=cdr:` to have bounded results to the requested window
+      // server-side. When a result DOES expose a date, enforce the same
+      // [sinceMs, untilMs] bounds client-side as a backstop.
+      if (item.post_date) {
+        const t = new Date(item.post_date).getTime();
+        if (!Number.isNaN(t)) {
+          if (sinceMs && t < sinceMs) continue;
+          if (untilMs && t > untilMs) continue;
+        }
+      }
       item.search_term = term;
       items.set(item.url, item);
       collected++;

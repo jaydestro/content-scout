@@ -21,7 +21,6 @@ const KIND_TABLE = [
   { match: /-supplemental\.md$/i,             id: 'supplemental', label: 'Supplemental' },
   { match: /-trends\.md$/i,                   id: 'trends',       label: 'Trends' },
   { match: /-gaps\.md$/i,                     id: 'gaps',         label: 'Gaps' },
-  { match: /-replay\.md$/i,                   id: 'replay',       label: 'Replay' },
   { match: /-seo[-.]/i,                       id: 'seo',          label: 'SEO' },
   { match: /-cfps?\.md$/i,                    id: 'cfp',          label: 'CFPs' },
   { match: /-conferences?\.md$/i,             id: 'conference',   label: 'Conference' },
@@ -35,7 +34,7 @@ export function detectKind(name) {
 // Filenames look like: 2026-05-21-1004-azure-cosmos-db-content.md
 // Capture the stamp + slug so the UI can group runs and surface the
 // subject independent of the wordy H1 title.
-const FILENAME_RE = /^(\d{4}-\d{2}-\d{2})-(\d{4})-(.+?)-(content|mindshare|supplemental|trends|gaps|social-posts|posting-calendar|alt-.+|solo[-.].+|seo[-.].+)\.md$/i;
+const FILENAME_RE = /^(\d{4}-\d{2}-\d{2})-(\d{4})-(.+?)-(content|mindshare|supplemental|trends|gaps|cfps?|conferences?|social-posts|posting-calendar|alt-.+|solo[-.].+|seo[-.].+)\.md$/i;
 
 export function parseFilename(name) {
   const m = String(name || '').match(FILENAME_RE);

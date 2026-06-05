@@ -19,7 +19,6 @@ import { extractDocMeta } from '../lib/doc-meta.mjs';
 import {
   runGaps,
   runTrends,
-  runReplay,
   runSeoAudit,
   parseTopicTagsFromConfig,
 } from '../lib/analytics.mjs';
@@ -41,6 +40,8 @@ import {
   browserScanReadDirs,
   BROWSER_SCAN_DIR as BROWSER_SCAN_SIDECAR_DIR,
   LEGACY_BROWSER_SCAN_DIR,
+  BROWSER_PROFILE_DIR,
+  LEGACY_BROWSER_PROFILE_DIR,
 } from '../lib/paths.mjs';
 import {
   ALLOWED_REASONS,
@@ -189,6 +190,28 @@ app.use((err, req, res, next) => {
   }
   return next(err);
 });
+// Defense-in-depth: wrap res.json so every JSON response body has all string
+// fields run through redactSecrets. Catches `err.message` payloads from
+// upstream API failures that may echo URLs or headers containing keys, without
+// requiring every endpoint to remember to call redactSecrets itself.
+app.use((req, res, next) => {
+  const origJson = res.json.bind(res);
+  res.json = (body) => origJson(redactDeep(body));
+  next();
+});
+function redactDeep(v) {
+  if (v == null) return v;
+  if (typeof v === 'string') return redactSecrets(v);
+  if (Array.isArray(v)) {
+    for (let i = 0; i < v.length; i++) v[i] = redactDeep(v[i]);
+    return v;
+  }
+  if (typeof v === 'object') {
+    for (const k of Object.keys(v)) v[k] = redactDeep(v[k]);
+    return v;
+  }
+  return v;
+}
 // Disable browser caching for the SPA assets so iterative dev changes are picked up.
 app.use((req, res, next) => {
   if (/\.(html|js|css)$/.test(req.path) || req.path === '/') {
@@ -425,6 +448,12 @@ function closeRun(run, status) {
       autoRenderThumbnails(run).catch(() => {});
     }
   }
+  // CFPs + Conferences are no longer written as separate dated artifacts.
+  // Each /scout-scan now produces ONE consolidated content report whose
+  // "Open Calls for Papers (CFPs)" and "Conferences & Events" sections hold
+  // that data inline (navigable via the in-doc section nav and in a plain
+  // editor). The read-only /api/cfp-conferences live snapshot remains
+  // available for ad-hoc lookups.
 }
 
 // Spawn `node tools/render-thumbnails/index.js` to produce LinkedIn (1200x1200)
@@ -1471,10 +1500,70 @@ function enrichCfp(text) {
   };
 }
 
+// --- Conference / CFP date parsing + open-status policy -------------
+// Scans must only surface conferences that haven't happened yet and CFPs we
+// can prove are still open. These helpers parse the free-form date strings in
+// the config table and decide upcoming/open deterministically (offline).
+const MONTH_INDEX = {
+  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+};
+
+// Parse a date string into the END date of the event/window.
+// Handles "Apr 19–20, 2026", "Jul 19, 2026", "Feb 9–11, 2027", "Sep 6–7, 2026",
+// and ISO "2026-06-30". Returns a Date (end of that day, UTC) or null for
+// "TBD"/unparseable strings.
+function parseEndDate(s) {
+  const str = String(s || '');
+  const iso = str.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return new Date(Date.UTC(+iso[1], +iso[2] - 1, +iso[3], 23, 59, 59));
+  const m = str.match(/([A-Za-z]{3,})\s+(\d{1,2})(?:\s*[–—-]\s*(\d{1,2}))?,?\s*(\d{4})/);
+  if (m) {
+    const mon = MONTH_INDEX[m[1].slice(0, 3).toLowerCase()];
+    if (mon != null) {
+      const day = parseInt(m[3] || m[2], 10);
+      return new Date(Date.UTC(parseInt(m[4], 10), mon, day, 23, 59, 59));
+    }
+  }
+  return null;
+}
+
+// Parse a "CFP Closes" cell. Returns { date, openAlways }.
+//   "rolling" / "open" / "always"  → openAlways: true (never expires)
+//   "closed" / "n/a" / "—" / ""    → date in the past (treated as closed)
+//   a real date                     → parsed Date
+function parseCfpClose(s) {
+  const str = String(s || '').trim();
+  if (!str || /^[—–-]+$/.test(str)) return { date: new Date(0), openAlways: false };
+  if (/rolling|always|^open$/i.test(str)) return { date: null, openAlways: true };
+  if (/closed|^n\/?a$|past|tbd/i.test(str)) return { date: new Date(0), openAlways: false };
+  return { date: parseEndDate(str), openAlways: false };
+}
+
+// Default scan policy — a conference is "upcoming" when its event end date is
+// today or later. Unparseable / TBD dates are kept (we can't prove they're past).
+function isUpcomingConference(row, now = new Date()) {
+  if (!row.endDate) return true;
+  return row.endDate.getTime() >= now.getTime();
+}
+
+// Default scan policy — a CFP only counts as OPEN when we can prove it: the
+// conference is upcoming, it has a submission link, and its close date is today
+// or later (or it is explicitly rolling). Unknown close dates are NOT open, so
+// unvalidated CFPs never leak into the CFP report.
+function isOpenCfp(row, now = new Date()) {
+  if (!isUpcomingConference(row, now)) return false;
+  if (!row.cfp) return false;
+  if (row.cfpOpenAlways) return true;
+  if (!row.cfpCloseDate) return false;
+  return row.cfpCloseDate.getTime() >= now.getTime();
+}
+
 // Parse the "## Conferences & Events" table out of a scout-config-*.prompt.md.
-// Returns rows of { name, dates, location, links } where `links` is enriched
-// from the same CONFERENCE_LINKS table used by enrichCfp() so the dashboard
-// can render real site/CFP links instead of bare names.
+// Header-aware: recognizes an optional "CFP Closes" / "Deadline" column. Returns
+// rows of { name, dates, location, site, cfp, cfpClosesRaw, endDate,
+// cfpCloseDate, cfpOpenAlways } — links are enriched from CONFERENCE_LINKS and
+// the date fields feed isUpcomingConference()/isOpenCfp().
 function parseConferencesFromConfig(rawConfig) {
   const lines = rawConfig.split(/\r?\n/);
   const start = lines.findIndex((l) => /^##\s+Conferences\s*&\s*Events/i.test(l));
@@ -1484,6 +1573,14 @@ function parseConferencesFromConfig(rawConfig) {
   let i = start + 1;
   while (i < lines.length && !/^##\s+/.test(lines[i])) {
     if (/^\s*\|/.test(lines[i]) && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1] || '')) {
+      const headers = lines[i]
+        .split('|')
+        .slice(1, -1)
+        .map((s) => s.trim().toLowerCase());
+      const nameIdx = headers.findIndex((h) => /event|conference|name/.test(h));
+      const datesIdx = headers.findIndex((h) => /date/.test(h));
+      const locIdx = headers.findIndex((h) => /location|venue|city/.test(h));
+      const cfpIdx = headers.findIndex((h) => /cfp|close|deadline/.test(h));
       // Skip header + separator, then walk body rows.
       let j = i + 2;
       while (j < lines.length && /^\s*\|/.test(lines[j])) {
@@ -1491,7 +1588,10 @@ function parseConferencesFromConfig(rawConfig) {
           .split('|')
           .slice(1, -1)
           .map((s) => s.trim());
-        const [name, dates, location] = [cells[0] || '', cells[1] || '', cells[2] || ''];
+        const name = cells[nameIdx >= 0 ? nameIdx : 0] || '';
+        const dates = cells[datesIdx >= 0 ? datesIdx : 1] || '';
+        const location = cells[locIdx >= 0 ? locIdx : 2] || '';
+        const cfpClosesRaw = cfpIdx >= 0 ? cells[cfpIdx] || '' : '';
         if (name) {
           let site = '';
           let cfp = '';
@@ -1502,7 +1602,18 @@ function parseConferencesFromConfig(rawConfig) {
               break;
             }
           }
-          rows.push({ name, dates, location, site, cfp });
+          const close = parseCfpClose(cfpClosesRaw);
+          rows.push({
+            name,
+            dates,
+            location,
+            site,
+            cfp,
+            cfpClosesRaw,
+            endDate: parseEndDate(dates),
+            cfpCloseDate: close.date,
+            cfpOpenAlways: close.openAlways,
+          });
         }
         j++;
       }
@@ -1526,6 +1637,151 @@ async function findLatestContentReport(slug) {
     .sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''))[0] || null;
 }
 
+// --- Persisted CFP / Conference scan artifacts ----------------------
+// Called from closeRun() after a successful /scout-scan. Writes two dated
+// report files per subject so CFPs + Conferences become saved, browseable
+// reports (same lifecycle as Content / Mindshare) rather than being re-
+// derived live on every dashboard tab open. Deterministic + offline: CFPs
+// come from the just-written content report's "## Open Calls for Papers"
+// section and conferences from the active config's "## Conferences & Events"
+// table; submission/site links come from the curated CONFERENCE_LINKS table
+// (already vetted, no network calls). Idempotent — files sharing a run stamp
+// are never overwritten. Never throws.
+function mdCell(s) {
+  return String(s || '').replace(/\s*\n\s*/g, ' ').replace(/\|/g, '\\|').trim();
+}
+
+function mdLinkCell(label, url) {
+  return url ? `[${label}](${url})` : '';
+}
+
+function titleCase(slug) {
+  return slug.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function renderCfpReportMd({ slug, now, source, cfps }) {
+  const lines = [];
+  lines.push(`# Open Calls for Papers — ${titleCase(slug)}`);
+  lines.push('');
+  lines.push(`**Generated:** ${now} · **Source scan:** ${source}`);
+  lines.push('');
+  lines.push(
+    `Point-in-time snapshot of open conference CFPs relevant to ${slug.replace(/-/g, ' ')}, ` +
+      `captured automatically when this scan completed. Submission and site links come from the ` +
+      `curated known-events table.`
+  );
+  lines.push('');
+  lines.push('| Conference | Date / Location | CFP | Site | Notes |');
+  lines.push('|---|---|---|---|---|');
+  for (const c of cfps) {
+    const cfpLink = c.cfp
+      ? mdLinkCell('Submit', c.cfp)
+      : c.links && c.links[0]
+        ? mdLinkCell(c.links[0].label, c.links[0].url)
+        : '';
+    const siteLink = c.site ? mdLinkCell('Site', c.site) : '';
+    lines.push(
+      `| **${mdCell(c.name || c.raw)}** | ${mdCell(c.dateLoc)} | ${cfpLink} | ${siteLink} | ${mdCell(c.note)} |`
+    );
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
+function renderConferencesReportMd({ slug, now, source, conferences }) {
+  const lines = [];
+  lines.push(`# Conferences & Events — ${titleCase(slug)}`);
+  lines.push('');
+  lines.push(`**Generated:** ${now} · **Source config:** scout-config-${slug}.prompt.md`);
+  lines.push('');
+  lines.push(
+    `Conferences tracked for ${slug.replace(/-/g, ' ')}, captured automatically at scan time. ` +
+      `Submission and site links come from the curated known-events table.`
+  );
+  lines.push('');
+  lines.push('| Conference | Dates | Location | CFP Closes | CFP | Site |');
+  lines.push('|---|---|---|---|---|---|');
+  for (const c of conferences) {
+    const closes = c.cfpClosesRaw || (c.cfpOpenAlways ? 'Rolling' : '—');
+    lines.push(
+      `| **${mdCell(c.name)}** | ${mdCell(c.dates)} | ${mdCell(c.location)} | ${mdCell(closes)} | ${
+        c.cfp ? mdLinkCell('Submit', c.cfp) : ''
+      } | ${c.site ? mdLinkCell('Site', c.site) : ''} |`
+    );
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
+async function generateCfpConferenceArtifacts(run) {
+  let slugs = [];
+  try {
+    slugs = await computePreflightSlugs((run && run.args) || {});
+  } catch {
+    return;
+  }
+  if (!slugs.length) return;
+  let wrote = 0;
+  for (const slug of slugs) {
+    try {
+      if (!isValidSlug(slug)) continue;
+      const latest = await findLatestContentReport(slug);
+      if (!latest) continue;
+      const m = latest.name.match(/^(\d{4}-\d{2}-\d{2}-\d{4})-/);
+      const stamp = m ? m[1] : new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-');
+      const nowIso = new Date().toISOString();
+      const now = new Date();
+
+      let conferences = [];
+      try {
+        const cfg = await readConfig(slug);
+        conferences = parseConferencesFromConfig(cfg.raw) || [];
+      } catch {}
+
+      // Default scan policy: only upcoming events, and CFPs we can prove are open.
+      const upcoming = conferences.filter((c) => isUpcomingConference(c, now));
+      const cfps = upcoming
+        .filter((c) => isOpenCfp(c, now))
+        .map((c) => ({
+          name: c.name,
+          raw: c.name,
+          dateLoc: [c.dates, c.location].filter(Boolean).join(' · '),
+          note: c.cfpOpenAlways ? 'Rolling CFP' : c.cfpClosesRaw ? `CFP closes ${c.cfpClosesRaw}` : '',
+          site: c.site,
+          cfp: c.cfp,
+          links: [],
+        }));
+
+      if (cfps.length) {
+        const file = path.join(REPORTS_DIR, `${stamp}-${slug}-cfp.md`);
+        if (!fsExistsSync(file)) {
+          await fs.writeFile(file, renderCfpReportMd({ slug, now: nowIso, source: latest.name, cfps }), 'utf8');
+          wrote++;
+        }
+      }
+      if (upcoming.length) {
+        const file = path.join(REPORTS_DIR, `${stamp}-${slug}-conferences.md`);
+        if (!fsExistsSync(file)) {
+          await fs.writeFile(
+            file,
+            renderConferencesReportMd({ slug, now: nowIso, source: latest.name, conferences: upcoming }),
+            'utf8'
+          );
+          wrote++;
+        }
+      }
+    } catch (err) {
+      pushRunOutput(run, `\n[cfp-artifacts] ${slug}: ${err.message}\n`);
+    }
+  }
+  if (wrote > 0) {
+    pushRunOutput(
+      run,
+      `\n[scout-web] Wrote ${wrote} CFP/Conference report artifact(s) to reports/ — browse them under Reports → CFPs / Conferences.\n`
+    );
+  }
+}
+
 // CFPs + Conferences for the active subject. CFPs come from the latest
 // content report's "## Open Calls for Papers" section (populated by
 // /scout-scan when "Conference CFP tracking" is on); conferences come
@@ -1544,20 +1800,29 @@ app.get('/api/cfp-conferences', async (req, res) => {
       report: null,
       reportMtime: null,
     };
-    // CFPs from latest content report.
+    // CFPs + conferences from the active config — filtered to the same
+    // default scan policy: only upcoming events, only provably-open CFPs.
     const latest = await findLatestContentReport(slug);
     if (latest) {
-      try {
-        const raw = await fs.readFile(path.join(REPORTS_DIR, latest.name), 'utf8');
-        out.report = latest.name;
-        out.reportMtime = latest.mtime;
-        out.cfps = parseActionItems(raw).cfps;
-      } catch {}
+      out.report = latest.name;
+      out.reportMtime = latest.mtime;
     }
-    // Conferences from active config.
     try {
       const cfg = await readConfig(slug);
-      out.conferences = parseConferencesFromConfig(cfg.raw);
+      const all = parseConferencesFromConfig(cfg.raw);
+      const now = new Date();
+      out.conferences = all.filter((c) => isUpcomingConference(c, now));
+      out.cfps = out.conferences
+        .filter((c) => isOpenCfp(c, now))
+        .map((c) => ({
+          raw: c.name,
+          name: c.name,
+          dateLoc: [c.dates, c.location].filter(Boolean).join(' · '),
+          note: c.cfpOpenAlways ? 'Rolling CFP' : c.cfpClosesRaw ? `CFP closes ${c.cfpClosesRaw}` : '',
+          site: c.site,
+          cfp: c.cfp,
+          links: [],
+        }));
     } catch {}
     res.json(out);
   } catch (err) {
@@ -3026,6 +3291,7 @@ async function startRunInternal(command, args, opts = {}) {
     status: 'running',
     command: commandLine,
     cmdName: command,
+    args: args || {},
     startedAt: new Date().toISOString(),
     finishedAt: null,
     output: '',
@@ -3159,14 +3425,24 @@ async function runBrowserScanPreflight(run, slugs, force = false, days = 0) {
   );
   const probe = await probeCdpPort(9222);
   if (!probe.up) {
-    pushRunOutput(
-      run,
-      `[browser-scan] No browser is running on CDP port 9222 — skipping preflight.\n` +
-      `[browser-scan]   In the Run view, expand "Browser scan (Layer 0)" and click "Open browser & sign in" to enable Layer-0 coverage.\n` +
-      `[browser-scan]   Or run: node tools/browser-scan/launch-edge.mjs (one-time login per platform).\n` +
-      `[browser-scan] Continuing with API/RSS layers only.\n`,
-    );
-    return;
+    // No browser on the CDP port. Rather than skipping the whole Layer-0
+    // pass and making the user hand-run launch-edge.mjs every time, try
+    // to auto-launch the dedicated CDP-profile browser. That profile keeps
+    // the signed-in cookies from the one-time sign-in, so the relaunch is
+    // silent (no re-login) as long as the session is still valid.
+    const relaunched = await ensureBrowserForPreflight(run, 9222);
+    if (!relaunched.up) {
+      pushRunOutput(
+        run,
+        `[browser-scan] No browser is running on CDP port 9222 and auto-launch did not come up in time — skipping preflight.\n` +
+        `[browser-scan]   If you have never signed in, run: node tools/browser-scan/launch-edge.mjs (one-time login per platform).\n` +
+        `[browser-scan]   Then sign in to X / LinkedIn / Reddit once; future runs relaunch the browser automatically.\n` +
+        `[browser-scan] Continuing with API/RSS layers only.\n`,
+      );
+      return;
+    }
+    probe.up = true;
+    probe.browser = relaunched.browser;
   }
   pushRunOutput(run, `[browser-scan] Attached to ${probe.browser || 'browser'} on CDP port 9222.\n`);
 
@@ -3557,7 +3833,55 @@ async function probeCdpPort(port) {
   }
 }
 
-// GET /api/browser-scan/info — capabilities + which Chromium-family
+// Auto-launch the dedicated CDP-profile browser for a /scout-scan
+// preflight when nothing is listening on the CDP port. This is what
+// removes the per-run "go run launch-edge.mjs yourself" friction: the
+// dedicated profile persists the signed-in cookies from the one-time
+// sign-in, so relaunching it restores the X / LinkedIn / Reddit sessions
+// without any human step. We only attempt this if that profile actually
+// exists on disk (i.e. the user has signed in at least once); otherwise
+// launching would just pop empty login pages with no session to reuse.
+// Returns the post-launch probe result. Never throws.
+async function ensureBrowserForPreflight(run, port) {
+  if (!BROWSER_SCAN_INSTALLED) return { up: false };
+  const hasProfile =
+    fsExistsSync(BROWSER_PROFILE_DIR) || fsExistsSync(LEGACY_BROWSER_PROFILE_DIR);
+  if (!hasProfile) {
+    pushRunOutput(
+      run,
+      `[browser-scan] No signed-in browser profile found yet — auto-launch needs a one-time sign-in first.\n`,
+    );
+    return { up: false };
+  }
+  pushRunOutput(
+    run,
+    `[browser-scan] No browser on CDP port ${port} — auto-launching the signed-in profile…\n`,
+  );
+  try {
+    const launcher = path.join(BROWSER_SCAN_DIR, 'launch-edge.mjs');
+    const child = spawn(process.execPath, [launcher, '--port', String(port)], {
+      cwd: REPO_ROOT,
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.unref();
+  } catch (err) {
+    pushRunOutput(run, `[browser-scan] Auto-launch failed to spawn: ${err.message}\n`);
+    return { up: false };
+  }
+  // Poll the CDP port until the browser is ready (up to ~30s).
+  const deadline = Date.now() + 30000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 1500));
+    const probe = await probeCdpPort(port);
+    if (probe.up) {
+      pushRunOutput(run, `[browser-scan] Browser is up on CDP port ${port}.\n`);
+      return probe;
+    }
+  }
+  return { up: false };
+}
+
 // browsers are installed on this machine.
 app.get('/api/browser-scan/info', async (_req, res) => {
   if (!BROWSER_SCAN_INSTALLED) {
@@ -3689,6 +4013,17 @@ app.post('/api/browser-scan/auth-check', async (req, res) => {
     if (line && line.startsWith('{')) {
       try {
         const parsed = JSON.parse(line);
+        // Defense-in-depth: Playwright error messages echoed in `error`
+        // / `raw` can include WS URLs, headers, or other tool output —
+        // run them through the same redactor used for streamed logs.
+        if (parsed && typeof parsed.error === 'string') parsed.error = redactSecrets(parsed.error);
+        if (parsed && parsed.platforms && typeof parsed.platforms === 'object') {
+          for (const k of Object.keys(parsed.platforms)) {
+            const p = parsed.platforms[k];
+            if (p && typeof p.raw === 'string') p.raw = redactSecrets(p.raw);
+            if (p && typeof p.finalUrl === 'string') p.finalUrl = redactSecrets(p.finalUrl);
+          }
+        }
         return res.json(parsed);
       } catch { /* fall through */ }
     }
@@ -3696,13 +4031,13 @@ app.post('/api/browser-scan/auth-check', async (req, res) => {
       ok: false,
       error: 'parse-failed',
       exitCode: code,
-      stderr: err.slice(-1000),
-      stdout: out.slice(-1000),
+      stderr: redactSecrets(err.slice(-1000)),
+      stdout: redactSecrets(out.slice(-1000)),
     });
   });
   child.on('error', (e) => {
     clearTimeout(timeout);
-    res.status(500).json({ ok: false, error: 'spawn-failed', message: e.message });
+    res.status(500).json({ ok: false, error: 'spawn-failed', message: redactSecrets(e.message) });
   });
 });
 
@@ -3761,7 +4096,7 @@ app.post('/api/browser-scan/scan', async (req, res) => {
 });
 
 // --- In-browser analytics endpoints --------------------------------
-// Same artifacts the /scout-{gaps,trends,replay,seo} agent commands
+// Same artifacts the /scout-{gaps,trends,seo} agent commands
 // produce — but computed in pure Node from data already on disk so the
 // Reports view's Trends/Gaps tabs can run with one click. No LLM, no
 // subprocess. See tools/lib/analytics.mjs for the engine.
@@ -3794,22 +4129,6 @@ app.get('/api/analytics/trends', async (req, res) => {
       months,
       slug,
     });
-    await fs.writeFile(path.join(REPORTS_DIR, result.fileName), result.markdown, 'utf8');
-    res.json({ ok: true, fileName: result.fileName, data: result.data });
-  } catch (err) {
-    res.status(500).json({ error: String(err.message || err) });
-  }
-});
-
-app.post('/api/analytics/replay', express.json(), async (req, res) => {
-  try {
-    const { sourceFile, overrides } = req.body || {};
-    if (!sourceFile || !isValidFilename(sourceFile)) {
-      return res.status(400).json({ error: 'sourceFile is required' });
-    }
-    const parsed = await loadReport(REPORTS_DIR, sourceFile);
-    if (!parsed) return res.status(404).json({ error: `report not found: ${sourceFile}` });
-    const result = runReplay({ parsed, sourceFile, overrides: overrides || {} });
     await fs.writeFile(path.join(REPORTS_DIR, result.fileName), result.markdown, 'utf8');
     res.json({ ok: true, fileName: result.fileName, data: result.data });
   } catch (err) {
@@ -3863,7 +4182,7 @@ app.listen(PORT, HOST, async () => {
     'scout-onboard.prompt.md', 'scout-scan.prompt.md', 'scout-post.prompt.md',
     'scout-calendar.prompt.md', 'scout-gaps.prompt.md', 'scout-trends.prompt.md',
     'scout-creators.prompt.md', 'scout-doctor.prompt.md', 'scout-keys.prompt.md',
-    'scout-replay.prompt.md', 'scout-seo.prompt.md', 'scout-reddit-import.prompt.md',
+    'scout-seo.prompt.md', 'scout-reddit-import.prompt.md',
     'scout-alt.prompt.md', 'scout-vision.prompt.md',
   ];
   let diskFiles = [];

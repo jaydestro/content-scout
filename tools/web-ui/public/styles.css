@@ -915,6 +915,19 @@ code, pre { overflow-wrap: anywhere; }
 .link-btn:hover { color: var(--accent-hover, #2e5cb5); }
 legend .link-btn { margin-left: 0.4rem; font-weight: 500; }
 
+/* Custom-prompt dialog: example snippet list */
+.run-custom-prompt-dialog { max-width: 640px; width: 90vw; border: 1px solid var(--border); border-radius: 6px; padding: 1rem; }
+.run-custom-prompt-examples { margin-top: 0.75rem; border-top: 1px solid var(--border); padding-top: 0.5rem; }
+.run-custom-prompt-examples summary { cursor: pointer; font-weight: 500; }
+.run-custom-prompt-example-list { list-style: none; padding: 0; margin: 0.4rem 0 0; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.9em; }
+.run-custom-prompt-example-list li { line-height: 1.4; }
+.run-custom-prompt-example-list button { background: none; border: none; color: var(--accent, #4a7bd4); cursor: pointer; padding: 0; text-align: left; font: inherit; }
+.run-custom-prompt-example-list button:hover { text-decoration: underline; }
+.run-custom-prompt-example-list code { background: var(--bg-soft, rgba(255,255,255,0.05)); padding: 0 0.25rem; border-radius: 3px; }
+.run-custom-prompt-summary { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.5rem 0.6rem; border: 1px dashed var(--border); border-radius: 4px; margin: 0.4rem 0; }
+.run-custom-prompt-preview { font-family: var(--mono, monospace); font-size: 0.9em; margin: 0 0.5rem; }
+.run-custom-prompt-preview.is-empty { font-style: italic; color: var(--muted); }
+
 /* Sign-in scan — visually emphasized fieldset inside the Run form */
 .run-browser-scan {
   border: 1px solid var(--accent, #4178d4);

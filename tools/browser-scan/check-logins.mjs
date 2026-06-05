@@ -65,7 +65,10 @@ const PROBES = [
 
 let browser;
 try {
-  browser = await chromium.connectOverCDP(`http://127.0.0.1:${flags.port}`, { timeout: 5000 });
+  // 30s timeout matches lib/browser.mjs. Playwright's connectOverCDP does
+  // target enumeration after the WS handshake; with many open tabs that
+  // post-connect step routinely exceeds 5s.
+  browser = await chromium.connectOverCDP(`http://127.0.0.1:${flags.port}`, { timeout: 30000 });
 } catch (e) {
   if (flags.json) {
     console.log(JSON.stringify({ ok: false, error: `cdp-unreachable: ${e.message}`, port: flags.port }));

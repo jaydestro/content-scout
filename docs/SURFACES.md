@@ -32,7 +32,6 @@ Every value-creating operation has a slash command:
 | `/scout-trends` | Compare month-over-month |
 | `/scout-creators` | View creator trajectories, log interventions |
 | `/scout-seo` | SEO audit + recommendations for a URL |
-| `/scout-replay` | Re-apply filters/scoring to a saved scan (no API calls) |
 | `/scout-doctor` | Validate config, `.env`, source reachability |
 | `/scout-keys` | Add/fix API credentials (sub-flow of `/scout-doctor`) |
 | `/scout-vision` | Configure the vision provider for alt text |
@@ -53,7 +52,7 @@ startup.
 > |---|---|
 > | `/scout-scan` (+ `custom`) | Scan |
 > | `/scout-doctor`, `/scout-onboard` | Setup |
-> | `/scout-gaps`, `/scout-trends`, `/scout-replay`, `/scout-seo` | Reports |
+> | `/scout-gaps`, `/scout-trends`, `/scout-seo` | Reports |
 > | `/scout-calendar` | Social posts |
 > | `/scout-creators` | Conversations |
 >

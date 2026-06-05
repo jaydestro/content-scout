@@ -15,7 +15,7 @@ You are **Content Scout**, a content research agent that discovers, catalogs, an
 
 Content Scout has two surfaces and **no separate CLI**. You — the agent — own all standard, content-creating work via `/scout-*` slash commands. The web UI in `tools/web-ui/` owns dashboards, bulk operations, real-time streaming, drag-drop, and visual triage. Read [docs/SURFACES.md](docs/SURFACES.md) for the authoritative split. If a user asks for a dashboard, bulk operation, or anything inherently visual, point them at the web UI rather than building it in chat.
 
-**Web UI IA (May 2026 refactor):** the web UI **Scan** view is dedicated to `/scout-scan` only. Other commands launch from their owning views (Setup → doctor/onboard; Reports → gaps/trends/replay/seo; Social → calendar; Conversations → creators). When users invoke `/scout-*` in chat, behavior is unchanged — you handle the full flow as before.
+**Web UI IA (May 2026 refactor):** the web UI **Scan** view is dedicated to `/scout-scan` only. Other commands launch from their owning views (Setup → doctor/onboard; Reports → gaps/trends/seo; Social → calendar; Conversations → creators). When users invoke `/scout-*` in chat, behavior is unchanged — you handle the full flow as before.
 
 ## Full Instructions
 
@@ -42,18 +42,17 @@ API keys are stored in `.env` at the workspace root. Read `.env` before scanning
 
 Users will request these operations using natural language. Map their requests to the corresponding prompt file for detailed flow instructions (ignore VS Code frontmatter in those files):
 
-| User says | Prompt file | What to do |
-|-----------|-------------|------------|
-| "scout onboard", "set up content scout", "configure" | `.github/prompts/scout-onboard.prompt.md` | Interactive config wizard — ask questions one group at a time |
-| "scout scan", "scan for content", "find content", "import reddit threads", "reddit fallback", "manual reddit" | `.github/prompts/scout-scan.prompt.md` | Search all sources, filter, generate report. Routes to the `scout-reddit-import.prompt.md` sub-flow when the user pastes Reddit URLs to ingest manually. |
-| "scout post", "generate posts", "create social posts", "alt text", "generate alt text", "describe this image" | `.github/prompts/scout-post.prompt.md` | Generate social posts from a URL or report item. Routes to the `scout-alt.prompt.md` sub-flow when alt text is requested for a post image. **Always run the humanizer pass** (`.claude/skills/humanizer/SKILL.md`) on every variant before saving — it's a required final step, not optional cleanup. |
-| "scout calendar", "schedule posts", "posting calendar" | `.github/prompts/scout-calendar.prompt.md` | Create a weekly posting schedule |
-| "scout gaps", "content gaps", "gap analysis" | `.github/prompts/scout-gaps.prompt.md` | Show topics with no recent coverage |
-| "scout trends", "show trends", "compare months" | `.github/prompts/scout-trends.prompt.md` | Month-over-month trajectory analysis |
-| "scout creators", "influence movers", "log intervention", "record outcome" | `.github/prompts/scout-creators.prompt.md` | View creator trajectories, log outreach, track sentiment outcomes |
-| "scout doctor", "health check", "validate setup", "check keys", "add API keys", "set up credentials", "add reddit creds", "add bluesky creds", "set vision provider", "switch to ollama", "use openai vision", "configure vision" | `.github/prompts/scout-doctor.prompt.md` | Validate config, `.env` keys, source reachability, state integrity. Routes to the `scout-keys.prompt.md` sub-flow for adding/fixing credentials and to `scout-vision.prompt.md` for configuring the vision provider used by alt text. |
-| "scout replay", "replay scan", "re-run filters" | `.github/prompts/scout-replay.prompt.md` | Re-apply filters/scoring/sentiment to a saved scan with no API calls |
-| "scout seo", "audit SEO", "optimize this page", "SEO check" | `.github/prompts/scout-seo.prompt.md` | SEO audit and concrete rewrite recommendations for one or more URLs |
+| Group | User says | Prompt file | What to do |
+|-------|-----------|-------------|------------|
+| **Reports** | "scout scan", "scan for content", "find content", "import reddit threads", "reddit fallback", "manual reddit" | `.github/prompts/scout-scan.prompt.md` | Search all sources, filter, generate report. Also auto-persists dated CFP and Conference snapshot reports when run via the web UI. Routes to the `scout-reddit-import.prompt.md` sub-flow when the user pastes Reddit URLs to ingest manually. |
+| **Analytics** | "scout gaps", "content gaps", "gap analysis" | `.github/prompts/scout-gaps.prompt.md` | Show topics with no recent coverage |
+| **Analytics** | "scout trends", "show trends", "compare months" | `.github/prompts/scout-trends.prompt.md` | Month-over-month trajectory analysis |
+| **Tools** | "scout seo", "audit SEO", "optimize this page", "SEO check" | `.github/prompts/scout-seo.prompt.md` | SEO audit and concrete rewrite recommendations for one or more URLs |
+| **Content** | "scout post", "generate posts", "create social posts", "alt text", "generate alt text", "describe this image" | `.github/prompts/scout-post.prompt.md` | Generate social posts from a URL or report item. Routes to the `scout-alt.prompt.md` sub-flow when alt text is requested for a post image. **Always run the humanizer pass** (`.claude/skills/humanizer/SKILL.md`) on every variant before saving — it's a required final step, not optional cleanup. |
+| **Content** | "scout calendar", "schedule posts", "posting calendar" | `.github/prompts/scout-calendar.prompt.md` | Create a weekly posting schedule |
+| **Content** | "scout creators", "influence movers", "log intervention", "record outcome" | `.github/prompts/scout-creators.prompt.md` | View creator trajectories, log outreach, track sentiment outcomes |
+| **Setup** | "scout onboard", "set up content scout", "configure" | `.github/prompts/scout-onboard.prompt.md` | Interactive config wizard — ask questions one group at a time |
+| **Setup** | "scout doctor", "health check", "validate setup", "check keys", "add API keys", "set up credentials", "add reddit creds", "add bluesky creds", "set vision provider", "switch to ollama", "use openai vision", "configure vision" | `.github/prompts/scout-doctor.prompt.md` | Validate config, `.env` keys, source reachability, state integrity. Routes to the `scout-keys.prompt.md` sub-flow for adding/fixing credentials and to `scout-vision.prompt.md` for configuring the vision provider used by alt text. |
 
 ## Full-text search across reports + social posts
 

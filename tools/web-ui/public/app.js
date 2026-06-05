@@ -74,7 +74,7 @@ const api = async (path, opts) => {
 };
 
 // --- Navigation ----------------------------------------------------
-const KNOWN_VIEWS = ['dashboard', 'setup', 'configs', 'run', 'reports', 'social', 'conversations'];
+const KNOWN_VIEWS = ['dashboard', 'setup', 'configs', 'run', 'reports', 'tools', 'social', 'conversations'];
 function gotoView(view) {
   document.querySelectorAll('nav button').forEach((b) => {
     const isActive = b.dataset.view === view;
@@ -89,6 +89,7 @@ function gotoView(view) {
   if (view === 'setup') loadSetup();
   if (view === 'configs') { loadConfigList(); renderConfigsEnv(); }
   if (view === 'reports') loadReports();
+  if (view === 'tools') loadTools();
   if (view === 'social') loadSocial();
   if (view === 'run') loadSlugOptions();
   if (view === 'dashboard') loadDashboard();
@@ -3012,21 +3013,29 @@ function escapeAttr(s) {
 }
 
 // --- Reports view: tabbed IA ---------------------------------------
-// The Reports view is now organized by *kind* (Content / Mindshare /
-// Trends / Gaps / CFPs / Conferences / Ask) instead of a flat dump of
-// every markdown file with a row of /scout-* toolbar buttons. Each
-// non-stub tab filters the existing list by the doc-meta kind id, and
-// Trends + Gaps gain a "Compute now" action-bar button that calls the
-// in-browser analytics endpoint (no agent round-trip).
-const REPORTS_TABS = ['content', 'mindshare', 'trends', 'gaps', 'replay', 'seo', 'cfps', 'conferences', 'ask'];
+// Top-level tabs pick which *kind* of report the list shows (Scans /
+// Mindshare / Trends / Gaps). Each /scout-scan now produces ONE
+// consolidated scan report that contains the Mindshare, CFPs, and
+// Conferences sections inline — so those are no longer separate docs or
+// separate top-level tabs. Instead, when a scan report is open, an
+// in-doc section nav (All · Mindshare · CFPs · Conferences) scrolls the
+// body to the matching heading. The same `##` headings exist in the raw
+// markdown, so the doc stays navigable in a plain editor (parity).
+const REPORTS_TABS = ['content', 'mindshare', 'trends', 'gaps'];
 const TAB_TO_KIND = {
   content: ['content'],
   mindshare: ['mindshare'],
   trends: ['trends'],
   gaps: ['gaps'],
-  replay: ['replay'],
-  seo: ['seo'],
 };
+// In-doc sections of a consolidated scan report, matched against the
+// rendered <h2>/<h3> heading text. `all` jumps back to the top.
+const REPORT_SECTIONS = [
+  { key: 'all', label: 'All', match: null },
+  { key: 'mindshare', label: 'Mindshare', match: /^mindshare\b/i },
+  { key: 'cfps', label: 'CFPs', match: /^(open calls for papers|cfps?\b|calls? for papers\b)/i },
+  { key: 'conferences', label: 'Conferences', match: /^conferences?\b/i },
+];
 let _reportsActiveTab = 'content';
 let _reportsCache = null; // last /api/reports payload (so tab switches don't re-fetch)
 
@@ -3038,15 +3047,62 @@ function setReportsActiveTab(tab) {
     b.classList.toggle('active', on);
     b.setAttribute('aria-selected', on ? 'true' : 'false');
   });
-  document.querySelectorAll('#view-reports .tab-panel').forEach((p) => {
-    let show = false;
-    if (p.dataset.panel === 'browse') show = !!TAB_TO_KIND[tab];
-    else show = p.dataset.panel === tab;
-    p.hidden = !show;
-  });
   renderReportsActionBar(tab);
-  if (TAB_TO_KIND[tab]) applyReportsTabFilter();
-  if (tab === 'cfps' || tab === 'conferences') loadCfpConferences(tab);
+  applyReportsTabFilter();
+}
+
+// Find the first rendered heading in `body` whose text matches a section.
+function findReportHeading(body, section) {
+  if (!body || !section || !section.match) return null;
+  for (const h of body.querySelectorAll('h2, h3')) {
+    if (section.match.test(h.textContent.trim())) return h;
+  }
+  return null;
+}
+
+// Build the in-doc section nav for a consolidated scan report. Only the
+// sections actually present in the rendered body get a button; if a scan
+// has neither Mindshare/CFPs/Conferences, the nav stays hidden.
+function buildReportSectionNav(kind) {
+  const nav = $('reports-section-nav');
+  const body = $('reports-body');
+  if (!nav) return;
+  if (kind !== 'content' || !body) {
+    nav.hidden = true;
+    nav.innerHTML = '';
+    return;
+  }
+  const present = REPORT_SECTIONS.filter(
+    (s) => s.key === 'all' || findReportHeading(body, s)
+  );
+  if (present.length <= 1) {
+    nav.hidden = true;
+    nav.innerHTML = '';
+    return;
+  }
+  nav.innerHTML = present
+    .map(
+      (s, i) =>
+        `<button type="button" data-section="${escapeAttr(s.key)}" class="${i === 0 ? 'active' : ''}">${escape(s.label)}</button>`
+    )
+    .join('');
+  nav.hidden = false;
+}
+
+// Scroll the open report to a section heading (or back to the top for `all`).
+function scrollReportToSection(key) {
+  const body = $('reports-body');
+  if (!body) return;
+  const section = REPORT_SECTIONS.find((s) => s.key === key);
+  if (!section || !section.match) {
+    body.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } else {
+    const h = findReportHeading(body, section);
+    if (h) h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  document.querySelectorAll('#reports-section-nav button').forEach((b) =>
+    b.classList.toggle('active', b.dataset.section === key)
+  );
 }
 
 function applyReportsTabFilter() {
@@ -3098,53 +3154,10 @@ function renderReportsActionBar(tab) {
       <span class="hint" id="analytics-status"></span>
     `;
     $('btn-gaps-compute')?.addEventListener('click', () => computeAnalytics('gaps'));
-  } else if (tab === 'replay') {
-    // Replay re-runs filters/scoring against an existing scan's JSON sidecar.
-    // User picks a source content/mindshare report from the dropdown; we POST
-    // /api/analytics/replay (no LLM, no API calls).
-    const items = (_reportsCache?.reports || [])
-      .filter((r) => ['content', 'mindshare'].includes(r?.meta?.kind))
-      .slice(0, 100);
-    const opts = items.map((r) => `<option value="${escapeAttr(r.name)}">${escapeAttr(r.name)}</option>`).join('');
-    bar.innerHTML = `
-      <label class="field-inline">Source scan
-        <select id="replay-source">${opts || '<option value="">(no scans found)</option>'}</select>
-      </label>
-      <label class="field-inline">Min engagement
-        <input type="number" id="replay-min-engagement" value="" min="0" max="100" placeholder="keep" />
-      </label>
-      <label class="field-inline">Min score
-        <input type="number" id="replay-min-score" value="" min="0" max="9" placeholder="keep" />
-      </label>
-      <button type="button" id="btn-replay-compute">+ Replay now</button>
-      <span class="hint" id="analytics-status"></span>
-    `;
-    $('btn-replay-compute')?.addEventListener('click', () => computeAnalytics('replay'));
-  } else if (tab === 'seo') {
-    bar.innerHTML = `
-      <label class="field-inline" style="flex:1;min-width:240px">URLs (one per line, max 5)
-        <textarea id="seo-urls" rows="3" placeholder="https://example.com/page-1&#10;https://example.com/page-2"></textarea>
-      </label>
-      <button type="button" id="btn-seo-compute">+ Audit now</button>
-      <span class="hint" id="analytics-status"></span>
-    `;
-    $('btn-seo-compute')?.addEventListener('click', () => computeAnalytics('seo'));
-  } else if (tab === 'content' || tab === 'mindshare') {
-    bar.innerHTML = `<span class="hint">Browse existing ${escapeAttr(tab)} reports. New scans land here automatically after <code>/scout-scan</code> completes.</span>`;
-  } else if (tab === 'cfps') {
-    bar.innerHTML = `
-      <span class="hint">Open Calls for Papers parsed from your latest <code>/scout-scan</code> content report.</span>
-      <button type="button" id="btn-cfps-refresh" class="ghost">Refresh</button>
-      <span class="hint" id="cfp-conf-status"></span>
-    `;
-    $('btn-cfps-refresh')?.addEventListener('click', () => loadCfpConferences('cfps', true));
-  } else if (tab === 'conferences') {
-    bar.innerHTML = `
-      <span class="hint">Conferences from your active scout-config &mdash; deadlines and submission links come from the known-events table.</span>
-      <button type="button" id="btn-conf-refresh" class="ghost">Refresh</button>
-      <span class="hint" id="cfp-conf-status"></span>
-    `;
-    $('btn-conf-refresh')?.addEventListener('click', () => loadCfpConferences('conferences', true));
+  } else if (tab === 'content') {
+    bar.innerHTML = `<span class="hint">Browse saved scan reports. Each scan is one consolidated doc — use the section nav (All · Mindshare · CFPs · Conferences) to jump within it. New scans land here automatically after <code>/scout-scan</code> completes.</span>`;
+  } else if (tab === 'mindshare') {
+    bar.innerHTML = `<span class="hint">Browse standalone monthly mindshare reports. Per-scan mindshare lives inside each scan report's Mindshare section.</span>`;
   } else {
     bar.innerHTML = '';
   }
@@ -3162,22 +3175,6 @@ async function computeAnalytics(kind) {
     } else if (kind === 'gaps') {
       const windowDays = $('gaps-window')?.value || 30;
       res = await fetch(`/api/analytics/gaps?slug=${encodeURIComponent(slug)}&windowDays=${encodeURIComponent(windowDays)}`);
-    } else if (kind === 'replay') {
-      const sourceFile = $('replay-source')?.value || '';
-      if (!sourceFile) {
-        if (status) status.textContent = 'pick a source scan first';
-        return;
-      }
-      const overrides = {};
-      const me = $('replay-min-engagement')?.value;
-      const ms = $('replay-min-score')?.value;
-      if (me !== '' && me != null) overrides.minEngagement = Number(me);
-      if (ms !== '' && ms != null) overrides.minScore = Number(ms);
-      res = await fetch('/api/analytics/replay', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sourceFile, overrides }),
-      });
     } else if (kind === 'seo') {
       const raw = $('seo-urls')?.value || '';
       const urls = raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
@@ -3197,10 +3194,17 @@ async function computeAnalytics(kind) {
       return;
     }
     if (status) status.textContent = `Wrote ${data.fileName}`;
-    await loadReports();
-    // After reload, the tab filter re-applies; openReport the new file.
-    const li = document.querySelector(`#reports-list li[data-name="${data.fileName}"]`);
-    if (li) li.click();
+    if (kind === 'seo') {
+      // SEO outputs live in the Tools view.
+      await loadTools();
+      const li = document.querySelector(`#tools-list li[data-name="${data.fileName}"]`);
+      if (li) li.click();
+    } else {
+      await loadReports();
+      // After reload, the tab filter re-applies; openReport the new file.
+      const li = document.querySelector(`#reports-list li[data-name="${data.fileName}"]`);
+      if (li) li.click();
+    }
   } catch (err) {
     if (status) status.textContent = `error: ${err.message || err}`;
   }
@@ -3321,6 +3325,7 @@ async function loadReports() {
       const r = await api(`/api/reports/${encodeURIComponent(li.dataset.name)}`);
       renderDocBody($('reports-body'), { name: li.dataset.name, html: r.html, kind: 'reports' });
       $('reports-body').dataset.name = li.dataset.name;
+      buildReportSectionNav(li.dataset.kind);
     });
   });
   wireListFilter({ inputId: 'reports-filter', listId: 'reports-list', kind: 'reports' });
@@ -3337,6 +3342,12 @@ document.addEventListener('click', (e) => {
     setReportsActiveTab(tabBtn.dataset.tab);
     return;
   }
+  const secBtn = e.target.closest('#reports-section-nav button[data-section]');
+  if (secBtn) {
+    e.preventDefault();
+    scrollReportToSection(secBtn.dataset.section);
+    return;
+  }
   const chip = e.target.closest('[data-ask-chip]');
   if (chip) {
     e.preventDefault();
@@ -3344,16 +3355,111 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// --- Tools view (SEO / Ask) -----------------------------------------
+// Tools is its own top-level nav section, separate from Reports. SEO is
+// an on-demand utility whose dated outputs land in #tools-list (filtered
+// by doc-meta kind); Ask sends a free-form prompt to the agent.
+const TOOLS_TABS = ['seo', 'ask'];
+const TOOLS_KIND = { seo: ['seo'] };
+let _toolsActiveTab = 'seo';
+
+function setToolsActiveTab(tab) {
+  if (!TOOLS_TABS.includes(tab)) tab = 'seo';
+  _toolsActiveTab = tab;
+  document.querySelectorAll('#tools-tabs button').forEach((b) => {
+    const on = b.dataset.tooltab === tab;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  const isAsk = tab === 'ask';
+  document.querySelectorAll('#view-tools .tab-panel').forEach((p) => {
+    let show = false;
+    if (p.dataset.toolpanel === 'browse') show = !isAsk;
+    else show = p.dataset.toolpanel === tab;
+    p.hidden = !show;
+  });
+  renderToolsActionBar(tab);
+  if (!isAsk) applyToolsTabFilter();
+}
+
+function applyToolsTabFilter() {
+  const kinds = TOOLS_KIND[_toolsActiveTab];
+  if (!kinds) return;
+  const lis = document.querySelectorAll('#tools-list li[data-name]');
+  let firstVisible = null;
+  let visibleCount = 0;
+  lis.forEach((li) => {
+    const k = li.dataset.kind || '';
+    const match = kinds.includes(k);
+    li.hidden = !match;
+    if (match) {
+      visibleCount += 1;
+      if (!firstVisible) firstVisible = li;
+    }
+  });
+  const selected = document.querySelector('#tools-list li.selected');
+  if ((!selected || selected.hidden) && firstVisible) firstVisible.click();
+  if (visibleCount === 0) {
+    const body = $('tools-body');
+    if (body) {
+      body.innerHTML = `<p class="hint">No <strong>${escapeAttr(_toolsActiveTab)}</strong> results yet. Use the action bar above to run one, or run <code>/scout-${_toolsActiveTab}</code> in an agent chat.</p>`;
+      delete body.dataset.name;
+    }
+  }
+}
+
+function renderToolsActionBar(tab) {
+  const bar = $('tools-action-bar');
+  if (!bar) return;
+  if (tab === 'seo') {
+    bar.innerHTML = `
+      <label class="field-inline" style="flex:1;min-width:240px">URLs (one per line, max 5)
+        <textarea id="seo-urls" rows="3" placeholder="https://example.com/page-1&#10;https://example.com/page-2"></textarea>
+      </label>
+      <button type="button" id="btn-seo-compute">+ Audit now</button>
+      <span class="hint" id="analytics-status"></span>
+    `;
+    $('btn-seo-compute')?.addEventListener('click', () => computeAnalytics('seo'));
+  } else {
+    bar.innerHTML = '';
+  }
+}
+
+async function loadTools() {
+  const payload = await api('/api/reports');
+  _reportsCache = payload; // shared cache for the Tools view
+  const { reports } = payload;
+  $('tools-list').innerHTML = reports.map(renderDocListItem).join('')
+    || '<li class="hint">No tool outputs yet.</li>';
+  $('tools-list').querySelectorAll('li[data-name]').forEach((li, idx) => {
+    const meta = reports[idx]?.meta || {};
+    li.dataset.kind = meta.kind || 'doc';
+    li.addEventListener('click', async (e) => {
+      if (e.target.closest('.entry-open')) return;
+      document.querySelectorAll('#tools-list li').forEach((x) => x.classList.remove('selected'));
+      li.classList.add('selected');
+      const r = await api(`/api/reports/${encodeURIComponent(li.dataset.name)}`);
+      renderDocBody($('tools-body'), { name: li.dataset.name, html: r.html, kind: 'reports' });
+      $('tools-body').dataset.name = li.dataset.name;
+    });
+  });
+  wireListFilter({ inputId: 'tools-filter', listId: 'tools-list', kind: 'reports' });
+  setToolsActiveTab(_toolsActiveTab);
+}
+
+document.addEventListener('click', (e) => {
+  const tabBtn = e.target.closest('#tools-tabs button[data-tooltab]');
+  if (tabBtn) {
+    e.preventDefault();
+    setToolsActiveTab(tabBtn.dataset.tooltab);
+  }
+});
+
 function fillAskChip(kind) {
   const ta = $('ask-prompt');
   if (!ta) return;
   const slug = (window.activeRoleSlug && window.activeRoleSlug()) || '<product>';
-  const selectedName =
-    document.querySelector('#reports-list li.selected')?.dataset.name || '';
   const prompts = {
-    replay: selectedName
-      ? `Replay the saved scan ${selectedName} with stricter filters: minimum engagement = 5, minimum score = 7. Compare kept vs dropped items.`
-      : 'Open the Content tab, select a saved scan, then re-click this chip to fill in the filename.',
     seo: 'Run an SEO audit on this URL: <paste URL>. Score title, description, headings, internal links, structured data, media alt text, technical signals, and LLM-readiness; suggest concrete rewrites.',
     cfp: `Find open Calls for Papers for ${slug} over the next 90 days. Prefer Sessionize / Pretalx / typeform-based CFPs over awards or "register interest" pages. Include deadline, audience fit, and submission URL.`,
     conf: `List upcoming developer-focused conferences in the next 6 months where ${slug} would land well — bias toward Linux Foundation events, KubeCon, language/runtime confs, and AI app-developer venues.`,

@@ -64,6 +64,10 @@ Usage:
                       [--mode cdp|launch]              (default: cdp)
                       [--port 9222]                    (cdp port)
                       [--days 30] [--max-per-term 25] [--headed]
+                      [--since YYYY-MM-DD] [--until YYYY-MM-DD]
+      --since/--until pin the scan to an exact date range (e.g. one
+      calendar month); the Google Web pass maps it to a precise
+      tbs=cdr:1,cd_min:…,cd_max:… filter. Default is a rolling --days window.
 
   node index.mjs login --platform x|linkedin|reddit|google    (LEGACY launch-mode only)
 
@@ -141,9 +145,27 @@ if (command === 'launch') {
     console.error(`No scout-config-${slug}.prompt.md found in .github/prompts/`);
     process.exit(1);
   }
-  console.log(`[browser-scan] Loaded config "${slug}" — ${config.searchTerms.length} search terms, ${days}d window, mode=${mode}`);
 
-  const sinceMs = Date.now() - days * 24 * 60 * 60 * 1000;
+  // Resolve the scan window. Default is a rolling [now - days, now].
+  // Optional --since / --until (YYYY-MM-DD) pin the window to an exact
+  // range — e.g. a specific calendar month — which the Google Web pass
+  // turns into a precise `tbs=cdr:1,cd_min:…,cd_max:…` filter.
+  const parseDate = (s, label) => {
+    const t = Date.parse(String(s));
+    if (Number.isNaN(t)) {
+      console.error(`--${label} is not a valid date: "${s}" (expected YYYY-MM-DD)`);
+      process.exit(1);
+    }
+    return t;
+  };
+  const untilMs = flags.until ? parseDate(flags.until, 'until') : Date.now();
+  const sinceMs = flags.since ? parseDate(flags.since, 'since') : (untilMs - days * 24 * 60 * 60 * 1000);
+
+  const windowNote = (flags.since || flags.until)
+    ? `${new Date(sinceMs).toISOString().slice(0, 10)}…${new Date(untilMs).toISOString().slice(0, 10)}`
+    : `${days}d window`;
+  console.log(`[browser-scan] Loaded config "${slug}" — ${config.searchTerms.length} search terms, ${windowNote}, mode=${mode}`);
+
   const stamp = formatStamp(new Date());
   const outDir = browserScanSlugDir(slug);
   fs.mkdirSync(outDir, { recursive: true });
@@ -200,6 +222,7 @@ if (command === 'launch') {
       const ctx = {
         searchTerms: config.searchTerms,
         sinceMs,
+        untilMs,
         maxPerTerm,
         slug,
         outDir,

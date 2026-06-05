@@ -1638,8 +1638,36 @@
       // plus any browser HTTP/1.1 connection-pool queueing, while still
       // failing fast enough that the user sees an actionable error instead
       // of a stuck card.
-      const data = await fetchJsonWithTimeout('/api/conversations?includeProduct=1', 15000);
+      const [data, itemsData] = await Promise.all([
+        fetchJsonWithTimeout('/api/conversations?includeProduct=1', 15000),
+        // Pull social-kind items in parallel so we can backfill the Pulse
+        // card when agents file Reddit/X/Bluesky/LinkedIn posts under
+        // "Community Projects & Tools" instead of "Conversations & Mentions".
+        // Without this, a Reddit project launch wouldn't surface here at
+        // all even though it's social activity from the user's POV.
+        fetchJsonWithTimeout('/api/items', 15000).catch(() => ({ items: [] })),
+      ]);
       const allEver = Array.isArray(data.conversations) ? data.conversations : [];
+      const SOCIAL_KINDS = new Set(['reddit', 'bluesky', 'x', 'linkedin']);
+      const convUrlSet = new Set(allEver.map((c) => (c.url || '').trim()).filter(Boolean));
+      const socialItems = (Array.isArray(itemsData.items) ? itemsData.items : [])
+        .filter((it) => SOCIAL_KINDS.has(it.kind))
+        .filter((it) => !convUrlSet.has((it.url || '').trim()))
+        .map((it) => ({
+          date: it.date || '',
+          platform: it.source || it.kind || 'Unknown',
+          author: it.author || '',
+          summary: it.title || '',
+          sentiment: 'unknown',
+          community: 'community',
+          communityRaw: '',
+          engagement: '',
+          url: it.url || '',
+          section: it.section || '',
+          report: it.report || '',
+          _fromItems: true,
+        }));
+      allEver.push(...socialItems);
       // Dashboard card is intentionally scoped to the most recent 30 days.
       // Anything older lives in the Conversations view, which has its own
       // searchable timeframe filter (30d / 90d / 6m / 1y / all time).
@@ -1755,11 +1783,18 @@
             const u = (x.url || (String(x.summary || '').match(_mdLeadingLink) || [])[2] || '').trim();
             return u && isValidPostUrl(u);
           };
+          // Show the *newest* sample, not whatever happened to be first in
+          // the API response. Without this sort the bucket order is stable
+          // across scans, so the same (often oldest) Reddit post stuck on the
+          // card run after run even when fresher chatter had arrived.
+          const byDateDesc = (x, y) => String(y.date || '').localeCompare(String(x.date || ''));
+          const communitySorted = [...b.community].sort(byDateDesc);
+          const productSorted = [...b.product].sort(byDateDesc);
           const sample =
-            b.community.find(withUrl) ||
-            b.product.find(withUrl) ||
-            b.community[0] ||
-            b.product[0];
+            communitySorted.find(withUrl) ||
+            productSorted.find(withUrl) ||
+            communitySorted[0] ||
+            productSorted[0];
           const prev = sample ? extractSamplePreview(sample) : { text: '', url: '' };
           const sampleHasUrl = !!prev.url && isValidPostUrl(prev.url);
           const sampleDot = sample
