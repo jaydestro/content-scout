@@ -38,6 +38,19 @@
         }
       });
     });
+    document.addEventListener('click', (e) => {
+      const reportBtn = e.target.closest?.('[data-open-report]');
+      if (reportBtn) {
+        e.preventDefault();
+        openReportInReportsView(reportBtn.dataset.openReport, reportBtn.dataset.reportTab || 'content');
+        return;
+      }
+      const tabBtn = e.target.closest?.('[data-open-report-tab]');
+      if (tabBtn) {
+        e.preventDefault();
+        openReportInReportsView('', tabBtn.dataset.openReportTab || 'content');
+      }
+    });
   }
 
   // --- Stats + subjects + stack ---
@@ -59,16 +72,116 @@
     } catch { /* keep defaults */ }
 
     const social = (reports.social || []);
-    const subjectCount = (configs.configs || []).length;
+    const configList = configs.configs || [];
+    const reportList = reports.reports || [];
+    const subjectCount = configList.length;
     renderStats(activity, subjectCount);
     renderActivity(activity);
-    renderSubjects({ configs: configs.configs || [], reports: reports.reports || [] });
-    renderSuggestions({ configs: configs.configs || [], reports: reports.reports || [], social });
+    renderSubjects({ configs: configList, reports: reportList });
+    renderSuggestions({ configs: configList, reports: reportList, social });
+    renderLatestReport(reportList);
+    renderAnalyticsSummary(reportList);
+    loadCfpEvents(configList);
     loadActionItems();
     // Social activity / sentiment / creators / source health are owned by
     // intel.js. Do not add loaders for #dash-social-activity, #dash-sentiment,
     // #dash-creators, or #dash-source-health here — two writers on the same
     // node will race and can leave "Loading…" stuck.
+  }
+
+  function openReportInReportsView(name, tab) {
+    const navBtn = document.querySelector('nav button[data-view="reports"]');
+    if (navBtn) navBtn.click();
+    setTimeout(() => {
+      const tabBtn = document.querySelector(`#reports-tabs button[data-tab="${tab}"]`);
+      if (tabBtn) tabBtn.click();
+      if (name) {
+        setTimeout(() => {
+          const row = document.querySelector(`#reports-list li[data-name="${CSS.escape(name)}"]`);
+          if (row) row.click();
+        }, 120);
+      }
+    }, 120);
+  }
+
+  function sortedByMtime(items) {
+    return [...(items || [])].sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''));
+  }
+
+  function renderLatestReport(reports) {
+    const body = $('dash-latest-report');
+    const meta = $('dash-latest-report-meta');
+    if (!body) return;
+    const latest = sortedByMtime(reports).find((r) => r.meta?.kind === 'content' || /-content\.md$/i.test(r.name));
+    if (!latest) {
+      body.innerHTML = '<p class="hint">No full reports yet. Run a scan to create the first one.</p>';
+      if (meta) meta.textContent = '';
+      return;
+    }
+    const m = latest.meta || {};
+    if (meta) meta.textContent = m.dateRange || relativeDay(latest.mtime);
+    body.innerHTML = `
+      <p><strong>${esc(m.title || latest.name)}</strong></p>
+      ${m.subjectLabel ? `<p class="hint">${esc(m.subjectLabel)}</p>` : ''}
+      ${m.summary ? `<p>${esc(m.summary)}</p>` : ''}
+      <div class="toolbar" style="margin-top:0.6rem">
+        <button type="button" data-open-report="${esc(latest.name)}" data-report-tab="content">Open full report</button>
+        <button type="button" data-goto="run" data-run-cmd="scout-scan">Run new scan</button>
+      </div>
+    `;
+  }
+
+  function renderAnalyticsSummary(reports) {
+    const body = $('dash-analytics-summary');
+    const meta = $('dash-analytics-meta');
+    if (!body) return;
+    const gaps = sortedByMtime(reports).find((r) => r.meta?.kind === 'gaps' || /-gaps\.md$/i.test(r.name));
+    const trends = sortedByMtime(reports).find((r) => r.meta?.kind === 'trends' || /-trends\.md$/i.test(r.name));
+    const lines = [];
+    if (gaps) {
+      lines.push(`<li><strong>Latest gaps:</strong> ${esc(gaps.meta?.summary || gaps.meta?.title || gaps.name)} <button type="button" data-open-report="${esc(gaps.name)}" data-report-tab="gaps">Open</button></li>`);
+    }
+    if (trends) {
+      lines.push(`<li><strong>Latest trends:</strong> ${esc(trends.meta?.summary || trends.meta?.title || trends.name)} <button type="button" data-open-report="${esc(trends.name)}" data-report-tab="trends">Open</button></li>`);
+    }
+    if (meta) meta.textContent = [gaps ? 'gaps ready' : '', trends ? 'trends ready' : ''].filter(Boolean).join(' · ');
+    if (!lines.length) {
+      body.innerHTML = `<p class="hint">No gaps or trends reports yet.</p><div class="toolbar" style="margin-top:0.6rem"><button type="button" data-open-report-tab="gaps">Compute gaps</button><button type="button" data-open-report-tab="trends">Compute trends</button></div>`;
+      return;
+    }
+    body.innerHTML = `<ul class="dash-compact-list">${lines.join('')}</ul>`;
+  }
+
+  async function loadCfpEvents(configs) {
+    const body = $('dash-cfp-events');
+    const meta = $('dash-cfp-meta');
+    if (!body) return;
+    const slug = configs[0]?.slug || (window.activeRoleSlug && window.activeRoleSlug()) || '';
+    if (!slug) {
+      body.innerHTML = '<p class="hint">Add a subject to track CFPs and events.</p>';
+      if (meta) meta.textContent = '';
+      return;
+    }
+    try {
+      const data = await fetchJSON(`/api/cfp-conferences?slug=${encodeURIComponent(slug)}`);
+      const cfps = (data.cfps || []).slice(0, 3);
+      const conferences = (data.conferences || []).slice(0, 3);
+      const rows = [];
+      for (const c of cfps) {
+        const url = c.cfp || c.site || '';
+        rows.push(`<li><strong>${esc(c.name || 'CFP')}</strong>${c.dateLoc ? ` <span class="hint">${esc(c.dateLoc)}</span>` : ''}${url ? ` <a href="${esc(url)}" target="_blank" rel="noopener">Submit</a>` : ''}</li>`);
+      }
+      for (const c of conferences) {
+        rows.push(`<li><strong>${esc(c.name || 'Event')}</strong>${c.dates ? ` <span class="hint">${esc(c.dates)}</span>` : ''}${c.location ? ` <span class="hint">${esc(c.location)}</span>` : ''}</li>`);
+      }
+      if (meta) meta.textContent = `${cfps.length} CFP${cfps.length === 1 ? '' : 's'} · ${conferences.length} event${conferences.length === 1 ? '' : 's'}`;
+      body.innerHTML = rows.length
+        ? `<ul class="dash-compact-list">${rows.join('')}</ul><div class="toolbar" style="margin-top:0.6rem"><button type="button" data-open-report-tab="cfp">Open CFPs &amp; Events</button></div>`
+        : `<p class="hint">No current CFPs or events found for <code>${esc(slug)}</code>.</p><div class="toolbar" style="margin-top:0.6rem"><button type="button" data-open-report-tab="cfp">Open CFPs &amp; Events</button></div>`;
+    } catch (err) {
+      body.innerHTML = `<p class="hint">Couldn\u2019t load CFPs/events: ${esc(err.message || err)}</p>`;
+      if (meta) meta.textContent = '';
+    }
   }
 
   function renderStats(activity, subjectCount) {
@@ -310,10 +423,23 @@
       </li>
     `).join('');
 
+    // The Run (Scan) view only drives /scout-scan; its <select> has no
+    // option for other commands, so setting sel.value = 'scout-calendar'
+    // silently fails and leaves it on scan. Each non-scan command lives in
+    // its owning view — launch it via the wired [data-launch-cmd] modal
+    // button when one exists, else just navigate to that view.
+    const cmdView = {
+      'scout-post': 'social',
+      'scout-calendar': 'social',
+      'scout-gaps': 'reports',
+      'scout-trends': 'reports',
+      'scout-seo': 'tools',
+      'scout-creators': 'conversations',
+    };
     ul.querySelectorAll('.suggestion-act').forEach((btn) => {
       btn.addEventListener('click', () => {
         const t = tips[Number(btn.dataset.i)];
-        if (t.runCmd) {
+        if (t.runCmd === 'scout-scan') {
           const sel = $('run-command');
           if (sel) { sel.value = t.runCmd; sel.dispatchEvent(new Event('change', { bubbles: true })); }
           if (t.slug) {
@@ -323,6 +449,12 @@
             if (card) { card.checked = true; card.dispatchEvent(new Event('change', { bubbles: true })); }
           }
           const navBtn = document.querySelector('nav button[data-view="run"]');
+          if (navBtn) navBtn.click();
+        } else if (t.runCmd) {
+          const launchBtn = document.querySelector(`[data-launch-cmd="${t.runCmd}"]`);
+          if (launchBtn) { launchBtn.click(); return; }
+          const view = cmdView[t.runCmd];
+          const navBtn = view && document.querySelector(`nav button[data-view="${view}"]`);
           if (navBtn) navBtn.click();
         } else if (t.nav) {
           const navBtn = document.querySelector(`nav button[data-view="${t.nav}"]`);
