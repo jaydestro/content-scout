@@ -358,6 +358,10 @@ aside li[data-name] {
   gap: 0.5rem;
   cursor: pointer;
 }
+
+aside li[data-name][hidden] {
+  display: none !important;
+}
 aside li[data-name] .entry-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -385,6 +389,10 @@ aside li[data-name] .entry-open:hover {
 aside li[data-name]:has(.entry-row) {
   display: block;
   padding: 0.55rem 0.85rem 0.6rem;
+}
+
+aside li[data-name][hidden]:has(.entry-row) {
+  display: none !important;
 }
 aside li[data-name] .entry-row {
   display: flex;

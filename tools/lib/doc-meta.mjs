@@ -16,7 +16,7 @@ const KIND_TABLE = [
   { match: /-solo-[^.]*\.md$/i,               id: 'social-solo',  label: 'Solo post' },
   { match: /-social-posts\.md$/i,             id: 'social-bulk',  label: 'Social posts' },
   // reports/
-  { match: /-content\.md$/i,                  id: 'content',      label: 'Scan' },
+  { match: /-content\.md$/i,                  id: 'content',      label: 'Full Report' },
   { match: /-mindshare\.md$/i,                id: 'mindshare',    label: 'Mindshare' },
   { match: /-supplemental\.md$/i,             id: 'supplemental', label: 'Supplemental' },
   { match: /-trends\.md$/i,                   id: 'trends',       label: 'Trends' },
@@ -108,6 +108,24 @@ function extractDateRange(raw) {
   return '';
 }
 
+// Detect which special H2 sections a (scan) report contains so the web UI's
+// Mindshare / CFPs & Events tabs can filter the list down to only reports
+// that actually carry that section — instead of listing every content report
+// and making the user click through to find one. Mirrors the client-side
+// TAB_SECTION_MATCH regexes in app.js.
+const SECTION_MATCHERS = {
+  mindshare: /^#{2,3}\s+mindshare\b/im,
+  cfp: /^#{2,3}\s+(open calls for papers|cfps?\b|calls? for papers\b|conferences?\b|conference content\b)/im,
+};
+
+function extractSectionFlags(raw) {
+  const text = String(raw || '');
+  return {
+    mindshare: SECTION_MATCHERS.mindshare.test(text),
+    cfp: SECTION_MATCHERS.cfp.test(text),
+  };
+}
+
 // Combine everything into the shape the web UI / API rely on.
 export function extractDocMeta(raw, name) {
   const kind = detectKind(name);
@@ -125,5 +143,6 @@ export function extractDocMeta(raw, name) {
     time: file.time || '',
     summary,
     dateRange,
+    sections: extractSectionFlags(raw),
   };
 }

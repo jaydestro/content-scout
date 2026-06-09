@@ -2898,7 +2898,7 @@ $('cmd-modal-copy')?.addEventListener('click', async () => {
 // and (for queries >= 2 chars) calls /api/search to mark/show files whose
 // CONTENT matches even when the name doesn't. Idempotent: safe to call
 // every time the list is rebuilt.
-function wireListFilter({ inputId, listId, kind }) {
+function wireListFilter({ inputId, listId, kind, includeItem }) {
   const input = $(inputId);
   const list = $(listId);
   if (!input || !list) return;
@@ -2918,7 +2918,8 @@ function wireListFilter({ inputId, listId, kind }) {
       const haystack = [name, titleEl?.textContent || '', summaryEl?.textContent || '']
         .join(' ')
         .toLowerCase();
-      const matchName = !q || haystack.includes(q);
+      const allowed = typeof includeItem === 'function' ? includeItem(li) : true;
+      const matchName = allowed && (!q || haystack.includes(q));
       li.hidden = !matchName;
       li.classList.remove('content-match');
       if (matchName) visible++;
@@ -2937,6 +2938,7 @@ function wireListFilter({ inputId, listId, kind }) {
         files.forEach((f) => {
           const li = list.querySelector(`li[data-name="${CSS.escape(f.name)}"]`);
           if (!li) return;
+          if (typeof includeItem === 'function' && !includeItem(li)) return;
           if (li.hidden) {
             li.hidden = false;
             visible++;
@@ -3013,21 +3015,80 @@ function escapeAttr(s) {
 }
 
 // --- Reports view: tabbed IA ---------------------------------------
-// Top-level tabs pick which *kind* of report the list shows (Scans /
-// Mindshare / Trends / Gaps). Each /scout-scan now produces ONE
-// consolidated scan report that contains the Mindshare, CFPs, and
-// Conferences sections inline — so those are no longer separate docs or
-// separate top-level tabs. Instead, when a scan report is open, an
-// in-doc section nav (All · Mindshare · CFPs · Conferences) scrolls the
-// body to the matching heading. The same `##` headings exist in the raw
-// markdown, so the doc stays navigable in a plain editor (parity).
-const REPORTS_TABS = ['content', 'mindshare', 'trends', 'gaps'];
-const TAB_TO_KIND = {
-  content: ['content'],
-  mindshare: ['mindshare'],
-  trends: ['trends'],
-  gaps: ['gaps'],
+// Top-level tabs pick which *part* of the saved reports the panel shows.
+// Each /scout-scan produces ONE consolidated scan report that contains
+// Mindshare, CFPs, and Conferences sections inline. Rather than burying
+// those behind an in-doc section nav (confusing — looked like the doc
+// had hidden tabs), each section now gets its own top-level tab:
+//   • Full Report — the complete scan report, unsliced.
+//   • Mindshare — only the "## Mindshare" section of the open report
+//                 (plus any standalone monthly mindshare docs, shown whole).
+//   • CFPs & Events — only the CFP + Conferences sections of the report.
+//   • Trends / Gaps — computed analytics (compute-on-demand).
+// The same `##` headings still exist in the raw markdown, so the doc
+// stays fully navigable in a plain editor (parity).
+const REPORTS_TABS = ['content', 'mindshare', 'cfp', 'trends', 'gaps'];
+// When one of these tabs is active and a *scan* (content-kind) report is
+// opened, render only the matching `## ` section(s) instead of the whole
+// doc. Standalone docs of the tab's own kind (e.g. a -mindshare.md file)
+// are always shown whole.
+const TAB_SECTION_MATCH = {
+  mindshare: /^mindshare\b/i,
+  cfp: /^(open calls for papers|cfps?\b|calls? for papers\b|conferences?\b)/i,
 };
+
+// Does a report list row belong under `tab`? Scan (content) reports only
+// appear under Mindshare / CFPs & Events when they actually carry that
+// section (flagged server-side via meta.sections → li.dataset.has*). This
+// keeps each tab's list honest instead of repeating every scan everywhere.
+function rowMatchesTab(li, tab) {
+  const kind = li.dataset.kind || '';
+  switch (tab) {
+    case 'content':
+      return kind === 'content';
+    case 'mindshare':
+      return kind === 'mindshare'
+        || (kind === 'content' && li.dataset.hasMindshare === '1');
+    case 'cfp':
+      return kind === 'cfp' || kind === 'conference'
+        || (kind === 'content' && li.dataset.hasCfp === '1');
+    case 'trends':
+      return kind === 'trends';
+    case 'gaps':
+      return kind === 'gaps';
+    default:
+      return false;
+  }
+}
+
+function setReportsRowTabBadge(li, tab, match) {
+  const badge = li.querySelector('.entry-kind');
+  if (!badge) return;
+  if (!li.dataset.baseKindLabel) li.dataset.baseKindLabel = badge.textContent.trim();
+  if (!match) {
+    badge.textContent = li.dataset.baseKindLabel;
+    return;
+  }
+
+  let label = li.dataset.baseKindLabel;
+  let kindClass = `kind-${li.dataset.kind || 'doc'}`;
+  if (tab === 'content' && li.dataset.kind === 'content') {
+    label = 'Full Report';
+    kindClass = 'kind-content';
+  } else if (tab === 'mindshare' && (li.dataset.kind === 'content' || li.dataset.kind === 'mindshare')) {
+    label = 'Mindshare';
+    kindClass = 'kind-mindshare';
+  } else if (tab === 'cfp' && ['content', 'cfp', 'conference'].includes(li.dataset.kind || '')) {
+    label = 'CFPs & Events';
+    kindClass = 'kind-cfp';
+  }
+  badge.textContent = label;
+  for (const cls of [...badge.classList]) {
+    if (cls.startsWith('kind-')) badge.classList.remove(cls);
+  }
+  badge.classList.add(kindClass);
+}
+
 // In-doc sections of a consolidated scan report, matched against the
 // rendered <h2>/<h3> heading text. `all` jumps back to the top.
 const REPORT_SECTIONS = [
@@ -3038,6 +3099,54 @@ const REPORT_SECTIONS = [
 ];
 let _reportsActiveTab = 'content';
 let _reportsCache = null; // last /api/reports payload (so tab switches don't re-fetch)
+const _reportsAutoComputed = new Set(); // "tab:slug" keys — one auto-compute attempt per analytics tab+subject
+
+// The active subject slug for analytics (Trends / Gaps) and other slug-aware
+// actions. Resolves, in order: the Scan view's subject picker, then the
+// dominant subject among the loaded reports (so the Reports view works even
+// when the Scan form was never touched). Previously this global was never
+// defined, so every caller fell back to '' and Trends/Gaps produced empty,
+// subject-less reports.
+window.activeRoleSlug = function activeRoleSlug() {
+  const picked = (($('run-slug') && $('run-slug').value) || '').trim();
+  if (picked) return picked;
+  const reports = (_reportsCache && _reportsCache.reports) || [];
+  const counts = new Map();
+  for (const r of reports) {
+    const s = (r.meta && r.meta.subject) || '';
+    if (s) counts.set(s, (counts.get(s) || 0) + 1);
+  }
+  let best = '';
+  let bestN = 0;
+  for (const [s, n] of counts) {
+    if (n > bestN) { best = s; bestN = n; }
+  }
+  return best;
+};
+
+// Slice a rendered report's HTML down to the `## ` section(s) whose heading
+// matches `regex`, returning the matched headings + their content. Returns
+// '' when no section matches. Used to give Mindshare / CFPs & Events tabs a
+// focused view of a consolidated scan report.
+function extractSectionsHtml(fullHtml, regex) {
+  if (!fullHtml || !regex) return '';
+  const tpl = document.createElement('template');
+  tpl.innerHTML = fullHtml;
+  const nodes = Array.from(tpl.content.childNodes);
+  const out = [];
+  let capturing = false;
+  for (const node of nodes) {
+    const isH2 = node.nodeType === 1 && node.tagName === 'H2';
+    if (isH2) {
+      capturing = regex.test((node.textContent || '').trim());
+    }
+    if (capturing) out.push(node);
+  }
+  if (!out.length) return '';
+  const wrap = document.createElement('div');
+  out.forEach((n) => wrap.appendChild(n.cloneNode(true)));
+  return wrap.innerHTML;
+}
 
 function setReportsActiveTab(tab) {
   if (!REPORTS_TABS.includes(tab)) tab = 'content';
@@ -3105,29 +3214,86 @@ function scrollReportToSection(key) {
   );
 }
 
+// Open a report list row, rendering either the whole doc (Full Report, or a
+// standalone doc of the tab's own kind) or just the tab's matching section(s)
+// (Mindshare / CFPs & Events on a consolidated scan report).
+async function openReportRow(li) {
+  if (!li) return;
+  document.querySelectorAll('#reports-list li').forEach((x) => x.classList.remove('selected'));
+  li.classList.add('selected');
+  const name = li.dataset.name;
+  const kind = li.dataset.kind || '';
+  const body = $('reports-body');
+  const sectionRe = TAB_SECTION_MATCH[_reportsActiveTab];
+  const r = await api(`/api/reports/${encodeURIComponent(name)}`);
+  // Slice to a section only for scan (content-kind) reports under a
+  // section tab. Standalone docs of the tab's own kind render whole.
+  if (sectionRe && kind === 'content') {
+    const sliced = extractSectionsHtml(r.html, sectionRe);
+    if (sliced) {
+      const label = _reportsActiveTab === 'cfp' ? 'CFPs & Events' : 'Mindshare';
+      renderDocBody(body, {
+        name,
+        html: `<p class="hint">${escape(label)} section of <code>${escape(name)}</code> — open the <strong>Full Report</strong> tab for the full report.</p>${sliced}`,
+        kind: 'reports',
+      });
+    } else {
+      body.innerHTML = `<p class="hint">This scan report has no ${_reportsActiveTab === 'cfp' ? 'CFP/Conferences' : 'Mindshare'} section. Open the <strong>Full Report</strong> tab for the full report.</p>`;
+    }
+  } else {
+    // Full Report tab (and standalone docs of a tab's own kind): render the whole
+    // report. The Full Report tab intentionally shows the complete scan, including
+    // its Mindshare / CFP sections — those also get a focused view under their
+    // own tabs, but the full report stays intact here.
+    renderDocBody(body, { name, html: r.html, kind: 'reports' });
+  }
+  body.dataset.name = name;
+  // The in-doc section nav is retired now that sections have their own
+  // tabs; keep it hidden to avoid duplicate, confusing navigation.
+  const nav = $('reports-section-nav');
+  if (nav) { nav.hidden = true; nav.innerHTML = ''; }
+}
+
 function applyReportsTabFilter() {
-  const kinds = TAB_TO_KIND[_reportsActiveTab];
-  if (!kinds) return;
   const lis = document.querySelectorAll('#reports-list li[data-name]');
   let firstVisible = null;
   let visibleCount = 0;
   lis.forEach((li) => {
-    const k = li.dataset.kind || '';
-    const match = kinds.includes(k);
+    const match = rowMatchesTab(li, _reportsActiveTab);
+    setReportsRowTabBadge(li, _reportsActiveTab, match);
     li.hidden = !match;
     if (match) {
       visibleCount += 1;
       if (!firstVisible) firstVisible = li;
     }
   });
-  // If the currently-selected row is hidden, auto-select the first visible.
+  // Always (re)render the active row through openReportRow so the per-tab
+  // section slice is applied — even when the same row stays selected across
+  // a tab switch (e.g. a scan report shown full under Full Report, then sliced to
+  // its Mindshare section under Mindshare).
   const selected = document.querySelector('#reports-list li.selected');
-  if ((!selected || selected.hidden) && firstVisible) firstVisible.click();
-  // If no rows match, clear the article body with a helpful message.
-  if (visibleCount === 0) {
+  const target = selected && !selected.hidden ? selected : firstVisible;
+  if (visibleCount > 0 && target) {
+    openReportRow(target);
+  } else if (visibleCount === 0) {
+    // No rows match. For analytics tabs, auto-compute once so the tab does
+    // something useful instead of sitting empty; otherwise show a hint.
     const body = $('reports-body');
-    if (body) {
-      body.innerHTML = `<p class="hint">No <strong>${escapeAttr(_reportsActiveTab)}</strong> reports yet. Use the action bar above to compute one, or run the matching <code>/scout-${_reportsActiveTab}</code> command in an agent chat.</p>`;
+    if ((_reportsActiveTab === 'trends' || _reportsActiveTab === 'gaps')) {
+      const slug = (window.activeRoleSlug && window.activeRoleSlug()) || '';
+      const key = `${_reportsActiveTab}:${slug}`;
+      if (slug && !_reportsAutoComputed.has(key)) {
+        _reportsAutoComputed.add(key);
+        if (body) body.innerHTML = `<p class="hint">Computing ${escape(_reportsActiveTab)}…</p>`;
+        computeAnalytics(_reportsActiveTab);
+        return;
+      }
+      if (body) {
+        body.innerHTML = `<p class="hint">No <strong>${escapeAttr(_reportsActiveTab)}</strong> reports yet${slug ? '' : ' — pick a subject in the header first'}. Use the action bar above to compute one.</p>`;
+        delete body.dataset.name;
+      }
+    } else if (body) {
+      body.innerHTML = `<p class="hint">No <strong>${escapeAttr(_reportsActiveTab)}</strong> content yet. Run <code>/scout-scan</code> to populate it.</p>`;
       delete body.dataset.name;
     }
   }
@@ -3155,9 +3321,11 @@ function renderReportsActionBar(tab) {
     `;
     $('btn-gaps-compute')?.addEventListener('click', () => computeAnalytics('gaps'));
   } else if (tab === 'content') {
-    bar.innerHTML = `<span class="hint">Browse saved scan reports. Each scan is one consolidated doc — use the section nav (All · Mindshare · CFPs · Conferences) to jump within it. New scans land here automatically after <code>/scout-scan</code> completes.</span>`;
+    bar.innerHTML = `<span class="hint">The complete scan report. Its Mindshare and CFPs &amp; Events sections also get a focused view under their own tabs. New scans land here after <code>/scout-scan</code> completes.</span>`;
   } else if (tab === 'mindshare') {
-    bar.innerHTML = `<span class="hint">Browse standalone monthly mindshare reports. Per-scan mindshare lives inside each scan report's Mindshare section.</span>`;
+    bar.innerHTML = `<span class="hint">Mindshare only — the Mindshare section of each scan report, plus any standalone monthly mindshare docs.</span>`;
+  } else if (tab === 'cfp') {
+    bar.innerHTML = `<span class="hint">CFPs &amp; Events only — the Calls for Papers and Conferences sections of each scan report.</span>`;
   } else {
     bar.innerHTML = '';
   }
@@ -3317,18 +3485,23 @@ async function loadReports() {
   $('reports-list').querySelectorAll('li[data-name]').forEach((li, idx) => {
     const meta = reports[idx]?.meta || {};
     li.dataset.kind = meta.kind || 'doc';
-    li.addEventListener('click', async (e) => {
+    // Stamp which special sections this report carries so the Mindshare /
+    // CFPs & Events tabs can list only reports that actually have them.
+    const sections = meta.sections || {};
+    li.dataset.hasMindshare = sections.mindshare ? '1' : '';
+    li.dataset.hasCfp = sections.cfp ? '1' : '';
+    li.addEventListener('click', (e) => {
       // Don't hijack clicks on the "open in new window" link.
       if (e.target.closest('.entry-open')) return;
-      document.querySelectorAll('#reports-list li').forEach((x) => x.classList.remove('selected'));
-      li.classList.add('selected');
-      const r = await api(`/api/reports/${encodeURIComponent(li.dataset.name)}`);
-      renderDocBody($('reports-body'), { name: li.dataset.name, html: r.html, kind: 'reports' });
-      $('reports-body').dataset.name = li.dataset.name;
-      buildReportSectionNav(li.dataset.kind);
+      openReportRow(li);
     });
   });
-  wireListFilter({ inputId: 'reports-filter', listId: 'reports-list', kind: 'reports' });
+  wireListFilter({
+    inputId: 'reports-filter',
+    listId: 'reports-list',
+    kind: 'reports',
+    includeItem: (li) => rowMatchesTab(li, _reportsActiveTab),
+  });
   // Apply tab filter + open the first matching row.
   setReportsActiveTab(_reportsActiveTab);
 }
