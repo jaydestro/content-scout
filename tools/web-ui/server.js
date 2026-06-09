@@ -16,6 +16,7 @@ import { describeImage, formatVisionReport, probeVision, getVisionProvider } fro
 import { reviewSentiment, probeSentiment, getSentimentProvider } from './lib/sentiment-review.js';
 import { searchCorpus } from '../lib/corpus-search.mjs';
 import { extractDocMeta } from '../lib/doc-meta.mjs';
+import { responseCache } from '../lib/response-cache.mjs';
 import {
   runGaps,
   runTrends,
@@ -557,6 +558,14 @@ app.use(createSuggestionsRouter({ repoRoot: REPO_ROOT }));
 // so any save invalidates the entry automatically.
 const docMetaCache = new Map();
 
+function clearArtifactResponseCaches() {
+  responseCache.clear('reports:');
+  responseCache.clear('activity:');
+  responseCache.clear('markdown:');
+  responseCache.clear('thumbs:');
+  responseCache.clear('search:');
+}
+
 async function readDocMeta(fullPath, mtimeMs, name) {
   const key = `${fullPath}:${mtimeMs}`;
   const hit = docMetaCache.get(key);
@@ -585,6 +594,9 @@ async function readDocMeta(fullPath, mtimeMs, name) {
 }
 
 async function listMarkdownFiles(dir) {
+  const cacheKey = `markdown:${dir}`;
+  const cached = responseCache.get(cacheKey);
+  if (cached) return cached;
   try {
     const files = (await fs.readdir(dir)).filter((f) => f.endsWith('.md'));
     // Stat + meta-parse in parallel — directory may have 100+ entries and a
@@ -608,9 +620,11 @@ async function listMarkdownFiles(dir) {
         }
       })
     );
-    return stats
+    const out = stats
       .filter(Boolean)
       .sort((a, b) => b.mtime.localeCompare(a.mtime));
+    responseCache.set(cacheKey, out, 30_000);
+    return out;
   } catch {
     return [];
   }
@@ -1139,10 +1153,14 @@ app.delete('/api/configs/:slug', async (req, res) => {
 });
 
 app.get('/api/reports', async (_req, res) => {
-  res.json({
+  const cached = responseCache.get('reports:all');
+  if (cached) return res.json(cached);
+  const payload = {
     reports: await listMarkdownFiles(REPORTS_DIR),
     social: await listMarkdownFiles(SOCIAL_DIR),
-  });
+  };
+  responseCache.set('reports:all', payload, 30_000);
+  res.json(payload);
 });
 
 // Convenience alias: just the social-posts/ markdown files.
@@ -1156,6 +1174,8 @@ app.get('/api/social', async (_req, res) => {
 // directory. Skips the brand/logo asset folder. Used by /api/activity so
 // the dashboard can show "thumbnails generated" alongside reports + posts.
 async function listThumbnailBatches() {
+  const cached = responseCache.get('thumbs:batches');
+  if (cached) return cached;
   const root = path.join(SOCIAL_DIR, 'images');
   let entries = [];
   try {
@@ -1180,7 +1200,9 @@ async function listThumbnailBatches() {
     } catch {}
     out.push({ batch: ent.name, count: pngs.length, mtime });
   }
-  return out.sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''));
+  const sorted = out.sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''));
+  responseCache.set('thumbs:batches', sorted, 30_000);
+  return sorted;
 }
 
 // Unified dashboard feed: real totals + a single time-sorted activity stream
@@ -1188,6 +1210,8 @@ async function listThumbnailBatches() {
 // recent runs. The "doesn't truly represent what's been done" complaint is
 // solved here — no more cards-of-counts that ignore half the work.
 app.get('/api/activity', async (_req, res) => {
+  const cached = responseCache.get('activity:all');
+  if (cached) return res.json(cached);
   const [reportFiles, socialFiles, thumbBatches] = await Promise.all([
     listMarkdownFiles(REPORTS_DIR),
     listMarkdownFiles(SOCIAL_DIR),
@@ -1288,7 +1312,9 @@ app.get('/api/activity', async (_req, res) => {
 
   // Cap the rendered timeline. The full counts still surface in the meta line
   // and stat cards; the card itself stays a digestible glance, not a feed.
-  res.json({ totals, last, activity: stream.slice(0, 10) });
+  const payload = { totals, last, activity: stream.slice(0, 10) };
+  responseCache.set('activity:all', payload, 30_000);
+  res.json(payload);
 });
 
 // --- Action items: parse the latest content report per subject ----
@@ -2653,6 +2679,9 @@ app.get('/api/search', async (req, res) => {
   try {
     const q = String(req.query.q || '').trim();
     if (!q) return res.json({ q, items: [], conversations: [], reports: [], authors: [] });
+    const cacheKey = `search:${q.toLowerCase()}`;
+    const cached = responseCache.get(cacheKey);
+    if (cached) return res.json(cached);
     const idx = await getIndex();
     const needle = q.toLowerCase();
     const closed = await loadClosed(REPORTS_DIR);
@@ -2692,7 +2721,7 @@ app.get('/api/search', async (req, res) => {
     } catch {
       fileHits = [];
     }
-    res.json({
+    const payload = {
       q,
       items: itemHits,
       conversations: convoHits,
@@ -2700,7 +2729,9 @@ app.get('/api/search', async (req, res) => {
       authors: authorHits,
       files: fileHits,
       builtAt: idx.builtAt,
-    });
+    };
+    responseCache.set(cacheKey, payload, 30_000);
+    res.json(payload);
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
   }
@@ -4105,6 +4136,9 @@ app.get('/api/analytics/gaps', async (req, res) => {
   try {
     const slug = String(req.query.slug || '');
     const windowDays = Math.max(1, Math.min(365, parseInt(req.query.windowDays, 10) || 30));
+    const cacheKey = `analytics:gaps:${slug}:${windowDays}`;
+    const cached = responseCache.get(cacheKey);
+    if (cached) return res.json(cached);
     const idx = await getIndex();
     let configRaw = '';
     if (slug && isValidSlug(slug)) {
@@ -4112,7 +4146,10 @@ app.get('/api/analytics/gaps', async (req, res) => {
     }
     const result = runGaps({ items: idx.items, configRaw, windowDays, slug });
     await fs.writeFile(path.join(REPORTS_DIR, result.fileName), result.markdown, 'utf8');
-    res.json({ ok: true, fileName: result.fileName, data: result.data });
+    clearArtifactResponseCaches();
+    const payload = { ok: true, fileName: result.fileName, data: result.data };
+    responseCache.set(cacheKey, payload, 60_000);
+    res.json(payload);
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
   }
@@ -4122,6 +4159,9 @@ app.get('/api/analytics/trends', async (req, res) => {
   try {
     const slug = String(req.query.slug || '');
     const months = Math.max(2, Math.min(12, parseInt(req.query.months, 10) || 4));
+    const cacheKey = `analytics:trends:${slug}:${months}`;
+    const cached = responseCache.get(cacheKey);
+    if (cached) return res.json(cached);
     const idx = await getIndex();
     const result = runTrends({
       items: idx.items,
@@ -4130,7 +4170,10 @@ app.get('/api/analytics/trends', async (req, res) => {
       slug,
     });
     await fs.writeFile(path.join(REPORTS_DIR, result.fileName), result.markdown, 'utf8');
-    res.json({ ok: true, fileName: result.fileName, data: result.data });
+    clearArtifactResponseCaches();
+    const payload = { ok: true, fileName: result.fileName, data: result.data };
+    responseCache.set(cacheKey, payload, 60_000);
+    res.json(payload);
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
   }
