@@ -8,10 +8,6 @@
 // sees ONE place for everything Layer-0 related when they pick
 // /scout-scan. No floating cards, no duplicate launch surfaces.
 //
-// On the Dashboard, a small "Browser scan" status card shows whether
-// Edge/Chrome is up on the CDP port and how many subjects have
-// sidecars on disk.
-//
 // All additive — does not touch app.js or dashboard-enhancer.js.
 
 (() => {
@@ -405,50 +401,6 @@
     }
   }
 
-  // ===== Dashboard mini-card ========================================
-
-  function ensureDashCard() {
-    if ($('bs-dash-card')) return;
-    const intel = $('dash-intel-cards');
-    if (!intel) return;
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.id = 'bs-dash-card';
-    card.innerHTML = `
-      <h3>Browser scan</h3>
-      <div id="bs-dash-body" class="skeleton-stack">
-        <div class="skeleton skeleton-line" style="width:70%"></div>
-        <div class="skeleton skeleton-line" style="width:55%"></div>
-        <div class="skeleton skeleton-line" style="width:80%"></div>
-      </div>
-    `;
-    intel.appendChild(card);
-  }
-
-  async function paintDashCard() {
-    ensureDashCard();
-    const body = $('bs-dash-body');
-    if (!body) return;
-    const [info, status] = await Promise.all([fetchInfo(), fetchStatus(true)]);
-    if (!info?.installed) {
-      body.innerHTML = `<span class="warn-text">tools/browser-scan/ not installed.</span>`;
-      return;
-    }
-    const recommended = info.recommended ? `${info.recommended.name}${info.recommended.notice ? ' (fallback)' : ''}` : '—';
-    const cdpLine = status?.cdp?.up
-      ? `<div>🟢 <strong>${esc(status.cdp.browser || 'browser')}</strong> running on CDP port ${status.port}</div>`
-      : `<div>⚪ No browser on CDP port. <a href="#run">Open the Run view</a> and pick /scout-scan to launch it.</div>`;
-    const slugCount = Object.keys(status?.sidecarsBySlug || {}).length;
-    const sidecarLine = slugCount
-      ? `<div>Sidecars for ${slugCount} subject${slugCount === 1 ? '' : 's'} on disk.</div>`
-      : `<div>No sidecars yet for any subject.</div>`;
-    body.innerHTML = `
-      ${cdpLine}
-      <div style="margin-top:0.25rem;">Default: <code>${esc(recommended)}</code></div>
-      ${sidecarLine}
-    `;
-  }
-
   // ===== Boot ========================================================
 
   function boot() {
@@ -472,12 +424,6 @@
       }
     });
 
-    // Dashboard mini-card.
-    const dashNav = document.querySelector('nav button[data-view="dashboard"]');
-    dashNav?.addEventListener('click', () => setTimeout(paintDashCard, 100));
-    if (location.hash === '' || location.hash === '#dashboard' || $('view-dashboard')?.classList.contains('active')) {
-      setTimeout(paintDashCard, 200);
-    }
   }
 
   if (document.readyState === 'loading') {
