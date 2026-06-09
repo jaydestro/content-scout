@@ -43,6 +43,27 @@ function reportDate(name) {
   return m ? m[1] : '';
 }
 
+function normalizeTrendTag(raw) {
+  return String(raw || '')
+    .replace(/[`*_]/g, '')
+    .trim()
+    .replace(/^#+/, '')
+    .replace(/\s+/g, '-')
+    .toLowerCase();
+}
+
+function trendTagParts(raw) {
+  return String(raw || '')
+    .split(/[,;\s]+/)
+    .map(normalizeTrendTag)
+    .filter(Boolean);
+}
+
+function displayTrendTag(tag) {
+  const clean = normalizeTrendTag(tag);
+  return clean ? `#${clean}` : '';
+}
+
 // --- 1. Gap analysis ----------------------------------------------------
 
 // inputs:
@@ -168,8 +189,9 @@ export function runTrends({ items = [], conversations = [], months = 4, slug = '
     b.items += 1;
     if (it.author) b.contributors.add(String(it.author).toLowerCase());
     for (const t of it.tags || []) {
-      const k = String(t).toLowerCase();
-      b.tags.set(k, (b.tags.get(k) || 0) + 1);
+      for (const k of trendTagParts(t)) {
+        b.tags.set(k, (b.tags.get(k) || 0) + 1);
+      }
     }
   }
   for (const c of conversations) {
@@ -208,6 +230,26 @@ export function runTrends({ items = [], conversations = [], months = 4, slug = '
   const declining = [...tagDeltas].sort((a, b) => a.delta - b.delta).filter((t) => t.delta < 0).slice(0, 10);
   const newTags = tagDeltas.filter((t) => t.previous === 0 && t.current > 0).slice(0, 10);
 
+  const latestRow = monthRows[monthRows.length - 1] || null;
+  const prevRow = monthRows.length >= 2 ? monthRows[monthRows.length - 2] : null;
+  const deltaPhrase = (label, current, previous) => {
+    const delta = current - previous;
+    if (delta === 0) return `${label} held flat at ${current}`;
+    return `${label} ${delta > 0 ? 'rose' : 'fell'} from ${previous} to ${current} (${delta > 0 ? '+' : ''}${delta})`;
+  };
+  const takeawayRows = [];
+  if (latestRow && prevRow) {
+    takeawayRows.push(deltaPhrase('Items', latestRow.items, prevRow.items));
+    takeawayRows.push(deltaPhrase('Conversations', latestRow.conversations, prevRow.conversations));
+    takeawayRows.push(deltaPhrase('Contributors', latestRow.contributors, prevRow.contributors));
+  }
+  if (rising[0]) {
+    takeawayRows.push(`Fastest-rising topic: ${displayTrendTag(rising[0].tag)} (${rising[0].previous} to ${rising[0].current}).`);
+  }
+  if (declining[0]) {
+    takeawayRows.push(`Fastest-declining topic: ${displayTrendTag(declining[0].tag)} (${declining[0].previous} to ${declining[0].current}).`);
+  }
+
   const stamp = STAMP();
   const fileName = slug
     ? `${stamp}-${slug}-trends.md`
@@ -228,7 +270,18 @@ export function runTrends({ items = [], conversations = [], months = 4, slug = '
     '',
     '## Summary',
     '',
-    `Items and conversations across the last ${months} months. Tag deltas compare the most recent month (${buckets[buckets.length - 1]}) against the prior month${prev ? ` (${buckets[buckets.length - 2]})` : ''}.`,
+    `This compares saved Content Scout artifacts by report month. The volume table shows the last ${months} months; tag movement compares the latest month (${buckets[buckets.length - 1]}) with the previous month${prev ? ` (${buckets[buckets.length - 2]})` : ''}. If the latest month is still in progress, treat it as a partial-month signal, not a final monthly total.`,
+    '',
+    '## How to read this',
+    '',
+    '- **Items** are report entries found in saved scans and imported artifacts.',
+    '- **Conversations** are social-listening rows with sentiment metadata.',
+    '- **Rising / declining tags** show topic movement from the previous month to the latest month after normalizing tag spelling.',
+    '- **New tags this month** are topics that appear in the latest month but did not appear in the previous month.',
+    '',
+    '## Key takeaways',
+    '',
+    takeawayRows.length ? takeawayRows.map((line) => `- ${line}`).join('\n') : '_Not enough month-over-month data to generate takeaways._',
     '',
     '## Month-over-month volume',
     '',
@@ -244,7 +297,7 @@ export function runTrends({ items = [], conversations = [], months = 4, slug = '
     '',
     rising.length
       ? fmtTable(rising, [
-          { label: 'Tag', get: (r) => r.tag },
+          { label: 'Tag', get: (r) => displayTrendTag(r.tag) },
           { label: 'Previous', get: (r) => r.previous },
           { label: 'Current', get: (r) => r.current },
           { label: 'Δ', get: (r) => `+${r.delta}` },
@@ -255,7 +308,7 @@ export function runTrends({ items = [], conversations = [], months = 4, slug = '
     '',
     declining.length
       ? fmtTable(declining, [
-          { label: 'Tag', get: (r) => r.tag },
+          { label: 'Tag', get: (r) => displayTrendTag(r.tag) },
           { label: 'Previous', get: (r) => r.previous },
           { label: 'Current', get: (r) => r.current },
           { label: 'Δ', get: (r) => r.delta },
@@ -266,7 +319,7 @@ export function runTrends({ items = [], conversations = [], months = 4, slug = '
     '',
     newTags.length
       ? fmtTable(newTags, [
-          { label: 'Tag', get: (r) => r.tag },
+          { label: 'Tag', get: (r) => displayTrendTag(r.tag) },
           { label: 'Items', get: (r) => r.current },
         ])
       : '_No new tags._',
@@ -276,7 +329,7 @@ export function runTrends({ items = [], conversations = [], months = 4, slug = '
   return {
     fileName,
     markdown: md,
-    data: { months: buckets, perMonth: monthRows, rising, declining, newTags },
+    data: { months: buckets, perMonth: monthRows, rising, declining, newTags, takeaways: takeawayRows },
   };
 }
 
