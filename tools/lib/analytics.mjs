@@ -64,6 +64,36 @@ function displayTrendTag(tag) {
   return clean ? `#${clean}` : '';
 }
 
+function canonicalTagSet(raw) {
+  const tags = parseTopicTagsFromConfig(raw).map(normalizeTrendTag).filter(Boolean);
+  return tags.length ? new Set(tags) : null;
+}
+
+function contentAngleForTag(tag) {
+  const clean = normalizeTrendTag(tag);
+  const specific = {
+    partitioning: 'Explain a real partition-key decision, including tradeoffs and failure modes.',
+    'data-modeling': 'Show an end-to-end model for a realistic app and why the shape works.',
+    'vector-search': 'Publish a practical retrieval example with code, data shape, and query behavior.',
+    'full-text-search': 'Compare full-text search with vector search and when to use each.',
+    'change-feed': 'Show an event-driven workflow built from change feed events.',
+    indexing: 'Walk through an indexing policy change and the performance/cost impact.',
+    'query-perf': 'Use a slow query example, diagnostics, and the fix.',
+    throughput: 'Explain capacity planning with a concrete workload and RU math.',
+    'global-dist': 'Show multi-region design choices and how they affect latency/failover.',
+    monitoring: 'Create an operations playbook for alerts, diagnostics, and investigation.',
+    integration: 'Show how Azure Cosmos DB fits into a common app architecture.',
+    migration: 'Document a migration path with risks, validation, and rollback steps.',
+    cost: 'Show cost controls with concrete settings and before/after estimates.',
+    architecture: 'Use a reference architecture with constraints, alternatives, and tradeoffs.',
+    'ai-agents': 'Build an agent memory/state example that uses Azure Cosmos DB clearly.',
+    emulator: 'Show a local development and test workflow using the emulator.',
+    security: 'Create a practical security checklist with identity, network, and data controls.',
+    release: 'Turn recent changes into a developer-focused "what changed and why it matters" post.',
+  };
+  return specific[clean] || `Create a practical, code-backed post that answers one developer question about ${displayTrendTag(clean)}.`;
+}
+
 // --- 1. Gap analysis ----------------------------------------------------
 
 // inputs:
@@ -73,6 +103,7 @@ function displayTrendTag(tag) {
 //   slug:       product slug (for filename + filtering items by report slug)
 export function runGaps({ items = [], configRaw = '', windowDays = 30, slug = '' }) {
   const allTags = parseTopicTagsFromConfig(configRaw);
+  const allowedTags = canonicalTagSet(configRaw);
   const cutoff = new Date(Date.now() - windowDays * 86400 * 1000)
     .toISOString()
     .slice(0, 10);
@@ -83,21 +114,32 @@ export function runGaps({ items = [], configRaw = '', windowDays = 30, slug = ''
   });
 
   const counts = new Map();
-  for (const tag of allTags) counts.set(tag.toLowerCase(), 0);
+  for (const tag of allTags) counts.set(normalizeTrendTag(tag), 0);
   for (const it of scoped) {
     for (const t of it.tags || []) {
-      const key = String(t).toLowerCase().trim();
-      if (counts.has(key)) counts.set(key, counts.get(key) + 1);
+      for (const key of trendTagParts(t)) {
+        if (allowedTags && !allowedTags.has(key)) continue;
+        if (counts.has(key)) counts.set(key, counts.get(key) + 1);
+      }
     }
   }
 
   const rows = allTags.map((tag) => ({
     tag,
-    count: counts.get(tag.toLowerCase()) || 0,
+    key: normalizeTrendTag(tag),
+    count: counts.get(normalizeTrendTag(tag)) || 0,
   }));
   rows.sort((a, b) => a.count - b.count || a.tag.localeCompare(b.tag));
   const gaps = rows.filter((r) => r.count === 0);
   const thin = rows.filter((r) => r.count > 0 && r.count <= 2);
+  const recommended = [...gaps, ...thin]
+    .slice(0, 8)
+    .map((r, index) => ({
+      priority: index + 1,
+      tag: r.tag,
+      coverage: r.count === 0 ? 'No recent coverage' : `${r.count} recent item${r.count === 1 ? '' : 's'}`,
+      action: contentAngleForTag(r.tag),
+    }));
 
   const stamp = STAMP();
   const fileName = slug
@@ -117,8 +159,25 @@ export function runGaps({ items = [], configRaw = '', windowDays = 30, slug = ''
     '## Summary',
     '',
     gaps.length
-      ? `${gaps.length} canonical topic${gaps.length === 1 ? '' : 's'} had **no coverage** in the window. ${thin.length} more had only 1–2 items. Prioritise the zero-coverage list for the next content cycle.`
+      ? `${gaps.length} configured Azure Cosmos DB topic${gaps.length === 1 ? '' : 's'} had **no coverage** in the window. ${thin.length} more had only 1-2 items. Use this as an editorial backlog, not as a performance score.`
       : `Every canonical topic had at least one item in the window. ${thin.length} were thinly covered (1–2 items).`,
+    '',
+    '## How to use this',
+    '',
+    '- **Zero coverage** means the configured topic did not appear in recent saved reports.',
+    '- **Thin coverage** means the topic appeared only once or twice and may need reinforcement.',
+    '- Use the recommendations below to pick the next blog, video, sample, or social explainer.',
+    '- Non-configured tags from old reports are ignored so unrelated topics do not pollute the backlog.',
+    '',
+    '## Recommended next content bets',
+    '',
+    recommended.length
+      ? [
+          '| Priority | Topic | Coverage | Suggested angle |',
+          '|---|---|---|---|',
+          ...recommended.map((r) => `| ${r.priority} | ${displayTrendTag(r.tag)} | ${r.coverage} | ${r.action} |`),
+        ].join('\n')
+      : '_No urgent content bets from this window._',
     '',
     '## Zero coverage',
     '',
@@ -150,6 +209,7 @@ export function runGaps({ items = [], configRaw = '', windowDays = 30, slug = ''
       gaps,
       thin,
       rows,
+      recommended,
     },
   };
 }
@@ -158,7 +218,8 @@ export function runGaps({ items = [], configRaw = '', windowDays = 30, slug = ''
 
 // Aggregate items + conversations by month from the index, scoped to one
 // product slug. Months parameter = how many months back to include (default 4).
-export function runTrends({ items = [], conversations = [], months = 4, slug = '' }) {
+export function runTrends({ items = [], conversations = [], months = 4, slug = '', configRaw = '' }) {
+  const allowedTags = canonicalTagSet(configRaw);
   const today = new Date();
   const buckets = [];
   for (let i = months - 1; i >= 0; i--) {
@@ -190,6 +251,7 @@ export function runTrends({ items = [], conversations = [], months = 4, slug = '
     if (it.author) b.contributors.add(String(it.author).toLowerCase());
     for (const t of it.tags || []) {
       for (const k of trendTagParts(t)) {
+        if (allowedTags && !allowedTags.has(k)) continue;
         b.tags.set(k, (b.tags.get(k) || 0) + 1);
       }
     }
@@ -249,6 +311,16 @@ export function runTrends({ items = [], conversations = [], months = 4, slug = '
   if (declining[0]) {
     takeawayRows.push(`Fastest-declining topic: ${displayTrendTag(declining[0].tag)} (${declining[0].previous} to ${declining[0].current}).`);
   }
+  const recommendedActions = [];
+  if (latestRow && prevRow && latestRow.items < prevRow.items) {
+    recommendedActions.push('Treat the latest month as partial unless the month is complete; do not call a demand drop from volume alone.');
+  }
+  for (const row of rising.slice(0, 3)) {
+    recommendedActions.push(`Double down on ${displayTrendTag(row.tag)} with a timely follow-up, demo, or explainer while interest is rising.`);
+  }
+  for (const row of declining.slice(0, 3)) {
+    recommendedActions.push(`Review ${displayTrendTag(row.tag)}: if it is strategically important, schedule a refresh or new practical example.`);
+  }
 
   const stamp = STAMP();
   const fileName = slug
@@ -276,12 +348,16 @@ export function runTrends({ items = [], conversations = [], months = 4, slug = '
     '',
     '- **Items** are report entries found in saved scans and imported artifacts.',
     '- **Conversations** are social-listening rows with sentiment metadata.',
-    '- **Rising / declining tags** show topic movement from the previous month to the latest month after normalizing tag spelling.',
+    '- **Rising / declining tags** show movement for configured canonical topics only, after normalizing tag spelling.',
     '- **New tags this month** are topics that appear in the latest month but did not appear in the previous month.',
     '',
     '## Key takeaways',
     '',
     takeawayRows.length ? takeawayRows.map((line) => `- ${line}`).join('\n') : '_Not enough month-over-month data to generate takeaways._',
+    '',
+    '## Recommended actions',
+    '',
+    recommendedActions.length ? recommendedActions.map((line) => `- ${line}`).join('\n') : '_No action recommended from the current movement._',
     '',
     '## Month-over-month volume',
     '',
@@ -329,7 +405,7 @@ export function runTrends({ items = [], conversations = [], months = 4, slug = '
   return {
     fileName,
     markdown: md,
-    data: { months: buckets, perMonth: monthRows, rising, declining, newTags, takeaways: takeawayRows },
+    data: { months: buckets, perMonth: monthRows, rising, declining, newTags, takeaways: takeawayRows, recommendedActions },
   };
 }
 

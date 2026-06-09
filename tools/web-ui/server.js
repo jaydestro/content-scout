@@ -4163,11 +4163,16 @@ app.get('/api/analytics/trends', async (req, res) => {
     const cached = responseCache.get(cacheKey);
     if (cached) return res.json(cached);
     const idx = await getIndex();
+    let configRaw = '';
+    if (slug && isValidSlug(slug)) {
+      try { configRaw = (await readConfig(slug)).raw; } catch { /* missing config — allow all parsed tags */ }
+    }
     const result = runTrends({
       items: idx.items,
       conversations: idx.conversations,
       months,
       slug,
+      configRaw,
     });
     await fs.writeFile(path.join(REPORTS_DIR, result.fileName), result.markdown, 'utf8');
     clearArtifactResponseCaches();
