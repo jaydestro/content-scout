@@ -39,7 +39,6 @@ Open the repo in your AI chat tool and run `/scout-onboard` (VS Code) or say "sc
 | `/scout-scan` | Scan for content — specify a topic slug or scan all |
 | `/scout-post` | Generate social posts from a URL or report item |
 | `/scout-calendar` | Create a weekly posting schedule |
-| `/scout-gaps` | Show topics with no recent coverage |
 | `/scout-trends` | Compare trends across months |
 
 Plus `/scout-creators`, `/scout-doctor`, `/scout-keys`, `/scout-seo`, `/scout-reddit-import`, `/scout-alt`, `/scout-vision` — see [docs/EDITORS.md](docs/EDITORS.md).

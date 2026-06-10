@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { runGaps, runTrends } from '../../lib/analytics.mjs';
+import { runTrends } from '../../lib/analytics.mjs';
 
 function monthOffset(offset) {
   const today = new Date();
@@ -56,24 +56,4 @@ test('runTrends ignores non-canonical historical tags when config is provided', 
   assert.equal(result.data.rising.some((row) => /documentdb/i.test(row.tag)), false);
   assert.match(result.markdown, /#architecture/);
   assert.doesNotMatch(result.markdown, /documentdb/i);
-});
-
-test('runGaps produces recommended content bets from canonical topics only', () => {
-  const currentMonth = monthOffset(0);
-  const configRaw = '## Topic Tags (Canonical)\n\narchitecture, vector-search\n\n## Output Files\n';
-  const result = runGaps({
-    windowDays: 365,
-    slug: 'azure-cosmos-db',
-    configRaw,
-    items: [
-      { report: reportName(currentMonth), author: 'A', tags: ['architecture'] },
-      { report: reportName(currentMonth), author: 'B', tags: ['oss-documentdb'] },
-    ],
-  });
-
-  assert.match(result.markdown, /## Recommended next content bets/);
-  assert.match(result.markdown, /#vector-search/);
-  assert.doesNotMatch(result.markdown, /documentdb/i);
-  assert.equal(result.data.rows.find((row) => row.tag === 'architecture')?.count, 1);
-  assert.equal(result.data.rows.find((row) => row.tag === 'vector-search')?.count, 0);
 });

@@ -423,7 +423,6 @@ aside li[data-name] .entry-kind {
 }
 aside li[data-name] .entry-kind.kind-mindshare    { background: rgba(34,197,94,0.14);  color: #bbf7d0; border-color: rgba(34,197,94,0.35); }
 aside li[data-name] .entry-kind.kind-trends       { background: rgba(245,158,11,0.14); color: #fde68a; border-color: rgba(245,158,11,0.35); }
-aside li[data-name] .entry-kind.kind-gaps         { background: rgba(244,114,182,0.14); color: #fbcfe8; border-color: rgba(244,114,182,0.35); }
 aside li[data-name] .entry-kind.kind-supplemental { background: rgba(148,163,184,0.16); color: #e2e8f0; border-color: rgba(148,163,184,0.35); }
 aside li[data-name] .entry-kind.kind-calendar     { background: rgba(56,189,248,0.14); color: #bae6fd; border-color: rgba(56,189,248,0.35); }
 aside li[data-name] .entry-kind.kind-social-solo  { background: rgba(168,85,247,0.14); color: #e9d5ff; border-color: rgba(168,85,247,0.35); }
@@ -3013,7 +3012,7 @@ a.help-dot {
 /* --- Reports view: tabbed IA ---------------------------------------
    Tab strip across the top of #view-reports; per-tab action bar lives
    directly under it; one shared list+article split is reused for all
-   "browse" tabs (content / mindshare / trends / gaps), while CFPs /
+   "browse" tabs (content / mindshare / trends), while CFPs /
    Conferences / Ask each render their own panel. */
 #view-reports .reports-tabs {
   display: flex;

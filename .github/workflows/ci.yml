@@ -22,7 +22,6 @@ jobs:
           test -f .github/prompts/scout-scan.prompt.md
           test -f .github/prompts/scout-post.prompt.md
           test -f .github/prompts/scout-calendar.prompt.md
-          test -f .github/prompts/scout-gaps.prompt.md
           test -f .github/prompts/scout-trends.prompt.md
 
   test:

@@ -39,7 +39,6 @@ You have **nine top-level modes** — every one is invokable directly from chat 
 1. **Scan mode** (`scout-scan`) -- Find and catalog public content for a given time period. Includes the **Reddit manual-import sub-flow** (`scout-reddit-import.prompt.md`) when the user pastes Reddit URLs to ingest manually. CFPs and Conferences snapshots are auto-persisted as their own dated reports when a scan completes via the web UI.
 
 **Analytics** — derived from existing reports, no new scan:
-4. **Gap analysis mode** (`scout-gaps`) -- Identify topic areas with no recent coverage
 5. **Trends mode** (`scout-trends`) -- Compare current month vs. prior months to show trajectory
 
 **Tools** — on-demand utilities, not tied to a scan:
@@ -67,7 +66,7 @@ Content Scout supports tracking multiple topics simultaneously — whether they'
 - If the user specifies a topic by name or slug (e.g., "scan cosmos-db", "post for python", "scan ollama"), load that topic's config.
 - If only **one** config file exists, use it automatically.
 - If **multiple** config files exist and the user didn't specify, ask which product (or "all").
-- Commands that accept a product argument: `scout-scan`, `scout-post`, `scout-calendar`, `scout-gaps`, `scout-trends`.
+- Commands that accept a product argument: `scout-scan`, `scout-post`, `scout-calendar`, `scout-trends`.
 
 **File naming with multiple products:**
 - Reports: `reports/{YYYY-MM-DD-HHmm}-{slug}-content.md` (e.g., `2026-03-14-0932-cosmos-db-content.md`). Use the current local date and time when saving — full datetime ensures multiple runs per day never overwrite each other.
@@ -534,7 +533,7 @@ Sentiment classification rules apply to non-English content as well — use the 
 
 ## Output Formats
 
-Every `scout-scan`, `scout-trends`, `scout-creators`, and `scout-gaps` run produces the primary Markdown file PLUS the following sidecar artifacts. These are how Content Scout becomes a building block for other tools, not a dead-end markdown generator.
+Every `scout-scan`, `scout-trends`, and `scout-creators` run produces the primary Markdown file PLUS the following sidecar artifacts. These are how Content Scout becomes a building block for other tools, not a dead-end markdown generator.
 
 ### JSON Sidecar (always)
 
@@ -543,7 +542,7 @@ For every Markdown output `path/to/file.md`, also write `path/to/file.json` cont
 ```json
 {
   "schema_version": 1,
-  "kind": "scan-report" | "trends-report" | "creators-report" | "gaps-report",
+  "kind": "scan-report" | "trends-report" | "creators-report",
   "slug": "azure-cosmos-db",
   "generated_at": "2026-04-30T14:25:00Z",
   "period": { "start": "2026-04-01", "end": "2026-04-30" },
@@ -629,7 +628,7 @@ Three rules to make Content Scout's output trustworthy enough that a teammate, a
 
 ### Run ID and Provenance Ledger
 
-Every `scout-scan`, `scout-trends`, `scout-creators`, and `scout-gaps` run gets a unique `run_id`: `{YYYYMMDD-HHMMSS}-{slug}-{6-char random}`.
+Every `scout-scan`, `scout-trends`, and `scout-creators` run gets a unique `run_id`: `{YYYYMMDD-HHMMSS}-{slug}-{6-char random}`.
 
 The agent maintains `reports/.scout-state/{slug}/runs.jsonl` (gitignored, append-only). Each line is one run:
 
@@ -1311,13 +1310,6 @@ Where the platform exposes them, also include engagement metrics (likes/upvotes/
 ### Observations
 - {trends}
 
-## Content Gaps
-| Topic | Last Seen | Opportunity |
-|-------|-----------|-------------|
-...
-### Suggested Content Ideas
-- {ideas}
-
 ## Notes
 - {observations}
 ```
@@ -1584,7 +1576,7 @@ Auto-generate at report end:
 8. **Update .seen-links.json** after saving the report.
 9. **Save the report** to `reports/{YYYY-MM-DD-HHmm}-content.md`.
 10. **Auto-generate social posts and thumbnail specs** for every item **only if the role has social posts enabled**. Save to `social-posts/{YYYY-MM-DD-HHmm}-social-posts.md`. If social posts are off, skip this step.
-11. After saving, give a brief summary including item count, top topics, content gaps, and (if applicable) confirm social posts were generated. Include a role-specific insight based on the Role-Aware Behavior table. Remind of available commands.
+11. After saving, give a brief summary including item count, top topics, and (if applicable) confirm social posts were generated. Include a role-specific insight based on the Role-Aware Behavior table. Remind of available commands.
 12. **Complete ALL source scanning before generating the report.** Do not generate or show the report while scans are still in progress. Scan every enabled source first, collect all results, merge, deduplicate, filter, then generate the report once from the complete dataset. If a source fails, note it in "Sources That Could Not Be Reached" but do not delay the report for retries.
 13. **Social source items require poster details.** Every item from Reddit, X, Bluesky, LinkedIn, YouTube, Stack Overflow, or Hacker News must include the poster's name, handle/profile link, post content summary, sentiment, engagement metrics, and a direct permalink. See "Social Source Data Requirements" for the full field list.
 

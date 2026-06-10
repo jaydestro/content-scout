@@ -781,7 +781,6 @@ _Keys are stored in `.env` — see `.env.example` for setup._
    - `/scout-scan` — Run a content scan (scans all products, or specify one: `/scout-scan cosmos-db`)
    - `/scout-post` — Generate social posts from a URL
    - `/scout-calendar` — Generate a posting calendar
-   - `/scout-gaps` — Analyze content gaps
    - `/scout-trends` — Compare trends across months
 5. If multiple products were configured, explain: "You can scan all products at once with `/scout-scan`, or target one with `/scout-scan {slug}`. The same applies to other commands."
 6. If any API keys were skipped during Group 4, remind the user which sources are disabled until keys are added to `.env`.

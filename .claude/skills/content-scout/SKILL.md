@@ -1,6 +1,6 @@
 ---
 name: Content Scout
-description: Discover, catalog, and promote public content about a product, technology, OSS project, or tool. Use when the user says "scout scan", "scout onboard", "scout post", "scout calendar", "scout gaps", "scout trends", or asks to find/track/share content about their product.
+description: Discover, catalog, and promote public content about a product, technology, OSS project, or tool. Use when the user says "scout scan", "scout onboard", "scout post", "scout calendar", "scout trends", or asks to find/track/share content about their product.
 ---
 
 # Content Scout (skill shim)
@@ -22,7 +22,6 @@ The single source of truth is [.github/agents/content-scout.agent.md](../../../.
 | scout scan | `.github/prompts/scout-scan.prompt.md` | Search sources, filter, generate report |
 | scout post | `.github/prompts/scout-post.prompt.md` | Generate social posts from URL or report item |
 | scout calendar | `.github/prompts/scout-calendar.prompt.md` | Weekly posting schedule |
-| scout gaps | `.github/prompts/scout-gaps.prompt.md` | Topics with no recent coverage |
 | scout trends | `.github/prompts/scout-trends.prompt.md` | Month-over-month comparison |
 
 Ignore VS Code frontmatter and `${{input:...}}` placeholders in those prompt files — gather inputs conversationally.

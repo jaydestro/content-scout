@@ -142,18 +142,6 @@
 - Cost optimization continues to be a popular topic -- serverless and hierarchical partitions are the primary angles.
 - Migration content from DynamoDB is a new signal, possibly driven by AWS pricing changes.
 
-## Content Gaps
-| Topic | Last Seen | Opportunity |
-|-------|-----------|-------------|
-| monitoring | 2026-02 | No monitoring content this month. RU dashboards and alert patterns would resonate. |
-| security | 2026-03 (1 item) | Only 1 compliance-focused talk. RBAC patterns and managed identity guides are underrepresented. |
-| migration | 2026-03 (1 item) | DynamoDB migration got traction. Capitalize with MongoDB/PostgreSQL migration content. |
-
-### Suggested Content Ideas
-- "Set up Azure Monitor alerts for Cosmos DB RU spikes and latency" (fills monitoring gap)
-- "Managed identity authentication with Azure Cosmos DB -- step by step" (fills security gap)
-- "Migrating from MongoDB to Azure Cosmos DB for MongoDB vCore" (builds on migration momentum)
-
 ## Notes
 - The YouTube API returned 3 relevant results from 47 total. The quality filter excluded 44 low-value or off-topic videos.
 - LinkedIn could not be scanned due to rate limiting. Content from LinkedIn may be underrepresented.

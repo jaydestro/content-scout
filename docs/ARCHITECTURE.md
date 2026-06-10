@@ -75,7 +75,6 @@ When a post uses "link in first comment" or a URL won't generate a link card, th
     ├── scout-scan.prompt.md
     ├── scout-post.prompt.md
     ├── scout-calendar.prompt.md
-    ├── scout-gaps.prompt.md
     └── scout-trends.prompt.md
 CLAUDE.md                                  # Claude Code adapter
 .clinerules                                # Cline adapter

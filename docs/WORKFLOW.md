@@ -15,7 +15,7 @@ Onboard (once) → Scan (monthly) → Post (ongoing) → Analyze (monthly)
 1. **Onboard** — configure the agent for your product, technology, project, or tool and role
 2. **Scan** — discover and catalog community content
 3. **Post** — generate social media posts from discovered content
-4. **Analyze** — identify gaps, track trends, plan content strategy
+4. **Analyze** — track trends, plan content strategy
 
 ---
 
@@ -134,7 +134,7 @@ Repositories have additional requirements:
 | Social posts | `social-posts/{YYYY-MM}-{slug}-social-posts.md` | 3 LinkedIn + 3 X options per item, code-fenced for copy (only if social posts enabled) |
 | Dedup tracker | `reports/.seen-links.json` | Updated with all URLs from this scan (shared across products) |
 | Open CFPs | Included in report | Open calls for papers sorted by deadline (if Conference CFP tracking is on) |
-| Trends | Appended to report | Month-over-month deltas, content gaps (auto-generated at report end) |
+| Trends | Appended to report | Month-over-month deltas (auto-generated at report end) |
 
 When only one product is configured, the slug is optional in filenames for backward compatibility.
 
@@ -230,22 +230,7 @@ Saved to `social-posts/{YYYY-MM}-{slug}-posting-calendar.md` with a day-by-day s
 
 ---
 
-## Step 5: Gap Analysis (`/scout-gaps`)
-
-Compares your canonical topic tags against what actually appeared in the report.
-
-### What It Shows
-
-- **Zero-coverage topics** — tags with no content this month
-- **Declining topics** — tags that had coverage last month but dropped
-- **Content creation ideas** — suggested topics to fill gaps
-- **Coverage distribution** — which topics are over/under-represented
-
-Use this to inform your content strategy: if "migration" has zero community coverage, that's an opportunity for an official tutorial or a community workshop.
-
----
-
-## Step 6: Trends Analysis (`/scout-trends`)
+## Step 5: Trends Analysis (`/scout-trends`)
 
 Compares the current month against up to 3 prior months.
 
@@ -291,10 +276,9 @@ Spread the posts across the month. Adjust timing for any known events or holiday
 
 ### End of Month: Analyze
 ```
-/scout-gaps
 /scout-trends
 ```
-Identify content gaps for next month's strategy. Review trends to understand where the community is heading.
+Review trends to understand where the community is heading.
 
 ### Ongoing
 - Run `/scout-post` anytime you find content worth amplifying

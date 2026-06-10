@@ -134,18 +134,14 @@
     const body = $('dash-analytics-summary');
     const meta = $('dash-analytics-meta');
     if (!body) return;
-    const gaps = sortedByMtime(reports).find((r) => r.meta?.kind === 'gaps' || /-gaps\.md$/i.test(r.name));
     const trends = sortedByMtime(reports).find((r) => r.meta?.kind === 'trends' || /-trends\.md$/i.test(r.name));
     const lines = [];
-    if (gaps) {
-      lines.push(`<li><strong>Latest gaps:</strong> ${esc(gaps.meta?.summary || gaps.meta?.title || gaps.name)} <button type="button" data-open-report="${esc(gaps.name)}" data-report-tab="gaps">Open</button></li>`);
-    }
     if (trends) {
       lines.push(`<li><strong>Latest trends:</strong> ${esc(trends.meta?.summary || trends.meta?.title || trends.name)} <button type="button" data-open-report="${esc(trends.name)}" data-report-tab="trends">Open</button></li>`);
     }
-    if (meta) meta.textContent = [gaps ? 'gaps ready' : '', trends ? 'trends ready' : ''].filter(Boolean).join(' · ');
+    if (meta) meta.textContent = trends ? 'trends ready' : '';
     if (!lines.length) {
-      body.innerHTML = `<p class="hint">No gaps or trends reports yet.</p><div class="toolbar" style="margin-top:0.6rem"><button type="button" data-open-report-tab="gaps">Compute gaps</button><button type="button" data-open-report-tab="trends">Compute trends</button></div>`;
+      body.innerHTML = `<p class="hint">No trends reports yet.</p><div class="toolbar" style="margin-top:0.6rem"><button type="button" data-open-report-tab="trends">Compute trends</button></div>`;
       return;
     }
     body.innerHTML = `<ul class="dash-compact-list">${lines.join('')}</ul>`;
@@ -430,7 +426,6 @@
     const cmdView = {
       'scout-post': 'social',
       'scout-calendar': 'social',
-      'scout-gaps': 'reports',
       'scout-trends': 'reports',
       'scout-seo': 'tools',
       'scout-creators': 'conversations',

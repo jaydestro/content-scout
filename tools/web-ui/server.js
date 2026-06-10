@@ -18,7 +18,6 @@ import { searchCorpus } from '../lib/corpus-search.mjs';
 import { extractDocMeta } from '../lib/doc-meta.mjs';
 import { responseCache } from '../lib/response-cache.mjs';
 import {
-  runGaps,
   runTrends,
   runSeoAudit,
   parseTopicTagsFromConfig,
@@ -4127,33 +4126,10 @@ app.post('/api/browser-scan/scan', async (req, res) => {
 });
 
 // --- In-browser analytics endpoints --------------------------------
-// Same artifacts the /scout-{gaps,trends,seo} agent commands
+// Same artifacts the /scout-{trends,seo} agent commands
 // produce — but computed in pure Node from data already on disk so the
-// Reports view's Trends/Gaps tabs can run with one click. No LLM, no
+// Reports view's Trends tab can run with one click. No LLM, no
 // subprocess. See tools/lib/analytics.mjs for the engine.
-
-app.get('/api/analytics/gaps', async (req, res) => {
-  try {
-    const slug = String(req.query.slug || '');
-    const windowDays = Math.max(1, Math.min(365, parseInt(req.query.windowDays, 10) || 30));
-    const cacheKey = `analytics:gaps:${slug}:${windowDays}`;
-    const cached = responseCache.get(cacheKey);
-    if (cached) return res.json(cached);
-    const idx = await getIndex();
-    let configRaw = '';
-    if (slug && isValidSlug(slug)) {
-      try { configRaw = (await readConfig(slug)).raw; } catch { /* missing config — empty tag list */ }
-    }
-    const result = runGaps({ items: idx.items, configRaw, windowDays, slug });
-    await fs.writeFile(path.join(REPORTS_DIR, result.fileName), result.markdown, 'utf8');
-    clearArtifactResponseCaches();
-    const payload = { ok: true, fileName: result.fileName, data: result.data };
-    responseCache.set(cacheKey, payload, 60_000);
-    res.json(payload);
-  } catch (err) {
-    res.status(500).json({ error: String(err.message || err) });
-  }
-});
 
 app.get('/api/analytics/trends', async (req, res) => {
   try {
@@ -4228,7 +4204,7 @@ app.listen(PORT, HOST, async () => {
   // or a typo). scout-config-*.prompt.md is excluded — those are user configs.
   const expectedPrompts = [
     'scout-onboard.prompt.md', 'scout-scan.prompt.md', 'scout-post.prompt.md',
-    'scout-calendar.prompt.md', 'scout-gaps.prompt.md', 'scout-trends.prompt.md',
+    'scout-calendar.prompt.md', 'scout-trends.prompt.md',
     'scout-creators.prompt.md', 'scout-doctor.prompt.md', 'scout-keys.prompt.md',
     'scout-seo.prompt.md', 'scout-reddit-import.prompt.md',
     'scout-alt.prompt.md', 'scout-vision.prompt.md',

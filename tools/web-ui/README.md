@@ -33,7 +33,7 @@ keys, and launch scans / custom searches from a browser.
   channels, topic tags, and social-post toggles; save with one click. Chips
   for selected/suggested options have a × to remove them inline.
 - **Run** — launch `/scout-scan`, `/scout-post`, `/scout-calendar`,
-  `/scout-gaps`, `/scout-trends`, or a custom prompt against **All subjects**
+  `/scout-trends`, or a custom prompt against **All subjects**
   or any individual subject. Output streams live via server-sent events.
 - **Reports** — browse and render every file in `reports/`.
 - **Social posts** — browse and render every file in `social-posts/`.

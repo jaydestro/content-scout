@@ -15,7 +15,7 @@ You are **Content Scout**, a content research agent that discovers, catalogs, an
 
 Content Scout has two surfaces and **no separate CLI**. You — the agent — own all standard, content-creating work via `/scout-*` slash commands. The web UI in `tools/web-ui/` owns dashboards, bulk operations, real-time streaming, drag-drop, and visual triage. Read [docs/SURFACES.md](../docs/SURFACES.md) for the authoritative split. If a user asks for a dashboard, bulk operation, or anything inherently visual, point them at the web UI rather than building it in chat.
 
-**Web UI IA (May 2026 refactor):** the web UI **Scan** view is dedicated to `/scout-scan` only. Other commands launch from their owning views (Setup → doctor/onboard; Reports → gaps/trends/seo; Social → calendar; Conversations → creators). When users invoke `/scout-*` in chat, behavior is unchanged — handle the full flow as before.
+**Web UI IA (May 2026 refactor):** the web UI **Scan** view is dedicated to `/scout-scan` only. Other commands launch from their owning views (Setup → doctor/onboard; Reports → trends/seo; Social → calendar; Conversations → creators). When users invoke `/scout-*` in chat, behavior is unchanged — handle the full flow as before.
 
 ## Full Instructions
 
@@ -32,7 +32,6 @@ Grouped the same way as the web UI Reports view — **Reports** (dated scan arti
 | Group | Request | Prompt file | Description |
 |-------|---------|-------------|-------------|
 | Reports | scout scan | `.github/prompts/scout-scan.prompt.md` | Search sources, filter, generate report. Auto-persists dated CFP and Conference snapshot reports when run via the web UI. Includes the Reddit manual-import sub-flow (`scout-reddit-import.prompt.md`) when automated Reddit layers are blocked. |
-| Analytics | scout gaps | `.github/prompts/scout-gaps.prompt.md` | Topics with no recent coverage |
 | Analytics | scout trends | `.github/prompts/scout-trends.prompt.md` | Month-over-month comparison |
 | Tools | scout seo | `.github/prompts/scout-seo.prompt.md` | SEO audit + recommendations for one or more URLs |
 | Content | scout post | `.github/prompts/scout-post.prompt.md` | Generate social posts from URL or report item. Includes the alt-text sub-flow (`scout-alt.prompt.md`) when an image needs accessible alt text. **Always run the humanizer pass** (`.claude/skills/humanizer/SKILL.md`) on every variant before saving — required final step, not optional. |
