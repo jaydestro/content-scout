@@ -38,9 +38,6 @@ You have **nine top-level modes** — every one is invokable directly from chat 
 **Reports** — produce dated, saved artifacts in `reports/`:
 1. **Scan mode** (`scout-scan`) -- Find and catalog public content for a given time period. Includes the **Reddit manual-import sub-flow** (`scout-reddit-import.prompt.md`) when the user pastes Reddit URLs to ingest manually. CFPs and Conferences snapshots are auto-persisted as their own dated reports when a scan completes via the web UI.
 
-**Analytics** — derived from existing reports, no new scan:
-5. **Trends mode** (`scout-trends`) -- Compare current month vs. prior months to show trajectory
-
 **Tools** — on-demand utilities, not tied to a scan:
 9. **SEO mode** (`scout-seo`) -- SEO audit and concrete rewrite recommendations for one or more URLs
 
@@ -66,13 +63,12 @@ Content Scout supports tracking multiple topics simultaneously — whether they'
 - If the user specifies a topic by name or slug (e.g., "scan cosmos-db", "post for python", "scan ollama"), load that topic's config.
 - If only **one** config file exists, use it automatically.
 - If **multiple** config files exist and the user didn't specify, ask which product (or "all").
-- Commands that accept a product argument: `scout-scan`, `scout-post`, `scout-calendar`, `scout-trends`.
+- Commands that accept a product argument: `scout-scan`, `scout-post`, `scout-calendar`.
 
 **File naming with multiple products:**
 - Reports: `reports/{YYYY-MM-DD-HHmm}-{slug}-content.md` (e.g., `2026-03-14-0932-cosmos-db-content.md`). Use the current local date and time when saving — full datetime ensures multiple runs per day never overwrite each other.
 - Social posts (bulk from report): `social-posts/{YYYY-MM-DD-HHmm}-{slug}-social-posts.md`
 - Social posts (solo / one-off from a single URL): `social-posts/{YYYY-MM-DD-HHmm}-{slug}-solo-{url-slug}.md` where `{url-slug}` = host + last path segment, lowercased, hyphenated, max 40 chars (fallback `solo-link`)
-- Trends: `reports/{YYYY-MM-DD-HHmm}-{slug}-trends.md`
 - Calendars: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-posting-calendar.md`
 - When only one product is configured, the slug is optional in filenames for backward compatibility.
 - The dedup tracker `reports/.seen-links.json` is shared across all products.
@@ -533,7 +529,7 @@ Sentiment classification rules apply to non-English content as well — use the 
 
 ## Output Formats
 
-Every `scout-scan`, `scout-trends`, and `scout-creators` run produces the primary Markdown file PLUS the following sidecar artifacts. These are how Content Scout becomes a building block for other tools, not a dead-end markdown generator.
+Every `scout-scan` and `scout-creators` run produces the primary Markdown file PLUS the following sidecar artifacts. These are how Content Scout becomes a building block for other tools, not a dead-end markdown generator.
 
 ### JSON Sidecar (always)
 
@@ -542,7 +538,7 @@ For every Markdown output `path/to/file.md`, also write `path/to/file.json` cont
 ```json
 {
   "schema_version": 1,
-  "kind": "scan-report" | "trends-report" | "creators-report",
+  "kind": "scan-report" | "creators-report",
   "slug": "azure-cosmos-db",
   "generated_at": "2026-04-30T14:25:00Z",
   "period": { "start": "2026-04-01", "end": "2026-04-30" },
@@ -582,7 +578,7 @@ If `rss: true`, maintain `reports/feed-{slug}.xml` (Atom 1.0). Each numbered ite
 
 ### Webhook on Scan Complete (opt-in)
 
-If `webhook_url` is set in the config (or `SCOUT_WEBHOOK_URL` in `.env`), POST a JSON payload at the end of every scan/trend/creators run:
+If `webhook_url` is set in the config (or `SCOUT_WEBHOOK_URL` in `.env`), POST a JSON payload at the end of every scan/creators run:
 
 ```json
 {
@@ -628,7 +624,7 @@ Three rules to make Content Scout's output trustworthy enough that a teammate, a
 
 ### Run ID and Provenance Ledger
 
-Every `scout-scan`, `scout-trends`, and `scout-creators` run gets a unique `run_id`: `{YYYYMMDD-HHMMSS}-{slug}-{6-char random}`.
+Every `scout-scan` and `scout-creators` run gets a unique `run_id`: `{YYYYMMDD-HHMMSS}-{slug}-{6-char random}`.
 
 The agent maintains `reports/.scout-state/{slug}/runs.jsonl` (gitignored, append-only). Each line is one run:
 
@@ -782,7 +778,7 @@ A strict "seen once = forever skip" rule is too aggressive: if an item went vira
    - **New context:** the item is now being discussed in a different community than where it was first found (e.g., a tweet originally caught on X is now also trending on Reddit).
 3. AND the item still passes the standard relevancy + scoring filter for this scan.
 
-When re-surfacing, **prefix the item title with `🔁 Re-surfaced — {growth-summary}`** (e.g., `🔁 Re-surfaced — upvotes 47 → 612 since 2026-04-15`) so the user understands why a familiar URL is back. Record the re-surface in `reports/.scout-state/{slug}/resurfaced.jsonl` (one JSON object per line: `{url, prior_run, prior_metric, current_metric, this_run}`) so /scout-trends can show republish patterns.
+When re-surfacing, **prefix the item title with `🔁 Re-surfaced — {growth-summary}`** (e.g., `🔁 Re-surfaced — upvotes 47 → 612 since 2026-04-15`) so the user understands why a familiar URL is back. Record the re-surface in `reports/.scout-state/{slug}/resurfaced.jsonl` (one JSON object per line: `{url, prior_run, prior_metric, current_metric, this_run}`) so future scans can show republish patterns.
 
 Do NOT re-surface for trivial deltas (a Reddit post going from 47 upvotes to 52 is noise). The 3× threshold is intentional friction.
 
@@ -1297,19 +1293,6 @@ Where the platform exposes them, also include engagement metrics (likes/upvotes/
 ## Sources That Could Not Be Reached
 - {source} -- {reason}
 
-## Monthly Trends
-### Top Topics This Month
-1. **{tag}** -- {count} items ({+/-delta} vs. last month)
-...
-### Month-over-Month Delta
-- Total items: {current} vs. {previous} ({+/-delta}, {+/-%}%)
-- New contributors: {count}
-- Conversation volume: {current} vs. {previous}
-- Topics trending up: {list}
-- Topics trending down: {list}
-### Observations
-- {trends}
-
 ## Notes
 - {observations}
 ```
@@ -1498,63 +1481,6 @@ When building the calendar, apply content-type-aware timing:
 | GitHub project highlights | X | Any weekday, afternoon | Developer audience, quick reads |
 
 ---
-
-## Trends Analysis
-
-When the user says "scout-trends", "show trends", "compare months", or "how are we trending":
-
-1. Read reports from the current month and up to 3 prior months (if available in `reports/`).
-2. For each month, extract: total items, items per topic tag, unique contributors, conversation count, sentiment breakdown.
-3. Generate a trends report with:
-
-```markdown
-# {Product Name} -- Trends Report
-
-**Generated:** {date}
-**Period covered:** {earliest month} to {latest month}
-
-## Trajectory
-| Metric | {Month-3} | {Month-2} | {Month-1} | {Current} | Trend |
-|--------|-----------|-----------|-----------|-----------|-------|
-| Total items | ... | ... | ... | ... | ↑/↓/→ |
-| Unique contributors | ... | ... | ... | ... | ↑/↓/→ |
-| Conversation volume | ... | ... | ... | ... | ↑/↓/→ |
-| Positive sentiment % | ... | ... | ... | ... | ↑/↓/→ |
-| Negative sentiment % | ... | ... | ... | ... | ↑/↓/→ |
-| GitHub repos found | ... | ... | ... | ... | ↑/↓/→ |
-
-## Topic Trends
-| Topic | {Month-3} | {Month-2} | {Month-1} | {Current} | Trend |
-|-------|-----------|-----------|-----------|-----------|-------|
-| {tag} | count | count | count | count | ↑/↓/→ |
-
-## Rising Topics
-- {tags that appeared or grew significantly}
-
-## Declining Topics
-- {tags that dropped or disappeared}
-
-## Contributor Trajectory
-- **Repeat contributors:** {names appearing in 2+ months}
-- **New this month:** {first-time contributors}
-- **Inactive:** {contributors who stopped publishing}
-
-## Role-Specific Insight
-{Based on the user's role, provide a 2-3 sentence actionable insight from the trends data.}
-```
-
-4. Save to: `reports/{YYYY-MM-DD-HHmm}-trends.md`
-5. If only one month of data exists, note that trends require at least 2 months and show what's available.
-
----
-
-## Monthly Trends Summary
-
-Auto-generate at report end:
-1. Count items per topic tag.
-2. Rank top 5 topics.
-3. Compare to prior month if available.
-4. Note new topics.
 
 ## Content Gap Detector
 

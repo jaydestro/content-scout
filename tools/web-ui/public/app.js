@@ -2549,7 +2549,7 @@ refreshCustomPromptSummary();
 // Produces a natural-language phrase the prompts already understand
 // (e.g., "March 2026", "today only", "from 2026-01-15 to 2026-02-10").
 // Emits empty string for the default (agent uses last 30 days).
-const COMMANDS_WITH_RANGE = new Set(['scout-scan', 'scout-trends']);
+const COMMANDS_WITH_RANGE = new Set(['scout-scan']);
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const RANGE_LS_KEY = 'cs.run.range.preset';
 function fmtDate(d) {
@@ -3024,10 +3024,9 @@ function escapeAttr(s) {
 //   • Mindshare — only the "## Mindshare" section of the open report
 //                 (plus any standalone monthly mindshare docs, shown whole).
 //   • CFPs & Events — only the CFP + Conferences sections of the report.
-//   • Trends — computed analytics (compute-on-demand).
 // The same `##` headings still exist in the raw markdown, so the doc
 // stays fully navigable in a plain editor (parity).
-const REPORTS_TABS = ['content', 'mindshare', 'cfp', 'trends'];
+const REPORTS_TABS = ['content', 'mindshare', 'cfp'];
 // When one of these tabs is active and a *scan* (content-kind) report is
 // opened, render only the matching `## ` section(s) instead of the whole
 // doc. Standalone docs of the tab's own kind (e.g. a -mindshare.md file)
@@ -3052,8 +3051,6 @@ function rowMatchesTab(li, tab) {
     case 'cfp':
       return kind === 'cfp' || kind === 'conference'
         || (kind === 'content' && li.dataset.hasCfp === '1');
-    case 'trends':
-      return kind === 'trends';
     default:
       return false;
   }
@@ -3097,14 +3094,11 @@ const REPORT_SECTIONS = [
 ];
 let _reportsActiveTab = 'content';
 let _reportsCache = null; // last /api/reports payload (so tab switches don't re-fetch)
-const _reportsAutoComputed = new Set(); // "tab:slug" keys — one auto-compute attempt per analytics tab+subject
 
-// The active subject slug for analytics (Trends) and other slug-aware
-// actions. Resolves, in order: the Scan view's subject picker, then the
-// dominant subject among the loaded reports (so the Reports view works even
-// when the Scan form was never touched). Previously this global was never
-// defined, so every caller fell back to '' and Trends produced empty,
-// subject-less reports.
+// The active subject slug for slug-aware actions. Resolves, in order: the
+// Scan view's subject picker, then the dominant subject among the loaded
+// reports (so the Reports view works even when the Scan form was never
+// touched).
 window.activeRoleSlug = function activeRoleSlug() {
   const picked = (($('run-slug') && $('run-slug').value) || '').trim();
   if (picked) return picked;
@@ -3274,23 +3268,9 @@ function applyReportsTabFilter() {
   if (visibleCount > 0 && target) {
     openReportRow(target);
   } else if (visibleCount === 0) {
-    // No rows match. For analytics tabs, auto-compute once so the tab does
-    // something useful instead of sitting empty; otherwise show a hint.
+    // No rows match. Show a hint pointing at /scout-scan.
     const body = $('reports-body');
-    if ((_reportsActiveTab === 'trends')) {
-      const slug = (window.activeRoleSlug && window.activeRoleSlug()) || '';
-      const key = `${_reportsActiveTab}:${slug}`;
-      if (slug && !_reportsAutoComputed.has(key)) {
-        _reportsAutoComputed.add(key);
-        if (body) body.innerHTML = `<p class="hint">Computing ${escape(_reportsActiveTab)}…</p>`;
-        computeAnalytics(_reportsActiveTab);
-        return;
-      }
-      if (body) {
-        body.innerHTML = `<p class="hint">No <strong>${escapeAttr(_reportsActiveTab)}</strong> reports yet${slug ? '' : ' — pick a subject in the header first'}. Use the action bar above to compute one.</p>`;
-        delete body.dataset.name;
-      }
-    } else if (body) {
+    if (body) {
       body.innerHTML = `<p class="hint">No <strong>${escapeAttr(_reportsActiveTab)}</strong> content yet. Run <code>/scout-scan</code> to populate it.</p>`;
       delete body.dataset.name;
     }
@@ -3300,16 +3280,7 @@ function applyReportsTabFilter() {
 function renderReportsActionBar(tab) {
   const bar = $('reports-action-bar');
   if (!bar) return;
-  if (tab === 'trends') {
-    bar.innerHTML = `
-      <label class="field-inline">Months
-        <input type="number" id="trends-months" value="4" min="2" max="12" />
-      </label>
-      <button type="button" id="btn-trends-compute">+ Compute trends now</button>
-      <span class="hint" id="analytics-status"></span>
-    `;
-    $('btn-trends-compute')?.addEventListener('click', () => computeAnalytics('trends'));
-  } else if (tab === 'content') {
+  if (tab === 'content') {
     bar.innerHTML = `<span class="hint">The complete scan report. Its Mindshare and CFPs &amp; Events sections also get a focused view under their own tabs. New scans land here after <code>/scout-scan</code> completes.</span>`;
   } else if (tab === 'mindshare') {
     bar.innerHTML = `<span class="hint">Mindshare only — the Mindshare section of each scan report, plus any standalone monthly mindshare docs.</span>`;
@@ -3326,10 +3297,7 @@ async function computeAnalytics(kind) {
   if (status) status.textContent = 'Computing…';
   try {
     let res;
-    if (kind === 'trends') {
-      const months = $('trends-months')?.value || 4;
-      res = await fetch(`/api/analytics/trends?slug=${encodeURIComponent(slug)}&months=${encodeURIComponent(months)}`);
-    } else if (kind === 'seo') {
+    if (kind === 'seo') {
       const raw = $('seo-urls')?.value || '';
       const urls = raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
       if (urls.length === 0) {
@@ -3623,7 +3591,7 @@ function fillAskChip(kind) {
     cfp: `Find open Calls for Papers for ${slug} over the next 90 days. Prefer Sessionize / Pretalx / typeform-based CFPs over awards or "register interest" pages. Include deadline, audience fit, and submission URL.`,
     conf: `List upcoming developer-focused conferences in the next 6 months where ${slug} would land well — bias toward Linux Foundation events, KubeCon, language/runtime confs, and AI app-developer venues.`,
     summary: `Summarize the last 30 days of ${slug} mentions across reports. Group by topic tag, call out sentiment shifts, and flag any single-source spikes that need verification.`,
-    recommend: `Based on the trends for ${slug}, recommend three blog or video topics we should publish in the next two weeks. For each, cite the rising trend that motivates it.`,
+    recommend: `Based on the last 30 days of ${slug} activity across reports, recommend three blog or video topics we should publish in the next two weeks. For each, cite the signal that motivates it.`,
   };
   ta.value = prompts[kind] || '';
   ta.focus();

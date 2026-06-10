@@ -4,7 +4,7 @@
 
 # Content Scout
 
-A content research agent that discovers, catalogs, and promotes public content about your product, technology, open-source project, or tool across the developer ecosystem. Scans 14+ public sources, filters for quality, generates reports with topic tags and trends, and drafts ready-to-post social media content — all configured through a single onboarding conversation.
+A content research agent that discovers, catalogs, and promotes public content about your product, technology, open-source project, or tool across the developer ecosystem. Scans 14+ public sources, filters for quality, generates reports with topic tags, and drafts ready-to-post social media content — all configured through a single onboarding conversation.
 
 Run it **interactively in your editor** (VS Code, Claude Code, Cursor, and more) **or from a browser** with the built-in Web UI. The agent handles all standard content work; the web UI adds dashboards, bulk operations, and visual triage. See [docs/SURFACES.md](docs/SURFACES.md) for which surface to use when.
 
@@ -39,7 +39,6 @@ Open the repo in your AI chat tool and run `/scout-onboard` (VS Code) or say "sc
 | `/scout-scan` | Scan for content — specify a topic slug or scan all |
 | `/scout-post` | Generate social posts from a URL or report item |
 | `/scout-calendar` | Create a weekly posting schedule |
-| `/scout-trends` | Compare trends across months |
 
 Plus `/scout-creators`, `/scout-doctor`, `/scout-keys`, `/scout-seo`, `/scout-reddit-import`, `/scout-alt`, `/scout-vision` — see [docs/EDITORS.md](docs/EDITORS.md).
 

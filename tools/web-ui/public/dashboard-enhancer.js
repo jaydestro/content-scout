@@ -80,7 +80,6 @@
     renderSubjects({ configs: configList, reports: reportList });
     renderSuggestions({ configs: configList, reports: reportList, social });
     renderLatestReport(reportList);
-    renderAnalyticsSummary(reportList);
     loadCfpEvents(configList);
     // Social activity / sentiment / creators / source health are owned by
     // intel.js. Do not add loaders for #dash-social-activity, #dash-sentiment,
@@ -128,23 +127,6 @@
         <button type="button" data-goto="run" data-run-cmd="scout-scan">Run new scan</button>
       </div>
     `;
-  }
-
-  function renderAnalyticsSummary(reports) {
-    const body = $('dash-analytics-summary');
-    const meta = $('dash-analytics-meta');
-    if (!body) return;
-    const trends = sortedByMtime(reports).find((r) => r.meta?.kind === 'trends' || /-trends\.md$/i.test(r.name));
-    const lines = [];
-    if (trends) {
-      lines.push(`<li><strong>Latest trends:</strong> ${esc(trends.meta?.summary || trends.meta?.title || trends.name)} <button type="button" data-open-report="${esc(trends.name)}" data-report-tab="trends">Open</button></li>`);
-    }
-    if (meta) meta.textContent = trends ? 'trends ready' : '';
-    if (!lines.length) {
-      body.innerHTML = `<p class="hint">No trends reports yet.</p><div class="toolbar" style="margin-top:0.6rem"><button type="button" data-open-report-tab="trends">Compute trends</button></div>`;
-      return;
-    }
-    body.innerHTML = `<ul class="dash-compact-list">${lines.join('')}</ul>`;
   }
 
   async function loadCfpEvents(configs) {
@@ -281,7 +263,6 @@
       'social-other': { icon: '✉️', cls: 'kind-social' },
       'calendar':     { icon: '🗓', cls: 'kind-calendar' },
       'thumbnails':   { icon: '🖼', cls: 'kind-thumbs' },
-      'trends':       { icon: '📈', cls: 'kind-trends' },
       'alt':          { icon: '♿', cls: 'kind-alt' },
       'run':          { icon: '▶', cls: 'kind-run' },
     };
@@ -426,7 +407,6 @@
     const cmdView = {
       'scout-post': 'social',
       'scout-calendar': 'social',
-      'scout-trends': 'reports',
       'scout-seo': 'tools',
       'scout-creators': 'conversations',
     };

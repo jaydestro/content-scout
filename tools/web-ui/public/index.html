@@ -266,8 +266,8 @@
                   <span>Topic tags <span class="hint">(comma-separated)</span></span>
                   <input data-field="topicTags" id="cfg-topic-tags" type="text" placeholder="e.g., partitioning, sdk-dotnet, query-perf" />
                   <p class="hint">
-                    Canonical labels applied to every report item (1–4 per item). Used by <code>scout trends</code>
-                    to track month-over-month shifts.
+                    Canonical labels applied to every report item (1–4 per item) to
+                    organize and group discovered content.
                   </p>
                   <div class="tag-suggest-row">
                     <button type="button" id="cfg-topic-suggest" class="secondary">✨ Suggest tags</button>
@@ -616,21 +616,12 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
           <!-- 3. From your latest scan: the headline results -->
           <h3 class="dash-section-head">From your latest scan</h3>
 
-          <div class="cards dash-row-2">
-            <div class="card" id="dash-latest-report-card">
-              <div class="dash-card-head">
-                <h3>Latest full report</h3>
-                <span class="hint" id="dash-latest-report-meta"></span>
-              </div>
-              <div id="dash-latest-report"><span class="skeleton" style="width:70%"></span><span class="skeleton" style="width:45%"></span></div>
+          <div class="card" id="dash-latest-report-card">
+            <div class="dash-card-head">
+              <h3>Latest full report</h3>
+              <span class="hint" id="dash-latest-report-meta"></span>
             </div>
-            <div class="card" id="dash-analytics-card">
-              <div class="dash-card-head">
-                <h3>Trends</h3>
-                <span class="hint" id="dash-analytics-meta"></span>
-              </div>
-              <div id="dash-analytics-summary"><span class="skeleton" style="width:65%"></span><span class="skeleton" style="width:50%"></span></div>
-            </div>
+            <div id="dash-latest-report"><span class="skeleton" style="width:70%"></span><span class="skeleton" style="width:45%"></span></div>
           </div>
 
           <!-- 4. Community signals from the last 30 days of scans -->
@@ -783,7 +774,7 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
            via the modal runner at the bottom of <main>. -->
       <section id="view-run" class="view">
         <h2>Scan</h2>
-        <p class="hint view-intro">Run <code>/scout-scan</code> against one or more subjects to discover new content. Other tools (trends, calendar, SEO, doctor…) now live in their own sections — see the sidebar.</p>
+        <p class="hint view-intro">Run <code>/scout-scan</code> against one or more subjects to discover new content. Other tools (calendar, SEO, doctor…) now live in their own sections — see the sidebar.</p>
         <div class="run-form">
           <label>
             Command
@@ -894,7 +885,7 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             <form method="dialog">
               <h3 style="margin-top:0">Custom prompt</h3>
               <p class="hint">Type any message to send the agent. This replaces the built-in command.</p>
-              <textarea id="run-custom-prompt-text" rows="8" style="width:100%" placeholder="e.g. /scout-trends azure-cosmos-db compare this month vs last month"></textarea>
+              <textarea id="run-custom-prompt-text" rows="8" style="width:100%" placeholder="e.g. /scout-scan azure-cosmos-db focus on vector search content from this week"></textarea>
               <details class="run-custom-prompt-examples" open>
                 <summary>Examples — click to insert</summary>
                 <p class="hint" style="margin:0.4rem 0">All <code>/scout-*</code> slash commands work here. Most accept a subject slug and optional free-text context.</p>
@@ -902,7 +893,6 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
                   <li><button type="button" data-snippet="/scout-scan azure-cosmos-db focus on vector search content from this week"><code>/scout-scan</code></button> — discover new content for a subject (date range + context)</li>
                   <li><button type="button" data-snippet="/scout-post https://example.com/blog tone=conversational platforms=x,linkedin variants=3"><code>/scout-post</code> from URL</button> — draft social posts from a single link</li>
                   <li><button type="button" data-snippet="/scout-post 2026-05-16-1845-azure-cosmos-db-content.md item 3"><code>/scout-post</code> from report</button> — draft posts for a specific report item</li>
-                  <li><button type="button" data-snippet="/scout-trends azure-cosmos-db compare this month vs last month"><code>/scout-trends</code></button> — month-over-month trajectory</li>
                   <li><button type="button" data-snippet="/scout-calendar azure-cosmos-db next 2 weeks"><code>/scout-calendar</code></button> — generate a weekly posting schedule</li>
                   <li><button type="button" data-snippet="/scout-creators azure-cosmos-db top movers this month"><code>/scout-creators</code></button> — creator trajectories &amp; interventions</li>
                   <li><button type="button" data-snippet="/scout-seo https://example.com/blog audit headings, meta, and internal links"><code>/scout-seo</code></button> — SEO audit + rewrite recommendations</li>
@@ -946,15 +936,12 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
           <button type="button" data-tab="content" role="tab" class="active" aria-selected="true">Full Report</button>
           <button type="button" data-tab="mindshare" role="tab" aria-selected="false">Mindshare</button>
           <button type="button" data-tab="cfp" role="tab" aria-selected="false">CFPs &amp; Events</button>
-          <span class="reports-tabs-sep" role="presentation"></span>
-          <span class="reports-tabs-label" aria-hidden="true">Analytics</span>
-          <button type="button" data-tab="trends" role="tab" aria-selected="false">Trends</button>
         </div>
 
-        <!-- Action bar: contextual actions per tab (Compute now for Trends, etc.) -->
+        <!-- Action bar: contextual actions per tab -->
         <div class="reports-action-bar" id="reports-action-bar" role="region" aria-label="Tab actions"></div>
 
-        <!-- Browse panel (Full Report, Mindshare, CFPs & Events, and Trends) -->
+        <!-- Browse panel (Full Report, Mindshare, and CFPs & Events) -->
         <div class="tab-panel" data-panel="browse">
           <div class="split">
             <aside>

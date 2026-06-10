@@ -15,7 +15,7 @@ Ignore VS Code frontmatter (`tools:`, `${{input:...}}`) — that's editor-specif
 
 1. **Workspace layout check** — verify these exist (✅/❌ each):
    - `.github/agents/content-scout.agent.md`
-   - `.github/prompts/scout-onboard.prompt.md`, `scout-scan.prompt.md`, `scout-post.prompt.md`, `scout-calendar.prompt.md`, `scout-trends.prompt.md`, `scout-creators.prompt.md`, `scout-doctor.prompt.md`
+   - `.github/prompts/scout-onboard.prompt.md`, `scout-scan.prompt.md`, `scout-post.prompt.md`, `scout-calendar.prompt.md`, `scout-creators.prompt.md`, `scout-doctor.prompt.md`
    - At least one `.github/prompts/scout-config-*.prompt.md` (other than `scout-config-example.prompt.md`)
    - `reports/` and `social-posts/` directories
    - `reports/.seen-links.json` (created if missing — that's fine, just note it)

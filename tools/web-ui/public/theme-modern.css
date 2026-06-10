@@ -422,7 +422,6 @@ aside li[data-name] .entry-kind {
   white-space: nowrap;
 }
 aside li[data-name] .entry-kind.kind-mindshare    { background: rgba(34,197,94,0.14);  color: #bbf7d0; border-color: rgba(34,197,94,0.35); }
-aside li[data-name] .entry-kind.kind-trends       { background: rgba(245,158,11,0.14); color: #fde68a; border-color: rgba(245,158,11,0.35); }
 aside li[data-name] .entry-kind.kind-supplemental { background: rgba(148,163,184,0.16); color: #e2e8f0; border-color: rgba(148,163,184,0.35); }
 aside li[data-name] .entry-kind.kind-calendar     { background: rgba(56,189,248,0.14); color: #bae6fd; border-color: rgba(56,189,248,0.35); }
 aside li[data-name] .entry-kind.kind-social-solo  { background: rgba(168,85,247,0.14); color: #e9d5ff; border-color: rgba(168,85,247,0.35); }
@@ -1256,7 +1255,6 @@ aside li[data-name]:has(.entry-row).selected .entry-title {
 .activity-row.kind-calendar .activity-icon { color: #a78bfa; }
 .activity-row.kind-thumbs .activity-icon { color: #34d399; }
 .activity-row.kind-run .activity-icon { color: var(--accent); }
-.activity-row.kind-trends .activity-icon { color: #f472b6; }
 .activity-row.kind-alt .activity-icon { color: #f97316; }
 .badge-success { background: rgba(34,197,94,0.18); color: #4ade80; border-color: rgba(34,197,94,0.35); }
 .badge-failed,
@@ -3012,7 +3010,7 @@ a.help-dot {
 /* --- Reports view: tabbed IA ---------------------------------------
    Tab strip across the top of #view-reports; per-tab action bar lives
    directly under it; one shared list+article split is reused for all
-   "browse" tabs (content / mindshare / trends), while CFPs /
+   "browse" tabs (content / mindshare), while CFPs /
    Conferences / Ask each render their own panel. */
 #view-reports .reports-tabs {
   display: flex;

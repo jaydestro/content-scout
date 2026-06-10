@@ -74,15 +74,14 @@ When a post uses "link in first comment" or a URL won't generate a link card, th
     ├── scout-config-{slug}.prompt.md      # Your config (gitignored)
     ├── scout-scan.prompt.md
     ├── scout-post.prompt.md
-    ├── scout-calendar.prompt.md
-    └── scout-trends.prompt.md
+    └── scout-calendar.prompt.md
 CLAUDE.md                                  # Claude Code adapter
 .clinerules                                # Cline adapter
 .windsurfrules                             # Windsurf adapter
 .cursor/rules/content-scout.mdc            # Cursor adapter
 docs/                                      # WORKFLOW, SOURCES, API-KEYS, EDITORS, ARCHITECTURE
 examples/                                  # Sample outputs
-reports/                                   # Generated content & trends reports (.md/.json gitignored)
+reports/                                   # Generated content reports (.md/.json gitignored)
 reports/.closed-conversations.json         # Dismissed Conversations & mentions rows (shared by web UI + helper scripts)
 social-posts/                              # Generated posts, calendars, thumbnails (.md/.json gitignored)
 tools/web-ui/                              # Local browser dashboard (Express server on :4477)

@@ -18,9 +18,7 @@ import { searchCorpus } from '../lib/corpus-search.mjs';
 import { extractDocMeta } from '../lib/doc-meta.mjs';
 import { responseCache } from '../lib/response-cache.mjs';
 import {
-  runTrends,
   runSeoAudit,
-  parseTopicTagsFromConfig,
 } from '../lib/analytics.mjs';
 import {
   loadReport,
@@ -1219,7 +1217,6 @@ app.get('/api/activity', async (_req, res) => {
 
   const reports = reportFiles.filter((f) => /-content\.md$/.test(f.name));
   const calendars = socialFiles.filter((f) => /-posting-calendar\.md$/.test(f.name));
-  const trends = reportFiles.filter((f) => /-trends\.md$/.test(f.name));
   const altText = socialFiles.filter((f) => /-alt-/.test(f.name));
   const soloPosts = socialFiles.filter((f) => /-solo[-.]/.test(f.name));
   const bulkPosts = socialFiles.filter(
@@ -1240,7 +1237,6 @@ app.get('/api/activity', async (_req, res) => {
     socialBulk: bulkPosts.length,
     socialSolo: soloPosts.length,
     calendars: calendars.length,
-    trends: trends.length,
     altText: altText.length,
     thumbnailBatches: thumbBatches.length,
     thumbnailImages: thumbBatches.reduce((n, b) => n + b.count, 0),
@@ -1255,13 +1251,12 @@ app.get('/api/activity', async (_req, res) => {
     calendar: lastByName(calendars),
     thumbnails: thumbBatches[0]?.mtime || null,
     altText: lastByName(altText),
-    trends: lastByName(trends),
   };
 
   // Build the unified activity stream.
   const slugFromFile = (name) => {
     // Pattern: YYYY-MM-DD-HHmm-{slug}-{kind}.md  or  …-{slug}-solo-…
-    const m = name.match(/^\d{4}-\d{2}-\d{2}-\d{4}-(.+?)-(content|social-posts|posting-calendar|trends|solo|alt)/);
+    const m = name.match(/^\d{4}-\d{2}-\d{2}-\d{4}-(.+?)-(content|social-posts|posting-calendar|solo|alt)/);
     return m ? m[1] : '';
   };
   const stream = [];
@@ -1280,7 +1275,6 @@ app.get('/api/activity', async (_req, res) => {
   for (const s of bulkPosts) push('social-bulk', 'Social posts (bulk)', s, { href: `/view/social/${encodeURIComponent(s.name)}` });
   for (const s of soloPosts) push('social-solo', 'Social posts (solo)', s, { href: `/view/social/${encodeURIComponent(s.name)}` });
   for (const c of calendars) push('calendar', 'Posting calendar', c, { href: `/view/social/${encodeURIComponent(c.name)}` });
-  for (const t of trends) push('trends', 'Trends report', t, { href: `/view/reports/${encodeURIComponent(t.name)}` });
   for (const a of altText) push('alt', 'Alt text', a, { href: `/view/social/${encodeURIComponent(a.name)}` });
   for (const o of otherSocial) push('social-other', 'Social file', o, { href: `/view/social/${encodeURIComponent(o.name)}` });
   for (const b of thumbBatches) {
@@ -4126,39 +4120,9 @@ app.post('/api/browser-scan/scan', async (req, res) => {
 });
 
 // --- In-browser analytics endpoints --------------------------------
-// Same artifacts the /scout-{trends,seo} agent commands
-// produce — but computed in pure Node from data already on disk so the
-// Reports view's Trends tab can run with one click. No LLM, no
-// subprocess. See tools/lib/analytics.mjs for the engine.
-
-app.get('/api/analytics/trends', async (req, res) => {
-  try {
-    const slug = String(req.query.slug || '');
-    const months = Math.max(2, Math.min(12, parseInt(req.query.months, 10) || 4));
-    const cacheKey = `analytics:trends:${slug}:${months}`;
-    const cached = responseCache.get(cacheKey);
-    if (cached) return res.json(cached);
-    const idx = await getIndex();
-    let configRaw = '';
-    if (slug && isValidSlug(slug)) {
-      try { configRaw = (await readConfig(slug)).raw; } catch { /* missing config — allow all parsed tags */ }
-    }
-    const result = runTrends({
-      items: idx.items,
-      conversations: idx.conversations,
-      months,
-      slug,
-      configRaw,
-    });
-    await fs.writeFile(path.join(REPORTS_DIR, result.fileName), result.markdown, 'utf8');
-    clearArtifactResponseCaches();
-    const payload = { ok: true, fileName: result.fileName, data: result.data };
-    responseCache.set(cacheKey, payload, 60_000);
-    res.json(payload);
-  } catch (err) {
-    res.status(500).json({ error: String(err.message || err) });
-  }
-});
+// Same artifacts the /scout-seo agent command produces — but computed in
+// pure Node from data already on disk so the Reports view can run with one
+// click. No LLM, no subprocess. See tools/lib/analytics.mjs for the engine.
 
 app.post('/api/analytics/seo', express.json(), async (req, res) => {
   try {
@@ -4204,7 +4168,7 @@ app.listen(PORT, HOST, async () => {
   // or a typo). scout-config-*.prompt.md is excluded — those are user configs.
   const expectedPrompts = [
     'scout-onboard.prompt.md', 'scout-scan.prompt.md', 'scout-post.prompt.md',
-    'scout-calendar.prompt.md', 'scout-trends.prompt.md',
+    'scout-calendar.prompt.md',
     'scout-creators.prompt.md', 'scout-doctor.prompt.md', 'scout-keys.prompt.md',
     'scout-seo.prompt.md', 'scout-reddit-import.prompt.md',
     'scout-alt.prompt.md', 'scout-vision.prompt.md',

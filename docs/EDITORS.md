@@ -21,7 +21,6 @@ Content Scout works in any AI coding tool that supports custom instructions. The
 | `/scout-scan` | "scout scan" |
 | `/scout-post` | "scout post" |
 | `/scout-calendar` | "scout calendar" |
-| `/scout-trends` | "scout trends" |
 | `/scout-creators` | "scout creators" |
 | `/scout-doctor` | "scout doctor" |
 | `/scout-keys` | "scout keys" |

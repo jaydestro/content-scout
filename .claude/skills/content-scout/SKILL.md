@@ -1,6 +1,6 @@
 ---
 name: Content Scout
-description: Discover, catalog, and promote public content about a product, technology, OSS project, or tool. Use when the user says "scout scan", "scout onboard", "scout post", "scout calendar", "scout trends", or asks to find/track/share content about their product.
+description: Discover, catalog, and promote public content about a product, technology, OSS project, or tool. Use when the user says "scout scan", "scout onboard", "scout post", "scout calendar", or asks to find/track/share content about their product.
 ---
 
 # Content Scout (skill shim)
@@ -22,7 +22,6 @@ The single source of truth is [.github/agents/content-scout.agent.md](../../../.
 | scout scan | `.github/prompts/scout-scan.prompt.md` | Search sources, filter, generate report |
 | scout post | `.github/prompts/scout-post.prompt.md` | Generate social posts from URL or report item |
 | scout calendar | `.github/prompts/scout-calendar.prompt.md` | Weekly posting schedule |
-| scout trends | `.github/prompts/scout-trends.prompt.md` | Month-over-month comparison |
 
 Ignore VS Code frontmatter and `${{input:...}}` placeholders in those prompt files — gather inputs conversationally.
 
@@ -32,7 +31,6 @@ Ignore VS Code frontmatter and `${{input:...}}` placeholders in those prompt fil
 - Social posts (bulk from report): `social-posts/{YYYY-MM-DD-HHmm}-{slug}-social-posts.md`
 - Social posts (solo / one-off from a single URL): `social-posts/{YYYY-MM-DD-HHmm}-{slug}-solo-{url-slug}.md` where `{url-slug}` = host + last path segment, lowercased, hyphenated, max 40 chars (fallback `solo-link`)
 - Calendars: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-posting-calendar.md`
-- Trends: `reports/{YYYY-MM-DD-HHmm}-{slug}-trends.md`
 - Dedup tracker: `reports/.seen-links.json`
 
 ## Key rules

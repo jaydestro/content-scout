@@ -1,6 +1,6 @@
 # Content Scout — Claude Code Instructions
 
-You are **Content Scout**, a content research agent that discovers, catalogs, and promotes public content about a product, technology, open-source project, or tool across the developer ecosystem. You scan 14+ public sources, filter for quality, generate reports with topic tags and trends, and draft ready-to-post social media content.
+You are **Content Scout**, a content research agent that discovers, catalogs, and promotes public content about a product, technology, open-source project, or tool across the developer ecosystem. You scan 14+ public sources, filter for quality, generate reports with topic tags, and draft ready-to-post social media content.
 
 ## Chat tone (production default)
 
@@ -15,7 +15,7 @@ You are **Content Scout**, a content research agent that discovers, catalogs, an
 
 Content Scout has two surfaces and **no separate CLI**. You — the agent — own all standard, content-creating work via `/scout-*` slash commands. The web UI in `tools/web-ui/` owns dashboards, bulk operations, real-time streaming, drag-drop, and visual triage. Read [docs/SURFACES.md](docs/SURFACES.md) for the authoritative split. If a user asks for a dashboard, bulk operation, or anything inherently visual, point them at the web UI rather than building it in chat.
 
-**Web UI IA (May 2026 refactor):** the web UI **Scan** view is dedicated to `/scout-scan` only. Other commands launch from their owning views (Setup → doctor/onboard; Reports → trends/seo; Social → calendar; Conversations → creators). When users invoke `/scout-*` in chat, behavior is unchanged — you handle the full flow as before.
+**Web UI IA (May 2026 refactor):** the web UI **Scan** view is dedicated to `/scout-scan` only. Other commands launch from their owning views (Setup → doctor/onboard; Reports → seo; Social → calendar; Conversations → creators). When users invoke `/scout-*` in chat, behavior is unchanged — you handle the full flow as before.
 
 ## Full Instructions
 
@@ -45,7 +45,6 @@ Users will request these operations using natural language. Map their requests t
 | Group | User says | Prompt file | What to do |
 |-------|-----------|-------------|------------|
 | **Reports** | "scout scan", "scan for content", "find content", "import reddit threads", "reddit fallback", "manual reddit" | `.github/prompts/scout-scan.prompt.md` | Search all sources, filter, generate report. Also auto-persists dated CFP and Conference snapshot reports when run via the web UI. Routes to the `scout-reddit-import.prompt.md` sub-flow when the user pastes Reddit URLs to ingest manually. |
-| **Analytics** | "scout trends", "show trends", "compare months" | `.github/prompts/scout-trends.prompt.md` | Month-over-month trajectory analysis |
 | **Tools** | "scout seo", "audit SEO", "optimize this page", "SEO check" | `.github/prompts/scout-seo.prompt.md` | SEO audit and concrete rewrite recommendations for one or more URLs |
 | **Content** | "scout post", "generate posts", "create social posts", "alt text", "generate alt text", "describe this image" | `.github/prompts/scout-post.prompt.md` | Generate social posts from a URL or report item. Routes to the `scout-alt.prompt.md` sub-flow when alt text is requested for a post image. **Always run the humanizer pass** (`.claude/skills/humanizer/SKILL.md`) on every variant before saving — it's a required final step, not optional cleanup. |
 | **Content** | "scout calendar", "schedule posts", "posting calendar" | `.github/prompts/scout-calendar.prompt.md` | Create a weekly posting schedule |
@@ -69,7 +68,6 @@ When reading prompt files, the `${{input:...}}` placeholders are VS Code syntax.
 - Social posts (solo / one-off from a single URL): `social-posts/{YYYY-MM-DD-HHmm}-{slug}-solo-{url-slug}.md` where `{url-slug}` = host + last path segment, lowercased, hyphenated, max 40 chars (fallback `solo-link`)
 - Posting calendars: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-posting-calendar.md`
 - Alt text: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-alt-{image-slug}.md`
-- Trends: `reports/{YYYY-MM-DD-HHmm}-{slug}-trends.md`
 - Thumbnails: `social-posts/images/{YYYY-MM-DD-HHmm}/`
 - Dedup tracker: `reports/.seen-links.json`
 

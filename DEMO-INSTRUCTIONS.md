@@ -40,11 +40,10 @@ This guide walks you through a full demo of Content Scout, showing both the agen
   - Spreads posts across days/platforms
   - Writes to `social-posts/{timestamp}-azure-cosmos-db-posting-calendar.md`
 
-### 1.5 Run Trends and Creators Analysis
-- **Commands:** `/scout-trends`, `/scout-creators`
+### 1.5 Run Creators Analysis
+- **Command:** `/scout-creators`
 - **What happens:**
-  - Trends: Month-over-month content and sentiment trends
-  - Creators: Surfaces rising, stable, fading, and detractor creators
+  - Surfaces rising, stable, fading, and detractor creators
 
 ### 1.6 Health Check
 - **Command:** `/scout-doctor`
@@ -69,7 +68,7 @@ This guide walks you through a full demo of Content Scout, showing both the agen
 - **Guided Pickers:** Model browser, `.env` editor
 
 ### 2.3 Parity Note
-- All standard content-creating operations (scan, post, calendar, trends, creators, doctor) are available via the agent.
+- All standard content-creating operations (scan, post, calendar, creators, doctor) are available via the agent.
 - The web UI is for dashboards, bulk ops, and visual triage only.
 
 ---
@@ -80,7 +79,7 @@ This guide walks you through a full demo of Content Scout, showing both the agen
 2. **Run a scan** with `/scout-scan` and show the generated report in `reports/`.
 3. **Generate social posts** for a report item with `/scout-post` and show the output in `social-posts/`.
 4. **Create a posting calendar** with `/scout-calendar` and show the output file.
-5. **Show trends and creators** with `/scout-trends`, `/scout-creators`.
+5. **Show creators** with `/scout-creators`.
 6. **Run `/scout-doctor`** to demonstrate health checks.
 7. **Switch to the web UI** and show dashboards, bulk scan, and visual triage features.
 

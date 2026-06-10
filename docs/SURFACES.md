@@ -28,7 +28,6 @@ Every value-creating operation has a slash command:
 | `/scout-scan` | Scan all sources, filter, generate a report |
 | `/scout-post` | Generate social posts from a URL or report item |
 | `/scout-calendar` | Build a weekly posting schedule |
-| `/scout-trends` | Compare month-over-month |
 | `/scout-creators` | View creator trajectories, log interventions |
 | `/scout-seo` | SEO audit + recommendations for a URL |
 | `/scout-doctor` | Validate config, `.env`, source reachability |
@@ -51,7 +50,7 @@ startup.
 > |---|---|
 > | `/scout-scan` (+ `custom`) | Scan |
 > | `/scout-doctor`, `/scout-onboard` | Setup |
-> | `/scout-trends`, `/scout-seo` | Reports |
+> | `/scout-seo` | Reports |
 > | `/scout-calendar` | Social posts |
 > | `/scout-creators` | Conversations |
 >

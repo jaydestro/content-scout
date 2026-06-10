@@ -15,7 +15,7 @@ Onboard (once) → Scan (monthly) → Post (ongoing) → Analyze (monthly)
 1. **Onboard** — configure the agent for your product, technology, project, or tool and role
 2. **Scan** — discover and catalog community content
 3. **Post** — generate social media posts from discovered content
-4. **Analyze** — track trends, plan content strategy
+4. **Schedule** — plan a posting calendar and content strategy
 
 ---
 
@@ -134,7 +134,6 @@ Repositories have additional requirements:
 | Social posts | `social-posts/{YYYY-MM}-{slug}-social-posts.md` | 3 LinkedIn + 3 X options per item, code-fenced for copy (only if social posts enabled) |
 | Dedup tracker | `reports/.seen-links.json` | Updated with all URLs from this scan (shared across products) |
 | Open CFPs | Included in report | Open calls for papers sorted by deadline (if Conference CFP tracking is on) |
-| Trends | Appended to report | Month-over-month deltas (auto-generated at report end) |
 
 When only one product is configured, the slug is optional in filenames for backward compatibility.
 
@@ -230,24 +229,6 @@ Saved to `social-posts/{YYYY-MM}-{slug}-posting-calendar.md` with a day-by-day s
 
 ---
 
-## Step 5: Trends Analysis (`/scout-trends`)
-
-Compares the current month against up to 3 prior months.
-
-### What It Shows
-
-- **Trajectory** — item count, contributor count, conversation volume, sentiment direction
-- **Rising topics** — topics gaining momentum
-- **Declining topics** — topics losing community interest
-- **Repeat vs. new contributors** — is the same group writing, or is the community growing?
-- **Role-specific insight** — actionable recommendation based on your role
-
-### Output
-
-Saved to `reports/{YYYY-MM}-{slug}-trends.md`.
-
----
-
 ## Monthly Workflow (Recommended)
 
 Here's how the pieces fit together for a typical monthly cycle:
@@ -273,12 +254,6 @@ Generate posts for the highest-value items. Review and edit the generated text.
 /scout-calendar
 ```
 Spread the posts across the month. Adjust timing for any known events or holidays.
-
-### End of Month: Analyze
-```
-/scout-trends
-```
-Review trends to understand where the community is heading.
 
 ### Ongoing
 - Run `/scout-post` anytime you find content worth amplifying

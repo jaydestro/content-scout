@@ -60,7 +60,6 @@
         'Scan: discover new content and write a report.',
         'Generate posts: turn a report item into ready-to-publish social posts.',
         'Calendar: build a weekly posting schedule.',
-        'Trends: month-over-month comparison.',
       ],
     },
     'Reports': {

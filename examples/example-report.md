@@ -122,26 +122,6 @@
 ## Sources That Could Not Be Reached
 - LinkedIn -- Rate-limited during scan window, will retry next scan.
 
-## Monthly Trends
-### Top Topics This Month
-1. **ai** -- 5 items (↑ +2 vs. last month)
-2. **performance** -- 5 items (→ same)
-3. **best-practices** -- 4 items (↑ +1)
-4. **cost-optimization** -- 3 items (↑ +1)
-5. **data-modeling** -- 3 items (↑ +1)
-
-### Month-over-Month Delta
-- Total items: 18 vs. 15 (+3, +20%)
-- New contributors: 2
-- Conversation volume: 4 vs. 5 (-1)
-- Topics trending up: `ai`, `vector-search`, `cost-optimization`, `data-modeling`
-- Topics trending down: `monitoring` (0 items, was 2)
-
-### Observations
-- Strong AI/vector search momentum this month, driven by the MongoDB vCore vector GA and multiple community RAG projects.
-- Cost optimization continues to be a popular topic -- serverless and hierarchical partitions are the primary angles.
-- Migration content from DynamoDB is a new signal, possibly driven by AWS pricing changes.
-
 ## Notes
 - The YouTube API returned 3 relevant results from 47 total. The quality filter excluded 44 low-value or off-topic videos.
 - LinkedIn could not be scanned due to rate limiting. Content from LinkedIn may be underrepresented.
