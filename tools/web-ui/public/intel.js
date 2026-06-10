@@ -1597,13 +1597,13 @@
   // LinkedIn, X, plus HN / Stack Overflow / YouTube). Negative + mixed items
   // are still flagged for response in a "Needs reply" sub-card.
   const SOCIAL_PLATFORMS = [
-    { key: 'reddit',         label: 'Reddit',        match: /reddit/i,                       icon: '👽' },
-    { key: 'bluesky',        label: 'Bluesky',       match: /bluesky|bsky/i,                  icon: '🦋' },
-    { key: 'linkedin',       label: 'LinkedIn',      match: /linkedin/i,                      icon: '💼' },
+    { key: 'reddit',         label: 'Reddit',        match: /reddit/i,                       icon: 'RD' },
+    { key: 'bluesky',        label: 'Bluesky',       match: /bluesky|bsky/i,                  icon: 'BS' },
+    { key: 'linkedin',       label: 'LinkedIn',      match: /linkedin/i,                      icon: 'IN' },
     { key: 'x',              label: 'X',             match: /^x$|x\/twitter|twitter|x\.com/i, icon: '𝕏'  },
-    { key: 'hackernews',     label: 'Hacker News',   match: /hacker\s*news|news\.ycombinator/i, icon: '🟧' },
-    { key: 'stackoverflow',  label: 'Stack Overflow',match: /stack\s*overflow/i,              icon: '📚' },
-    { key: 'youtube',        label: 'YouTube',       match: /youtube|youtu\.be/i,             icon: '▶️' },
+    { key: 'hackernews',     label: 'Hacker News',   match: /hacker\s*news|news\.ycombinator/i, icon: 'HN' },
+    { key: 'stackoverflow',  label: 'Stack Overflow',match: /stack\s*overflow/i,              icon: 'SO' },
+    { key: 'youtube',        label: 'YouTube',       match: /youtube|youtu\.be/i,             icon: 'YT' },
   ];
 
   function platformKey(name) {
@@ -1683,20 +1683,23 @@
       // Sentiment pills (top of card)
       const totals = { positive: 0, neutral: 0, mixed: 0, negative: 0, unknown: 0 };
       all.forEach((c) => { totals[c.sentiment] = (totals[c.sentiment] || 0) + 1; });
+      const flaggedCount = all.filter((c) => c.sentiment === 'negative' || c.sentiment === 'mixed').length;
       if (summary) {
         // Hide buckets that are empty so "0 mixed" doesn't waste a slot when
         // the classifier (intentionally restrictive) finds no items there.
-        // The 🟠 mixed glyph matches the per-card sentiment dot in
-        // SENTIMENT_DOT; yellow was an older inconsistent value that collided
-        // with the legacy neutral dot.
         const pills = [];
-        if (totals.positive) pills.push(`<span class="pill pill-pos" title="Advocates">🟢 ${totals.positive} advocate${totals.positive === 1 ? '' : 's'}</span>`);
-        if (totals.neutral)  pills.push(`<span class="pill pill-neu" title="Neutral">⚪ ${totals.neutral} neutral</span>`);
-        if (totals.mixed)    pills.push(`<span class="pill pill-mix" title="Mixed — worth a thoughtful reply">🟠 ${totals.mixed} mixed</span>`);
-        if (totals.negative) pills.push(`<span class="pill pill-neg" title="Critical — respond first">🔴 ${totals.negative} critical</span>`);
-        if (totals.unknown)  pills.push(`<span class="pill pill-unk" title="Unknown — not enough product stance to score">· ${totals.unknown} unknown</span>`);
+        if (totals.positive) pills.push(`<span class="pill pill-pos" title="Advocates"><span class="tone-dot tone-positive"></span>${totals.positive} advocate${totals.positive === 1 ? '' : 's'}</span>`);
+        if (totals.neutral)  pills.push(`<span class="pill pill-neu" title="Neutral"><span class="tone-dot tone-neutral"></span>${totals.neutral} neutral</span>`);
+        if (totals.mixed)    pills.push(`<span class="pill pill-mix" title="Mixed — worth a thoughtful reply"><span class="tone-dot tone-mixed"></span>${totals.mixed} mixed</span>`);
+        if (totals.negative) pills.push(`<span class="pill pill-neg" title="Critical — respond first"><span class="tone-dot tone-negative"></span>${totals.negative} critical</span>`);
+        if (totals.unknown)  pills.push(`<span class="pill pill-unk" title="Unknown — not enough product stance to score"><span class="tone-dot tone-unknown"></span>${totals.unknown} unclassified</span>`);
         summary.innerHTML = all.length
-          ? `<div class="dash-sent-pills">${pills.join('')}</div>`
+          ? `<div class="dash-signal-strip">
+              <div class="dash-signal-metric"><strong>${all.length}</strong><span>conversations</span></div>
+              <div class="dash-signal-metric"><strong>${flaggedCount}</strong><span>need review</span></div>
+              <div class="dash-signal-metric"><strong>${olderCount}</strong><span>older archived</span></div>
+            </div>
+            <div class="dash-sent-pills">${pills.join('')}</div>`
           : `<p class="hint">No conversations tracked yet. Run a scan to surface community chatter.</p>`;
       }
 
@@ -1738,8 +1741,8 @@
           ? ` · ${olderCount} older in Conversations`
           : '';
         meta.textContent =
-          `Last 30d · ${all.length} conversation${all.length === 1 ? '' : 's'} across ${platformsSeen} platform${platformsSeen === 1 ? '' : 's'}` +
-          (needs.length ? ` · ${needs.length} flagged for response` : '') +
+          `Last 30d · ${platformsSeen} platform${platformsSeen === 1 ? '' : 's'}` +
+          (needs.length ? ` · ${needs.length} need review` : '') +
           olderNote;
       }
 
@@ -1797,13 +1800,11 @@
             productSorted[0];
           const prev = sample ? extractSamplePreview(sample) : { text: '', url: '' };
           const sampleHasUrl = !!prev.url && isValidPostUrl(prev.url);
-          const sampleDot = sample
-            ? (SENTIMENT_DOT[sample.sentiment] || SENTIMENT_DOT.unknown)
-            : '';
+          const sampleTone = sample?.sentiment || 'unknown';
           const sentTitle = sample ? esc(sample.sentiment || 'unknown') : '';
           const sampleHtml = sample
             ? `<div class="dash-plat-sample">
-                <span class="dash-plat-sent" title="${sentTitle}" aria-label="sentiment: ${sentTitle}">${sampleDot}</span>
+                <span class="dash-plat-sent tone-dot tone-${esc(sampleTone)}" title="${sentTitle}" aria-label="sentiment: ${sentTitle}"></span>
                 ${sampleHasUrl ? `<a href="${esc(prev.url)}" class="dash-link" data-check-url="${esc(prev.url)}" data-conv-key="${esc(sample.key || '')}" target="_blank" rel="noopener" title="Open in Conversations (Ctrl/Cmd-click for source)">${esc(trim(prev.text, 100))}</a>` : esc(trim(prev.text, 100))}
                 <div class="hint">${esc(sample.author || '')}${sample.author && sample.date ? ' · ' : ''}${esc(sample.date || '')}</div>
               </div>`
@@ -1812,6 +1813,7 @@
             <div class="dash-plat-head">
               <span class="dash-plat-icon" aria-hidden="true">${p.icon}</span>
               <strong>${esc(p.label)}</strong>
+              <span class="dash-plat-total">${c + pr}</span>
               <span class="dash-plat-counts">
                 <span class="dash-plat-chip dash-plat-community" title="Community-generated posts">${c} community</span>
                 <span class="dash-plat-chip dash-plat-product" title="Product / official posts">${pr} official</span>
@@ -1828,7 +1830,6 @@
         ? `<details class="dash-needs-card" ${needs.length <= 3 ? 'open' : ''}>
             <summary><strong>Needs reply</strong> <span class="hint">${needs.length} item${needs.length === 1 ? '' : 's'}</span></summary>
             ${needs.slice(0, 5).map((c) => {
-              const dot = c.sentiment === 'negative' ? '🔴' : '🟠';
               const tone = c.sentiment === 'negative' ? 'critical' : 'mixed';
               const hasUrl = isValidPostUrl(c.url);
               const link = hasUrl
@@ -1839,7 +1840,7 @@
                 : '';
               return `<div class="dash-needs-row sent-${esc(c.sentiment)}">
                 <div class="dash-needs-head">
-                  <span class="dash-needs-dot">${dot}</span>
+                  <span class="dash-needs-dot tone-dot tone-${tone}" aria-label="${tone}"></span>
                   <strong>${esc(c.author || '(unknown)')}</strong>
                   <span class="hint">on ${esc(c.platform || '—')} · ${esc(c.date || '')}</span>
                   <span class="dash-needs-tone tone-${tone}">${tone}</span>
@@ -1980,7 +1981,7 @@
       const data = await fetch('/api/sentiment-summary').then((r) => r.json());
       const groups = data.groups || [];
       if (!groups.length) {
-        host.innerHTML = `<p class="hint">No reports yet. Run a scan to see sentiment trends.</p>`;
+        host.innerHTML = `<p class="hint">No reports yet. Run a scan to see sentiment.</p>`;
         return;
       }
       host.innerHTML = groups
@@ -2005,9 +2006,9 @@
             const dp = (t.positive || 0) - (prior.positive || 0);
             const dn = (t.negative || 0) - (prior.negative || 0);
             if (dp || dn) {
-              delta = `<span class="sent-delta">Δ ${dp >= 0 ? '+' + dp : dp} 🟢, ${
+              delta = `<span class="sent-delta">${dp >= 0 ? '+' + dp : dp} advocates, ${
                 dn >= 0 ? '+' + dn : dn
-              } 🔴</span>`;
+              } critical</span>`;
             }
           }
           return `<div class="sent-row">
@@ -2023,10 +2024,10 @@
               ${bar(t.negative || 0, 'neg')}
             </div>
             <div class="sent-legend">
-              ${t.positive ? `🟢 ${t.positive}` : ''}
-              ${t.neutral ? `⚪ ${t.neutral}` : ''}
-              ${t.mixed ? `🟠 ${t.mixed}` : ''}
-              ${t.negative ? `🔴 ${t.negative}` : ''}
+              ${t.positive ? `<span><span class="tone-dot tone-positive"></span>${t.positive} advocate${t.positive === 1 ? '' : 's'}</span>` : ''}
+              ${t.neutral ? `<span><span class="tone-dot tone-neutral"></span>${t.neutral} neutral</span>` : ''}
+              ${t.mixed ? `<span><span class="tone-dot tone-mixed"></span>${t.mixed} mixed</span>` : ''}
+              ${t.negative ? `<span><span class="tone-dot tone-negative"></span>${t.negative} critical</span>` : ''}
             </div>
           </div>`;
         })
@@ -2054,7 +2055,7 @@
           const pos = a.sentiments?.positive || 0;
           const neg = a.sentiments?.negative || 0;
           const skew =
-            pos > neg ? `🟢 +${pos - neg}` : neg > pos ? `🔴 -${neg - pos}` : '';
+            pos > neg ? `+${pos - neg} advocate` : neg > pos ? `${neg - pos} critical` : '';
           return `<li class="creator-row" data-author="${esc(a.name)}">
             <div class="creator-name">${esc(a.name)}</div>
             <div class="creator-meta">
@@ -2105,7 +2106,7 @@
               .join('')}</ul>
             <button type="button" class="src-doctor-btn">Run scout doctor</button>
           </div>`
-        : `<p class="hint">No skipped sources in the latest scan. 🎉</p>`;
+        : `<p class="hint">No skipped sources in the latest scan.</p>`;
       const topHtml = sources.length
         ? `<div class="src-top">
             <strong>Top contributing sources:</strong>

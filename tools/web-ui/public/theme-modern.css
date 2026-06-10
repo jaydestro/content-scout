@@ -2057,7 +2057,8 @@ details.conv-week .conv-week-body .conv-row:last-child { margin-bottom: 0; }
 #dash-sentiment .sent-seg.neu { background: #94a3b8; }
 #dash-sentiment .sent-seg.mix { background: #eab308; }
 #dash-sentiment .sent-seg.neg { background: #ef4444; }
-#dash-sentiment .sent-legend { font-size: 0.85rem; margin-top: 0.4rem; color: var(--muted, #94a3b8); display: flex; gap: 0.75rem; }
+#dash-sentiment .sent-legend { font-size: 0.85rem; margin-top: 0.4rem; color: var(--muted, #94a3b8); display: flex; gap: 0.75rem; flex-wrap: wrap; }
+#dash-sentiment .sent-legend span { display: inline-flex; align-items: center; gap: 0.3rem; }
 
 #dash-creators .creator-row {
   cursor: pointer; padding: 0.5rem 0.6rem; border-radius: 6px;
@@ -2096,8 +2097,23 @@ details.conv-week .conv-week-body .conv-row:last-child { margin-bottom: 0; }
 #report-toc a:hover { background: rgba(129,140,248,0.12); color: var(--accent, #818cf8); }
 
 /* === Dashboard: Social activity / needs-response === */
-.dash-social-activity-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.5rem; }
-.dash-social-summary { margin-bottom: 0.75rem; }
+.dash-social-activity-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.65rem; }
+.dash-social-summary { margin-bottom: 0.85rem; }
+.dash-signal-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 0.55rem;
+}
+.dash-signal-metric {
+  min-width: 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border, #2a2e44);
+  border-radius: 8px;
+  background: var(--panel-2, var(--surface-2, #1a1d2b));
+}
+.dash-signal-metric strong { display: block; font-size: 1.2rem; line-height: 1.05; }
+.dash-signal-metric span { display: block; margin-top: 0.15rem; color: var(--muted, #94a3b8); font-size: 0.78rem; }
 .dash-sent-pills { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .dash-sent-pills .pill {
   display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.25rem 0.6rem;
@@ -2109,6 +2125,21 @@ details.conv-week .conv-week-body .conv-row:last-child { margin-bottom: 0; }
 .dash-sent-pills .pill-mix { border-color: rgba(234,179,8,0.6); }
 .dash-sent-pills .pill-neg { border-color: rgba(239,68,68,0.6); }
 .dash-sent-pills .pill-unk { border-color: rgba(148,163,184,0.35); opacity: 0.85; }
+.tone-dot {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: #64748b;
+  box-shadow: 0 0 0 2px rgba(148,163,184,0.12);
+  flex: 0 0 auto;
+}
+.tone-positive { background: #22c55e; }
+.tone-neutral { background: #94a3b8; }
+.tone-mixed { background: #eab308; }
+.tone-negative,
+.tone-critical { background: #ef4444; }
+.tone-unknown { background: #64748b; }
 
 .dash-needs-row {
   border: 1px solid var(--border, #2a2e44);
@@ -2596,7 +2627,7 @@ html[data-theme="light"] .copy-btn {
   gap: .35rem;
   padding: .65rem .8rem;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--panel-2, var(--panel));
   cursor: pointer;
   transition: border-color .12s ease, transform .12s ease, box-shadow .12s ease;
@@ -2612,11 +2643,32 @@ html[data-theme="light"] .copy-btn {
   gap: .45rem;
   flex-wrap: wrap;
 }
-.dash-plat-icon { font-size: 1.05rem; line-height: 1; }
+.dash-plat-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: rgba(148,163,184,0.12);
+  font-size: 0.72rem;
+  line-height: 1;
+  font-weight: 700;
+  color: var(--muted);
+}
+.dash-plat-total {
+  margin-left: 0.15rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
 .dash-plat-counts {
   margin-left: auto;
   display: inline-flex;
   gap: .3rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 .dash-plat-chip {
   font-size: .68rem;
@@ -2651,11 +2703,13 @@ html[data-theme="light"] .dash-plat-chip.dash-plat-product {
 }
 .dash-plat-sample a { font-weight: 500; }
 .dash-plat-sent {
-  display: inline-block;
-  font-size: .85rem;
   margin-right: 0.3rem;
-  vertical-align: -1px;
-  user-select: none;
+  vertical-align: 0;
+}
+
+@media (max-width: 640px) {
+  .dash-signal-strip { grid-template-columns: 1fr; }
+  .dash-plat-counts { width: 100%; margin-left: 2.1rem; justify-content: flex-start; }
 }
 
 /* Brief highlight when a Social pulse link jumps to its row in the
