@@ -4063,6 +4063,74 @@ app.get('/api/browser-scan/status', async (req, res) => {
   });
 });
 
+// GET /api/browser-scan/pending?slug=X — are there browser-scan sidecars
+// captured *after* the latest report for this slug (i.e. sign-in-scan posts
+// that no /scout-scan run has folded into a report yet)? Powers the
+// dashboard "captured but not ingested" hint so fresh social chatter doesn't
+// silently look stale on the Community-signals card. Social platforms only
+// (x / linkedin / reddit) — google sidecars are content-only and never feed
+// that card. No CDP probe: this is a pure filesystem comparison.
+app.get('/api/browser-scan/pending', async (req, res) => {
+  if (!BROWSER_SCAN_INSTALLED) return res.json({ installed: false, pending: false, platforms: [] });
+  const slug = String(req.query.slug || '').trim();
+  if (!isValidSlug(slug)) return res.json({ installed: true, pending: false, platforms: [] });
+
+  // Newest report stamp for this slug. Reports are {stamp}-{slug}-content.md.
+  let latestReportStamp = '';
+  try {
+    const reports = await listMarkdownFiles(REPORTS_DIR);
+    for (const r of reports) {
+      const m = r.name.match(/^(\d{4}-\d{2}-\d{2}-\d{4})-(.+)-content\.md$/);
+      if (m && m[2] === slug && m[1] > latestReportStamp) latestReportStamp = m[1];
+    }
+  } catch { /* no reports dir yet → every sidecar counts as pending */ }
+
+  // Newest sidecar per social platform across canonical + legacy dirs.
+  const SOCIAL = ['x', 'linkedin', 'reddit'];
+  const newest = {}; // platform -> { stamp, dir, file }
+  for (const root of [BROWSER_SCAN_SIDECAR_DIR, LEGACY_BROWSER_SCAN_DIR]) {
+    const slugDir = path.join(root, slug);
+    let files = [];
+    try { files = await fs.readdir(slugDir); } catch { continue; }
+    for (const f of files) {
+      const m = f.match(/^(\d{4}-\d{2}-\d{2}-\d{4})-(x|linkedin|reddit)\.json$/);
+      if (!m) continue;
+      const [, stamp, platform] = m;
+      if (!newest[platform] || stamp > newest[platform].stamp) {
+        newest[platform] = { stamp, dir: slugDir, file: f };
+      }
+    }
+  }
+
+  // A platform is "pending" when its newest sidecar postdates the latest
+  // report. Count items by reading the sidecar array.
+  const platforms = [];
+  let totalItems = 0;
+  let newestSidecarStamp = '';
+  for (const platform of SOCIAL) {
+    const s = newest[platform];
+    if (!s) continue;
+    if (s.stamp > newestSidecarStamp) newestSidecarStamp = s.stamp;
+    if (latestReportStamp && s.stamp <= latestReportStamp) continue; // already ingested
+    let count = 0;
+    try {
+      const arr = JSON.parse(await fs.readFile(path.join(s.dir, s.file), 'utf8'));
+      count = Array.isArray(arr) ? arr.length : 0;
+    } catch { /* unreadable sidecar — surface it with count 0 */ }
+    platforms.push({ platform, stamp: s.stamp, count });
+    totalItems += count;
+  }
+
+  res.json({
+    installed: true,
+    pending: totalItems > 0,
+    latestReportStamp,
+    newestSidecarStamp,
+    platforms,
+    totalItems,
+  });
+});
+
 // POST /api/browser-scan/launch — spawn launch-edge.mjs in the background.
 // Body: { browser?: 'Microsoft Edge'|... , port?: 9222, useDefaultProfile?: false }
 app.post('/api/browser-scan/launch', async (req, res) => {
@@ -4160,6 +4228,10 @@ app.post('/api/browser-scan/scan', async (req, res) => {
   if (!BROWSER_SCAN_INSTALLED) return res.status(404).json({ error: 'browser-scan not installed' });
   const { slug, platforms, port, days } = req.body || {};
   if (!slug || !isValidSlug(slug)) return res.status(400).json({ error: 'valid slug required' });
+  // Whether to fold the fresh sidecars into a report once the scan finishes.
+  // Default true so "run completes → data is ingested" is the standard
+  // behavior; pass { ingest: false } for a pure sidecar refresh.
+  const wantIngest = (req.body && req.body.ingest) !== false;
   // Make sure CDP is reachable before spawning — friendlier error than the
   // child failing 8 seconds in.
   const probe = await probeCdpPort(Number(port || 9222));
@@ -4200,11 +4272,71 @@ app.post('/api/browser-scan/scan', async (req, res) => {
     child,
   };
   runs.set(id, run);
+  // Capture the spawn time so the close handler can tell whether THIS run
+  // wrote fresh social sidecars (used to gate auto-ingest — see below).
+  const runStartMs = Date.now();
   child.stdout.on('data', (d) => pushRunOutput(run, d.toString()));
   child.stderr.on('data', (d) => pushRunOutput(run, d.toString()));
-  child.on('close', (code) => { run.child = null; closeRun(run, code === 0 ? 'success' : `exited ${code}`); });
+  child.on('close', async (code) => {
+    run.child = null;
+    closeRun(run, code === 0 ? 'success' : `exited ${code}`);
+    if (!wantIngest) return;
+    // Gate auto-ingest on "did this run write fresh X/LinkedIn/Reddit
+    // sidecars?", NOT on the exit code. The browser-scan tool routinely
+    // exits non-zero on a Google News timeout *after* successfully writing
+    // all three social sidecars, so keying off code===0 would strand 100+
+    // good posts (exactly the bug the user hit). A hard failure (CDP down)
+    // writes no sidecars, so this check still correctly skips ingest.
+    let freshSocial = 0;
+    try {
+      for (const dir of browserScanReadDirs(slug)) {
+        let files = [];
+        try { files = await fs.readdir(dir); } catch { continue; }
+        for (const f of files) {
+          if (!/-(x|linkedin|reddit)\.json$/.test(f)) continue;
+          try {
+            const st = await fs.stat(path.join(dir, f));
+            // -2s slack for clock granularity between spawn and first write.
+            if (st.mtimeMs >= runStartMs - 2000) freshSocial += 1;
+          } catch { /* ignore unreadable */ }
+        }
+      }
+    } catch { /* fall through → treated as no fresh sidecars */ }
+    if (freshSocial === 0) {
+      if (code !== 0) {
+        pushRunOutput(run, `\n[scout-web] Browser scan exited ${code} and wrote no fresh social sidecars — skipping auto-ingest. Check the log above (often a sign-in/CDP issue).\n`);
+      }
+      return;
+    }
+    if (code !== 0) {
+      pushRunOutput(run, `\n[scout-web] Browser scan reported exit ${code} but wrote ${freshSocial} fresh social sidecar(s) (commonly a Google News timeout after the social platforms succeeded) — ingesting anyway.\n`);
+    }
+    // Default behavior: a completed browser scan should leave its posts
+    // ingested into a report, not stranded in sidecars. Chain a /scout-scan
+    // agent run scoped to this slug (browserScan: 'skip' — we just scanned)
+    // so the fresh X/LinkedIn/Reddit posts land in a report's Conversations
+    // & Mentions section. Requires a configured runner; without one we leave
+    // the dashboard's pending-sidecar hint to nudge manual ingestion.
+    let runner = '';
+    try { ({ runner } = await getRunner()); } catch { /* treat as unconfigured */ }
+    if (!runner) {
+      pushRunOutput(run, `\n[scout-web] Browser scan done. No agent runner is configured, so the posts stay in sidecars — open the dashboard and click "Run a scan to ingest", or run /scout-scan, to fold them into a report.\n`);
+      return;
+    }
+    pushRunOutput(run, `\n[scout-web] Browser scan done — auto-starting /scout-scan for "${slug}" to ingest the fresh posts into a report (no re-scan).\n`);
+    try {
+      const chained = await startRunInternal('scout-scan', { slug }, { options: { browserScan: 'skip' } });
+      if (chained && chained.id) {
+        pushRunOutput(run, `[scout-web] Ingest run started → ${chained.id}. Watch it in the Operations drawer.\n`);
+      } else if (chained && chained.error) {
+        pushRunOutput(run, `[scout-web] Could not auto-start the ingest run: ${chained.error.error || 'unknown error'}\n`);
+      }
+    } catch (err) {
+      pushRunOutput(run, `[scout-web] Could not auto-start the ingest run: ${err.message}\n`);
+    }
+  });
   child.on('error', (err) => { pushRunOutput(run, `[browser-scan] ${err.message}\n`); run.child = null; closeRun(run, 'error'); });
-  res.json({ ok: true, id, command });
+  res.json({ ok: true, id, command, willIngest: wantIngest });
 });
 
 // --- In-browser analytics endpoints --------------------------------

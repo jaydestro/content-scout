@@ -383,7 +383,7 @@
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || `${r.status}`);
       if (msg) {
-        msg.innerHTML = `Browser-scan running (last ${activeRangeDays()} days). Watch progress in the <button type="button" data-open-runs class="link-btn">Operations drawer</button>.`;
+        msg.innerHTML = `Browser-scan running (last ${activeRangeDays()} days). When it finishes it auto-ingests into a report. Watch progress in the <button type="button" data-open-runs class="link-btn">Operations drawer</button>.`;
         msg.querySelector('[data-open-runs]')?.addEventListener('click', () => {
           window.runsQueue?.open?.();
         });
