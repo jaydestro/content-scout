@@ -1,5 +1,12 @@
 // Content Scout web UI — vanilla JS SPA
 
+// Shared DOM + fetch helpers ($, api, escape, escapeAttr) live in lib/core.js.
+// app.js is loaded as type="module", so this import is behavior-preserving:
+// these were already module-scoped locals, never exposed on window. The /api
+// fetch coalescer below still applies because api() reads the (patched) global
+// fetch at call time, long after the IIFE installs the patch.
+import { $, api, escape, escapeAttr } from './lib/core.js';
+
 // --- /api GET coalescing + short-TTL cache --------------------------
 // The dashboard fires ~11 GETs across three modules (app.js loadDashboard,
 // dashboard-enhancer loadAll, intel.js loadIntelCards) and several
@@ -74,12 +81,7 @@
   };
 })();
 
-const $ = (id) => document.getElementById(id);
-const api = async (path, opts) => {
-  const r = await fetch(path, opts);
-  if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`);
-  return r.json();
-};
+// $, api, escape, escapeAttr are imported from lib/core.js (top of file).
 
 // --- Navigation ----------------------------------------------------
 const KNOWN_VIEWS = ['dashboard', 'setup', 'configs', 'run', 'reports', 'tools', 'social', 'conversations'];
@@ -3149,11 +3151,7 @@ function renderDocListItem(r) {
 // Small HTML-attribute escaper. Avoids pulling in a sanitizer just for
 // list rendering — the values come from our own filesystem and parser,
 // but quoting still matters for titles that contain &, <, ", etc.
-function escapeAttr(s) {
-  return String(s ?? '').replace(/[&<>"']/g, (c) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[c]));
-}
+// escapeAttr() is imported from lib/core.js (top of file).
 
 // --- Reports view: tabbed IA ---------------------------------------
 // Top-level tabs pick which *part* of the saved reports the panel shows.
@@ -4662,11 +4660,7 @@ document.addEventListener('click', (e) => {
   }
 })();
 
-function escape(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[c]));
-}
+// escape() is imported from lib/core.js (top of file).
 
 // --- Boot ----------------------------------------------------------
 // Honor the URL hash across refreshes so users stay on the view they were on.
