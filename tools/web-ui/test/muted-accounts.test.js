@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -16,6 +16,16 @@ import {
   parseTeamMemberAccountsFromConfig,
   unmuteMany,
 } from '../lib/muted-accounts.js';
+import { stateFilePath, MUTED_ACCOUNTS_FILE } from '../../lib/paths.mjs';
+
+// The state lib centralizes writes on STATE_DIR (it ignores the per-call dir),
+// so tests in this file share one on-disk file. Reset it before each test so
+// one test's writes can't leak into another's assertions. The hermetic runner
+// (test/run.mjs) points STATE_DIR at a throwaway temp dir, so this never
+// touches real state.
+beforeEach(async () => {
+  await fs.rm(stateFilePath(MUTED_ACCOUNTS_FILE), { force: true });
+});
 
 async function tmpReportsDir() {
   return fs.mkdtemp(path.join(os.tmpdir(), 'cs-muted-'));
