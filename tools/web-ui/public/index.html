@@ -715,31 +715,72 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             </div>
 
             <div id="config-form-panel" class="cfg-form-panel">
-              <p class="hint">Edit common fields here. For sections not shown (role flags, brand assets, conferences, etc.), switch to <strong>Raw markdown</strong>.</p>
+              <p class="hint">Edit any field below — changes write back to the config markdown when you click <strong>Save</strong>. Sections with tables or rich formatting (brand assets, watchlist, social platforms, conferences) still live in <strong>Raw markdown</strong>.</p>
 
-              <div class="cfg-field">
-                <label for="cfg-form-search-terms"><strong>Search Terms</strong> <span class="hint">(one per line, quoted phrases OK)</span></label>
-                <textarea id="cfg-form-search-terms" rows="4" spellcheck="false" placeholder='"Azure Cosmos DB"&#10;"Cosmos DB"'></textarea>
-              </div>
+              <details class="cfg-group" open>
+                <summary>Identity &amp; search</summary>
+                <div class="cfg-field">
+                  <label for="cfg-form-name"><strong>Name</strong> <span class="hint">(display name of the product/subject)</span></label>
+                  <input id="cfg-form-name" type="text" spellcheck="false" placeholder="Azure Cosmos DB" />
+                </div>
+                <div class="cfg-field">
+                  <label for="cfg-form-slug"><strong>Slug</strong> <span class="hint">(file identifier — read-only)</span></label>
+                  <input id="cfg-form-slug" type="text" disabled />
+                </div>
+                <div class="cfg-field">
+                  <label for="cfg-form-type"><strong>Type</strong> <span class="hint">(product, framework, oss-tool, saas…)</span></label>
+                  <input id="cfg-form-type" type="text" spellcheck="false" placeholder="product" />
+                </div>
+                <div class="cfg-field">
+                  <label for="cfg-form-search-terms"><strong>Search Terms</strong> <span class="hint">(one per line, quoted phrases OK)</span></label>
+                  <textarea id="cfg-form-search-terms" rows="4" spellcheck="false" placeholder='"Azure Cosmos DB"&#10;"Cosmos DB"'></textarea>
+                </div>
+                <div class="cfg-field">
+                  <label for="cfg-form-search-hashtags"><strong>Search Hashtags</strong> <span class="hint">(one per line, include the # sign)</span></label>
+                  <textarea id="cfg-form-search-hashtags" rows="3" spellcheck="false" placeholder="#AzureCosmosDB&#10;#CosmosDB"></textarea>
+                </div>
+              </details>
 
-              <div class="cfg-field">
-                <label for="cfg-form-search-hashtags"><strong>Search Hashtags</strong> <span class="hint">(one per line, include the # sign)</span></label>
-                <textarea id="cfg-form-search-hashtags" rows="3" spellcheck="false" placeholder="#AzureCosmosDB&#10;#CosmosDB"></textarea>
-              </div>
+              <details class="cfg-group">
+                <summary>Role &amp; behavior <span class="hint">(report focus + feature toggles)</span></summary>
+                <div id="cfg-form-role-flags" class="cfg-kv-host"><p class="hint">Select a config to load its role flags.</p></div>
+              </details>
 
-              <div class="cfg-field">
-                <label for="cfg-form-rss-feeds">
-                  <strong>Custom RSS Feeds</strong>
-                  <span class="hint">(one per line, format: <code>Name | URL</code>)</span>
-                  <button type="button" class="help-icon" aria-label="How do I get an RSS feed URL?" title="How do I get an RSS feed URL?" onclick="window.scoutHelp && window.scoutHelp.open('Custom RSS Feeds')">?</button>
-                </label>
-                <textarea id="cfg-form-rss-feeds" rows="4" spellcheck="false" placeholder="Jay's Blog | https://example.com/feed.xml&#10;X listening — &quot;CosmosDB&quot; | https://rss.app/feeds/xxxx.xml"></textarea>
-              </div>
+              <details class="cfg-group">
+                <summary>People</summary>
+                <div class="cfg-field">
+                  <label for="cfg-form-team"><strong>Product Team Members</strong> <span class="hint">(one per line — verified employees only; aliases in parentheses)</span></label>
+                  <textarea id="cfg-form-team" rows="5" spellcheck="false" placeholder="Jane Doe (github: jdoe, x: jdoe)&#10;John Smith"></textarea>
+                </div>
+                <div class="cfg-field">
+                  <label for="cfg-form-influencers"><strong>Influencers to Monitor</strong> <span class="hint">(one per line — high-signal accounts)</span></label>
+                  <textarea id="cfg-form-influencers" rows="4" spellcheck="false" placeholder="John Savill — YouTube — @NTFAQGuy"></textarea>
+                </div>
+              </details>
 
-              <div class="cfg-field">
-                <label for="cfg-form-excluded"><strong>Excluded Domains/Authors</strong> <span class="hint">(one per line — items from these are filtered out)</span></label>
-                <textarea id="cfg-form-excluded" rows="3" spellcheck="false" placeholder="example-spam.com&#10;some-author"></textarea>
-              </div>
+              <details class="cfg-group">
+                <summary>Competitors</summary>
+                <div class="cfg-field">
+                  <label for="cfg-form-competitors"><strong>Competitors</strong> <span class="hint">(one per line — leave empty to disable competitor tracking)</span></label>
+                  <textarea id="cfg-form-competitors" rows="3" spellcheck="false" placeholder="MongoDB Atlas&#10;Amazon DynamoDB"></textarea>
+                </div>
+              </details>
+
+              <details class="cfg-group">
+                <summary>Sources &amp; filters</summary>
+                <div class="cfg-field">
+                  <label for="cfg-form-rss-feeds">
+                    <strong>Custom RSS Feeds</strong>
+                    <span class="hint">(one per line, format: <code>Name | URL</code>)</span>
+                    <button type="button" class="help-icon" aria-label="How do I get an RSS feed URL?" title="How do I get an RSS feed URL?" onclick="window.scoutHelp && window.scoutHelp.open('Custom RSS Feeds')">?</button>
+                  </label>
+                  <textarea id="cfg-form-rss-feeds" rows="4" spellcheck="false" placeholder="Jay's Blog | https://example.com/feed.xml&#10;X listening — &quot;CosmosDB&quot; | https://rss.app/feeds/xxxx.xml"></textarea>
+                </div>
+                <div class="cfg-field">
+                  <label for="cfg-form-excluded"><strong>Excluded Domains/Authors</strong> <span class="hint">(one per line — items from these are filtered out)</span></label>
+                  <textarea id="cfg-form-excluded" rows="3" spellcheck="false" placeholder="example-spam.com&#10;some-author"></textarea>
+                </div>
+              </details>
 
               <p class="hint" id="cfg-form-status"></p>
             </div>

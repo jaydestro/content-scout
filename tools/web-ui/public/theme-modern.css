@@ -2219,6 +2219,86 @@ details.conv-week .conv-week-body .conv-row:last-child { margin-bottom: 0; }
   outline: none;
 }
 
+/* Configs form: grouped collapsible sections */
+.cfg-form-panel .cfg-group {
+  border: 1px solid var(--border, #2a3340);
+  border-radius: 8px;
+  margin: 0.6rem 0;
+  background: var(--surface, #0f1722);
+  overflow: hidden;
+}
+.cfg-form-panel .cfg-group > summary {
+  cursor: pointer;
+  padding: 0.55rem 0.8rem;
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--text, #e6ebf2);
+  list-style: none;
+  user-select: none;
+}
+.cfg-form-panel .cfg-group > summary::-webkit-details-marker { display: none; }
+.cfg-form-panel .cfg-group > summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 0.5rem;
+  color: var(--muted, #9aa4b2);
+  transition: transform 0.12s ease;
+}
+.cfg-form-panel .cfg-group[open] > summary::before { transform: rotate(90deg); }
+.cfg-form-panel .cfg-group > summary:hover { color: var(--accent, #3b75cf); }
+.cfg-form-panel .cfg-group > summary .hint { font-weight: 400; }
+.cfg-form-panel .cfg-group > *:not(summary) {
+  margin-left: 0.8rem;
+  margin-right: 0.8rem;
+}
+.cfg-form-panel .cfg-group > .cfg-kv-host,
+.cfg-form-panel .cfg-group > p.hint { padding-bottom: 0.5rem; }
+.cfg-form-panel .cfg-field input[type="text"] {
+  width: 100%;
+  font-size: 0.88rem;
+  padding: 0.45rem 0.6rem;
+  background: var(--surface, #0f1722);
+  color: var(--text, #e6ebf2);
+  border: 1px solid var(--border, #2a3340);
+  border-radius: 6px;
+}
+.cfg-form-panel .cfg-field input[type="text"]:focus {
+  border-color: var(--accent, #3b75cf);
+  outline: none;
+}
+.cfg-form-panel .cfg-field input[type="text"]:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Role & behavior key/value editor */
+.cfg-kv-host {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.4rem;
+}
+.cfg-kv-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.88rem;
+  color: var(--text, #e6ebf2);
+  cursor: pointer;
+}
+.cfg-kv-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent, #3b75cf);
+  cursor: pointer;
+}
+.cfg-kv-host .cfg-kv-text { margin: 0.2rem 0; }
+.cfg-kv-host .cfg-kv-text label {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--muted, #9aa4b2);
+}
+
 /* --- Dashboard intel cards (sentiment / creators / source health / social activity) --- */
 .sent-chip {
   display: inline-flex; align-items: center; gap: 0.3rem;

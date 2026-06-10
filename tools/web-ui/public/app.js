@@ -2236,13 +2236,20 @@ function setCfgMode(mode) {
 $('cfg-tab-form')?.addEventListener('click', () => setCfgMode('form'));
 $('cfg-tab-raw')?.addEventListener('click', () => setCfgMode('raw'));
 
-['cfg-form-search-terms', 'cfg-form-search-hashtags', 'cfg-form-rss-feeds', 'cfg-form-excluded'].forEach((id) => {
-  $(id)?.addEventListener('input', () => {
-    cfgFormDirty = true;
-    $('config-save').disabled = false;
-    $('config-status').textContent = 'unsaved changes';
-    $('cfg-form-status').textContent = 'unsaved field edits — click Save to write to file';
-  });
+function markCfgFormDirty() {
+  cfgFormDirty = true;
+  $('config-save').disabled = false;
+  $('config-status').textContent = 'unsaved changes';
+  $('cfg-form-status').textContent = 'unsaved field edits — click Save to write to file';
+}
+
+[
+  'cfg-form-name', 'cfg-form-type',
+  'cfg-form-search-terms', 'cfg-form-search-hashtags',
+  'cfg-form-team', 'cfg-form-influencers', 'cfg-form-competitors',
+  'cfg-form-rss-feeds', 'cfg-form-excluded',
+].forEach((id) => {
+  $(id)?.addEventListener('input', markCfgFormDirty);
 });
 
 // Extract a `## Section` body (everything until the next `## ` heading or EOF).
@@ -2277,7 +2284,96 @@ function bulletListBlock(items, emptyComment) {
   return '\n' + cleaned.map((s) => `- ${s}`).join('\n') + '\n\n';
 }
 
+// Strip HTML comment blocks (`<!-- ... -->`, possibly multi-line) from a body.
+function stripHtmlComments(s) {
+  return (s || '').replace(/<!--[\s\S]*?-->/g, '');
+}
+
+// Extract the leading `<!-- ... -->` comment block from a section body, if any.
+function leadingComment(body) {
+  const m = (body || '').match(/^\s*(<!--[\s\S]*?-->)/);
+  return m ? m[1] : '';
+}
+
+// Build a list-section body that preserves an optional leading comment.
+function listSectionBody(comment, items) {
+  const cleaned = (items || []).map((s) => s.trim()).filter(Boolean);
+  let out = '\n';
+  if (comment) out += comment + '\n\n';
+  if (cleaned.length) out += cleaned.map((s) => `- ${s}`).join('\n') + '\n\n';
+  return out;
+}
+
+// Read a `- **Key:** value` field value from anywhere in the raw markdown.
+function getKvField(raw, key) {
+  const m = raw.match(new RegExp(`^\\s*-\\s*\\*\\*${key.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}:\\*\\*\\s*(.+)$`, 'm'));
+  return m ? m[1].trim() : '';
+}
+
+// Replace a `- **Key:** value` field value in place. No-op if the field is absent.
+function replaceKvField(raw, key, val) {
+  const re = new RegExp(`(^\\s*-\\s*\\*\\*${key.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}:\\*\\*\\s*).*$`, 'm');
+  return re.test(raw) ? raw.replace(re, `$1${val}`) : raw;
+}
+
+// Parse a `## Section` body into ordered key/value entries. Lines that are not
+// `- **Key:** value` (comments, blanks) are preserved verbatim for round-tripping.
+function parseKvSection(body) {
+  return (body || '').replace(/\r/g, '').split('\n').map((line) => {
+    const m = line.match(/^\s*-\s+\*\*(.+?):\*\*\s*(.*)$/);
+    return m ? { line, key: m[1].trim(), value: m[2].trim() } : { line };
+  });
+}
+
+// Role & behavior flags: render the `## Role` key/value entries as toggles
+// (on/off) and text inputs, preserving order + unknown lines on save.
+let cfgRoleEntries = [];
+function renderRoleFlags(raw) {
+  cfgRoleEntries = parseKvSection(getMdSection(raw, 'Role'));
+  const host = $('cfg-form-role-flags');
+  if (!host) return;
+  const rows = cfgRoleEntries
+    .map((e, i) => {
+      if (e.key === undefined) return '';
+      const v = e.value || '';
+      if (/^(on|off)$/i.test(v)) {
+        const on = /^on$/i.test(v);
+        return `<label class="cfg-kv-toggle"><input type="checkbox" data-role-idx="${i}" ${on ? 'checked' : ''}/><span>${escape(e.key)}</span></label>`;
+      }
+      return `<div class="cfg-field cfg-kv-text"><label>${escape(e.key)}</label><input type="text" data-role-idx="${i}" value="${escape(v)}" spellcheck="false"/></div>`;
+    })
+    .join('');
+  host.innerHTML = rows || '<p class="hint">No role flags in this config.</p>';
+  host.querySelectorAll('[data-role-idx]').forEach((el) => {
+    el.addEventListener('input', markCfgFormDirty);
+    el.addEventListener('change', markCfgFormDirty);
+  });
+}
+
+function serializeRoleFlags(raw) {
+  const host = $('cfg-form-role-flags');
+  if (!host || !cfgRoleEntries.length) return raw;
+  const lines = cfgRoleEntries.map((e, i) => {
+    if (e.key === undefined) return e.line;
+    const el = host.querySelector(`[data-role-idx="${i}"]`);
+    if (!el) return e.line;
+    const v = el.type === 'checkbox' ? (el.checked ? 'on' : 'off') : el.value.trim();
+    return `- **${e.key}:** ${v}`;
+  });
+  while (lines.length && !lines[0].trim()) lines.shift();
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  return replaceMdSection(raw, 'Role', '\n' + lines.join('\n') + '\n\n');
+}
+
 function populateConfigForm(raw) {
+  // Topic Identity key/value fields.
+  $('cfg-form-name').value = getKvField(raw, 'Name');
+  $('cfg-form-slug').value = getKvField(raw, 'Slug');
+  $('cfg-form-type').value = getKvField(raw, 'Type');
+
+  // Role & behavior flags.
+  renderRoleFlags(raw);
+
   // Search Terms — `### Search Terms (text)` under `## Topic Identity`.
   const terms = parseBulletList(getMdSubsection(raw, 'Search Terms'));
   $('cfg-form-search-terms').value = terms.join('\n');
@@ -2285,6 +2381,18 @@ function populateConfigForm(raw) {
   // Search Hashtags — `### Search Hashtags`.
   const tags = parseBulletList(getMdSubsection(raw, 'Search Hashtags'));
   $('cfg-form-search-hashtags').value = tags.join('\n');
+
+  // Product Team Members — `### Product Team Members` (strip the multi-line HTML comment).
+  const team = parseBulletList(stripHtmlComments(getMdSubsection(raw, 'Product Team Members')));
+  $('cfg-form-team').value = team.join('\n');
+
+  // Influencers to Monitor — `## Influencers to Monitor`.
+  const influencers = parseBulletList(getMdSection(raw, 'Influencers to Monitor'));
+  $('cfg-form-influencers').value = influencers.join('\n');
+
+  // Competitors — `## Competitors` (placeholder `_None tracked_` filtered by parseBulletList).
+  const competitors = parseBulletList(getMdSection(raw, 'Competitors'));
+  $('cfg-form-competitors').value = competitors.join('\n');
 
   // Custom RSS Feeds — `## Custom RSS Feeds` (may not exist yet).
   const feeds = parseBulletList(getMdSection(raw, 'Custom RSS Feeds'));
@@ -2325,8 +2433,33 @@ function linesFromTa(id) {
 
 function serializeConfigForm(rawIn) {
   let raw = rawIn;
+  // Topic Identity key/value fields (Slug is read-only — never rewritten).
+  const nm = ($('cfg-form-name')?.value || '').trim();
+  if (nm) raw = replaceKvField(raw, 'Name', nm);
+  const ty = ($('cfg-form-type')?.value || '').trim();
+  if (ty) raw = replaceKvField(raw, 'Type', ty);
+
+  // Role & behavior flags.
+  raw = serializeRoleFlags(raw);
+
   raw = replaceMdSubsection(raw, 'Search Terms', bulletListBlock(linesFromTa('cfg-form-search-terms')));
   raw = replaceMdSubsection(raw, 'Search Hashtags', bulletListBlock(linesFromTa('cfg-form-search-hashtags')));
+
+  // People.
+  const team = linesFromTa('cfg-form-team');
+  const teamComment = leadingComment(getMdSubsection(raw, 'Product Team Members'));
+  raw = replaceMdSubsection(raw, 'Product Team Members', listSectionBody(teamComment, team));
+  const influencers = linesFromTa('cfg-form-influencers');
+  const inflComment = leadingComment(getMdSection(raw, 'Influencers to Monitor'))
+    || '<!-- High-signal accounts — mentions from these are important. -->';
+  raw = replaceMdSection(raw, 'Influencers to Monitor', listSectionBody(inflComment, influencers));
+
+  // Competitors — keep the canonical placeholder when empty.
+  const competitors = linesFromTa('cfg-form-competitors');
+  raw = replaceMdSection(raw, 'Competitors', competitors.length
+    ? bulletListBlock(competitors)
+    : '\n_None tracked. Add to enable competitor mention tracking._\n\n');
+
   raw = replaceMdSection(raw, 'Custom RSS Feeds', bulletListBlock(
     linesFromTa('cfg-form-rss-feeds'),
     '<!-- Add custom RSS/Atom feeds as `Name | URL` per line. Examples: personal blogs, RSS bridges, third-party aggregators. -->\n- none'
