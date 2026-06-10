@@ -133,12 +133,15 @@ async function loadSetup() {
     ? `<span class="ok">${status.configCount} config${status.configCount === 1 ? '' : 's'} detected.</span>`
     : `<span class="warn-text">No configs yet — create one below.</span>`;
   const agentSaved = !!status.agent;
-  $('setup-run-onboard').disabled = !agentSaved;
-  $('setup-run-onboard').title = agentSaved
-    ? (status.runnerConfigured
-        ? 'Runs /scout-onboard in your chosen agent.'
-        : 'Opens the Run view — you can copy the prompt and paste it into your editor chat.')
-    : 'Pick an agent above first.';
+  const onboardBtn = $('setup-run-onboard');
+  if (onboardBtn) {
+    onboardBtn.disabled = !agentSaved;
+    onboardBtn.title = agentSaved
+      ? (status.runnerConfigured
+          ? 'Runs /scout-onboard in your chosen agent.'
+          : 'Opens the Run view — you can copy the prompt and paste it into your editor chat.')
+      : 'Pick an agent above first.';
+  }
 
   // Section 3: env keys — editable
   await renderEnvEditor();
