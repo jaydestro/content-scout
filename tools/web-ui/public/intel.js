@@ -1985,16 +1985,21 @@
           const sampleTone = sample?.sentiment || 'unknown';
           const sentTitle = sample ? esc(sample.sentiment || 'unknown') : '';
           // Three render modes for the sample line:
-          //  1. valid external URL + key → link that opens Conversations on
-          //     plain click and the real source on Ctrl/Cmd-click.
+          //  1. valid external URL → keyed samples open the tracked
+          //     conversation on plain click (source via Ctrl/Cmd-click);
+          //     keyless samples open the original post directly. Either way,
+          //     decayDeadDashLinks strips the link when the URL probes as a
+          //     definitive 404/410, so a click never lands on a dead post.
           //  2. key but no usable URL (e.g. LinkedIn SDUI posts, whose
-          //     synthesized permalinks dead-end) → still a link, but it only
-          //     navigates into Conversations; no broken external href.
+          //     synthesized permalinks dead-end) → in-app link only.
           //  3. neither → plain text.
           const sampleLabel = esc(trim(prev.text, 100));
           let sampleLink;
           if (sampleHasUrl) {
-            sampleLink = `<a href="${esc(prev.url)}" class="dash-link" data-check-url="${esc(prev.url)}" data-conv-key="${esc(sample.key || '')}" target="_blank" rel="noopener" title="Open in Conversations (Ctrl/Cmd-click for source)">${sampleLabel}</a>`;
+            const sampleTitle = sampleHasKey
+              ? 'Open in Conversations (Ctrl/Cmd-click for source)'
+              : 'Open original post ↗';
+            sampleLink = `<a href="${esc(prev.url)}" class="dash-link" data-check-url="${esc(prev.url)}" data-conv-key="${esc(sample.key || '')}" target="_blank" rel="noopener" title="${esc(sampleTitle)}">${sampleLabel}</a>`;
           } else if (sampleHasKey) {
             sampleLink = `<a href="#conversations" class="dash-link" data-conv-key="${esc(sample.key)}" title="Open in Conversations (no public source link available)">${sampleLabel}</a>`;
           } else {
@@ -2071,9 +2076,11 @@
       // subsequent dashboard loads finish near-instantly.
       queueMicrotask(() => decayDeadDashLinks(host));
 
-      // Social pulse links go to the Conversations view by default so
-      // users can read the post inline. Ctrl/Cmd/middle-click still
-      // opens the external source in a new tab.
+      // Keyed social-pulse links open the tracked conversation in-app on a
+      // plain click; Ctrl/Cmd/middle-click still opens the external source.
+      // Keyless samples have no tracked conversation, so their plain click
+      // opens the original post — decayDeadDashLinks has already stripped any
+      // link that probes as a definitive 404/410, so it won't be a dead post.
       host.querySelectorAll('a.dash-link[data-conv-key]').forEach((a) => {
         const k = a.dataset.convKey;
         if (!k) return;
@@ -2148,10 +2155,16 @@
   async function decayDeadDashLinks(host) {
     const anchors = Array.from(host.querySelectorAll('a.dash-link[data-check-url]'));
     if (!anchors.length) return;
-    // Skip probing (and thus never strip) links on social platforms that
-    // block bots — keep them clickable so users can open the remote post.
+    // Probe EVERY rendered link, including ones on bot-walled social hosts.
+    // The strip rule below separates a definitive "gone" (404/410 — the post
+    // was deleted) from an ambiguous failure (403 / 429 / timeout — usually a
+    // bot wall, not a real death). That lets us honor the rule "a community-
+    // signal URL should never be a 404" on X / LinkedIn / Reddit / Bluesky /
+    // YouTube without nuking valid posts that merely refuse automated probes.
+    // The per-probe budget is generous so the server's HEAD→GET round-trip can
+    // return a definitive status on first paint; the server caches results for
+    // 1h, so later dashboard loads strip dead links instantly.
     const urls = [...new Set(anchors.map((a) => a.dataset.checkUrl).filter(Boolean))]
-      .filter((u) => !isProbeExemptUrl(u))
       .slice(0, 24);
     const CONC = 6;
     let i = 0;
@@ -2159,14 +2172,27 @@
       while (i < urls.length) {
         const u = urls[i++];
         let ok = false;
-        try { const r = await checkUrlLive(u); ok = !!(r && r.ok); } catch { ok = false; }
-        if (ok) continue;
+        let status = 0;
+        try {
+          const r = await checkUrlLive(u, 5000);
+          ok = !!(r && r.ok);
+          status = r && typeof r.status === 'number' ? r.status : 0;
+        } catch { ok = false; status = 0; }
+        // 404/410 = the post is genuinely gone → strip on ANY host.
+        // Any other failure → strip only on non-exempt hosts, because exempt
+        // hosts return 403/999/timeout for posts that are actually live.
+        const definitivelyGone = status === 404 || status === 410;
+        const strip = definitivelyGone || (!ok && !isProbeExemptUrl(u));
+        if (!strip) continue;
         anchors
           .filter((a) => a.dataset.checkUrl === u && a.isConnected)
           .forEach((a) => {
             const span = document.createElement('span');
             span.className = a.className;
             span.textContent = a.textContent;
+            span.title = definitivelyGone
+              ? 'Original post is no longer available (removed by author or platform)'
+              : 'Link could not be verified';
             a.replaceWith(span);
           });
       }
