@@ -13,12 +13,13 @@ import {
 } from './lib/config-md.js';
 import { initNavigation, isKnownView } from './lib/nav.js';
 import { loadDashboard as loadDashboardPage } from './pages/dashboard.js';
-import { activeRoleSlug, setReportsPayload } from './pages/report-state.js';
+import { activeRoleSlug } from './pages/report-state.js';
 import {
   loadReports as loadReportsPage,
   scrollReportToSection,
   setReportsActiveTab,
 } from './pages/reports.js';
+import { fillAskChip, initToolsView, loadTools as loadToolsPage } from './pages/tools.js';
 
 // --- Navigation ----------------------------------------------------
 const { gotoView } = initNavigation({
@@ -37,6 +38,7 @@ const { gotoView } = initNavigation({
     window.contentScoutIntel?.loadConversations?.();
   },
 });
+initToolsView();
 
 // --- Status pill ---------------------------------------------------
 let cachedStatus = null;
@@ -2008,6 +2010,9 @@ async function loadDashboard() {
 async function loadReports() {
   return loadReportsPage();
 }
+async function loadTools() {
+  return loadToolsPage();
+}
 
 // --- Configs -------------------------------------------------------
 let selectedConfig = null;
@@ -2834,53 +2839,6 @@ document.addEventListener('click', (e) => {
   }
 });
 
-async function computeAnalytics(kind) {
-  const slug = (window.activeRoleSlug && window.activeRoleSlug()) || '';
-  const status = $('analytics-status');
-  if (status) status.textContent = 'Computing…';
-  try {
-    let res;
-    if (kind === 'seo') {
-      const raw = $('seo-urls')?.value || '';
-      const urls = raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-      if (urls.length === 0) {
-        if (status) status.textContent = 'enter at least one URL';
-        return;
-      }
-      const rewrites = $('seo-rewrites') ? $('seo-rewrites').checked : true;
-      if (status) status.textContent = rewrites ? 'Auditing + AI rewrites...' : 'Auditing...';
-      res = await fetch('/api/analytics/seo', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ urls, slug, rewrites }),
-      });
-    } else return;
-    const data = await res.json();
-    if (!res.ok || !data.ok) {
-      if (status) status.textContent = `error: ${data.error || res.status}`;
-      return;
-    }
-    if (status) {
-      const n = data.rewriteCount || 0;
-      const extra = n ? ` | ${n} AI rewrite${n === 1 ? '' : 's'}` : '';
-      status.textContent = `Wrote ${data.fileName}${extra}`;
-    }
-    if (kind === 'seo') {
-      // SEO outputs live in the Tools view.
-      await loadTools();
-      const li = document.querySelector(`#tools-list li[data-name="${data.fileName}"]`);
-      if (li) li.click();
-    } else {
-      await loadReports();
-      // After reload, the tab filter re-applies; openReport the new file.
-      const li = document.querySelector(`#reports-list li[data-name="${data.fileName}"]`);
-      if (li) li.click();
-    }
-  } catch (err) {
-    if (status) status.textContent = `error: ${err.message || err}`;
-  }
-}
-
 // --- CFPs + Conferences tabs ----------------------------------------
 // Both tabs hit the same /api/cfp-conferences endpoint and cache the
 // payload for the active slug so tab-switches don't refetch unless the
@@ -2977,183 +2935,6 @@ function renderConferenceRow(c) {
   return `<tr><td>${escape(c.name)}</td><td>${escape(c.dates || '')}</td><td>${escape(c.location || '')}</td><td>${linksCell}</td></tr>`;
 }
 
-// --- Tools view (SEO / Ask) -----------------------------------------
-// Tools is its own top-level nav section, separate from Reports. SEO is
-// an on-demand utility whose dated outputs land in #tools-list (filtered
-// by doc-meta kind); Ask sends a free-form prompt to the agent.
-const TOOLS_TABS = ['seo', 'ask'];
-const TOOLS_KIND = { seo: ['seo'] };
-let _toolsActiveTab = 'seo';
-
-function setToolsActiveTab(tab) {
-  if (!TOOLS_TABS.includes(tab)) tab = 'seo';
-  _toolsActiveTab = tab;
-  document.querySelectorAll('#tools-tabs button').forEach((b) => {
-    const on = b.dataset.tooltab === tab;
-    b.classList.toggle('active', on);
-    b.setAttribute('aria-selected', on ? 'true' : 'false');
-  });
-  const isAsk = tab === 'ask';
-  document.querySelectorAll('#view-tools .tab-panel').forEach((p) => {
-    let show = false;
-    if (p.dataset.toolpanel === 'browse') show = !isAsk;
-    else show = p.dataset.toolpanel === tab;
-    p.hidden = !show;
-  });
-  renderToolsActionBar(tab);
-  if (!isAsk) applyToolsTabFilter();
-}
-
-function applyToolsTabFilter() {
-  const kinds = TOOLS_KIND[_toolsActiveTab];
-  if (!kinds) return;
-  const lis = document.querySelectorAll('#tools-list li[data-name]');
-  let firstVisible = null;
-  let visibleCount = 0;
-  lis.forEach((li) => {
-    const k = li.dataset.kind || '';
-    const match = kinds.includes(k);
-    li.hidden = !match;
-    if (match) {
-      visibleCount += 1;
-      if (!firstVisible) firstVisible = li;
-    }
-  });
-  const selected = document.querySelector('#tools-list li.selected');
-  if ((!selected || selected.hidden) && firstVisible) firstVisible.click();
-  if (visibleCount === 0) {
-    const body = $('tools-body');
-    if (body) {
-      body.innerHTML = `<p class="hint">No <strong>${escapeAttr(_toolsActiveTab)}</strong> results yet. Use the action bar above to run one, or run <code>/scout-${_toolsActiveTab}</code> in an agent chat.</p>`;
-      delete body.dataset.name;
-    }
-  }
-}
-
-function renderToolsActionBar(tab) {
-  const bar = $('tools-action-bar');
-  if (!bar) return;
-  if (tab === 'seo') {
-    bar.innerHTML = `
-      <label class="field-inline" style="flex:1;min-width:240px">URLs (one per line, max 5)
-        <textarea id="seo-urls" rows="3" placeholder="https://example.com/page-1&#10;https://example.com/page-2"></textarea>
-      </label>
-      <label class="field-inline" style="align-self:flex-end;white-space:nowrap" title="Generate title, meta, H1s, opening paragraph & JSON-LD inline using your configured LLM (set SEO_REWRITE_PROVIDER in .env; defaults to your agent runner). Uncheck for a fast deterministic-only audit.">
-        <input type="checkbox" id="seo-rewrites" checked> AI rewrites
-      </label>
-      <button type="button" id="btn-seo-compute">+ Audit now</button>
-      <span class="hint" id="analytics-status"></span>
-    `;
-    $('btn-seo-compute')?.addEventListener('click', () => computeAnalytics('seo'));
-  } else {
-    bar.innerHTML = '';
-  }
-}
-
-async function loadTools() {
-  const payload = await api('/api/reports');
-  setReportsPayload(payload); // shared cache for activeRoleSlug()
-  const { reports } = payload;
-  $('tools-list').innerHTML = reports.map(renderDocListItem).join('')
-    || '<li class="hint">No tool outputs yet.</li>';
-  $('tools-list').querySelectorAll('li[data-name]').forEach((li, idx) => {
-    const meta = reports[idx]?.meta || {};
-    li.dataset.kind = meta.kind || 'doc';
-    li.addEventListener('click', async (e) => {
-      if (e.target.closest('.entry-open')) return;
-      document.querySelectorAll('#tools-list li').forEach((x) => x.classList.remove('selected'));
-      li.classList.add('selected');
-      const r = await api(`/api/reports/${encodeURIComponent(li.dataset.name)}`);
-      renderDocBody($('tools-body'), { name: li.dataset.name, html: r.html, kind: 'reports' });
-      $('tools-body').dataset.name = li.dataset.name;
-    });
-  });
-  wireListFilter({ inputId: 'tools-filter', listId: 'tools-list', kind: 'reports' });
-  setToolsActiveTab(_toolsActiveTab);
-}
-
-document.addEventListener('click', (e) => {
-  const tabBtn = e.target.closest('#tools-tabs button[data-tooltab]');
-  if (tabBtn) {
-    e.preventDefault();
-    setToolsActiveTab(tabBtn.dataset.tooltab);
-  }
-});
-
-function fillAskChip(kind) {
-  const ta = $('ask-prompt');
-  if (!ta) return;
-  const slug = (window.activeRoleSlug && window.activeRoleSlug()) || '<product>';
-  const prompts = {
-    seo: 'Run an SEO audit on this URL: <paste URL>. Score title, description, headings, internal links, structured data, media alt text, technical signals, and LLM-readiness; suggest concrete rewrites.',
-    cfp: `Find open Calls for Papers for ${slug} over the next 90 days. Prefer Sessionize / Pretalx / typeform-based CFPs over awards or "register interest" pages. Include deadline, audience fit, and submission URL.`,
-    conf: `List upcoming developer-focused conferences in the next 6 months where ${slug} would land well — bias toward Linux Foundation events, KubeCon, language/runtime confs, and AI app-developer venues.`,
-    summary: `Summarize the last 30 days of ${slug} mentions across reports. Group by topic tag, call out sentiment shifts, and flag any single-source spikes that need verification.`,
-    recommend: `Based on the last 30 days of ${slug} activity across reports, recommend three blog or video topics we should publish in the next two weeks. For each, cite the signal that motivates it.`,
-  };
-  ta.value = prompts[kind] || '';
-  ta.focus();
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  const sendBtn = document.getElementById('ask-send');
-  const stopBtn = document.getElementById('ask-stop');
-  const outEl = document.getElementById('ask-output');
-  const metaEl = document.getElementById('ask-meta');
-  let askSrc = null;
-  sendBtn?.addEventListener('click', async () => {
-    const prompt = document.getElementById('ask-prompt')?.value.trim();
-    if (!prompt) { if (metaEl) metaEl.textContent = 'Enter a prompt first.'; return; }
-    const slug = (window.activeRoleSlug && window.activeRoleSlug()) || '';
-    if (outEl) outEl.textContent = '';
-    if (metaEl) metaEl.textContent = 'Starting…';
-    sendBtn.disabled = true;
-    try {
-      const res = await fetch('/api/runs', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ command: 'custom', args: { slug, prompt } }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        if (metaEl) metaEl.textContent = data.error || 'error';
-        if (outEl && data.prompt) outEl.textContent = `Prompt:\n\n${data.prompt}\n\nSet SCOUT_RUNNER to execute, or paste this into your agent chat.`;
-        sendBtn.disabled = false;
-        return;
-      }
-      if (metaEl) metaEl.textContent = `Running: ${data.command || 'ask'}`;
-      if (stopBtn) stopBtn.hidden = false;
-      askSrc = new EventSource(`/api/runs/${data.id}/stream`);
-      askSrc.onmessage = (ev) => {
-        try {
-          const { chunk } = JSON.parse(ev.data);
-          if (outEl) { outEl.textContent += chunk; outEl.scrollTop = outEl.scrollHeight; }
-        } catch {}
-      };
-      askSrc.addEventListener('done', (ev) => {
-        try {
-          const { status } = JSON.parse(ev.data);
-          if (metaEl) metaEl.textContent = `Done: ${status}`;
-        } catch {}
-        if (stopBtn) stopBtn.hidden = true;
-        sendBtn.disabled = false;
-        askSrc?.close();
-        askSrc = null;
-      });
-      askSrc.onerror = () => { askSrc?.close(); askSrc = null; sendBtn.disabled = false; };
-    } catch (err) {
-      if (metaEl) metaEl.textContent = `error: ${err.message || err}`;
-      sendBtn.disabled = false;
-    }
-  });
-  stopBtn?.addEventListener('click', () => {
-    askSrc?.close();
-    askSrc = null;
-    stopBtn.hidden = true;
-    sendBtn.disabled = false;
-    if (metaEl) metaEl.textContent = 'Stopped.';
-  });
-});
 async function loadSocial() {
   const { social } = await api('/api/reports');
   // Same row renderer, but the open-in-window link should hit /view/social/.
