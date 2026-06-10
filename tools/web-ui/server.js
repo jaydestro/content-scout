@@ -31,6 +31,7 @@ import {
   classifyItem,
   canonicalUrlKey,
 } from '../lib/report-index.mjs';
+import { isHiringContent } from '../browser-scan/lib/hiring-filter.mjs';
 import {
   SENTIMENT_OVERRIDES_FILE,
   WEB_SETTINGS_FILE,
@@ -2112,13 +2113,147 @@ async function getIndex() {
   return _indexBuilding;
 }
 
+const BROWSER_SOCIAL_PLATFORMS = ['x', 'linkedin', 'reddit'];
+const BROWSER_SOCIAL_LABELS = { x: 'X', linkedin: 'LinkedIn', reddit: 'Reddit' };
+
+function parseContentReportName(name) {
+  const m = String(name || '').match(/^(\d{4}-\d{2}-\d{2}-\d{4})-(.+)-content\.md$/);
+  return m ? { stamp: m[1], slug: m[2] } : null;
+}
+
+async function collectBrowserSocialSidecars() {
+  const bySlug = new Map();
+  const signatureParts = [];
+  for (const root of [BROWSER_SCAN_SIDECAR_DIR, LEGACY_BROWSER_SCAN_DIR]) {
+    let slugs = [];
+    try { slugs = await fs.readdir(root); } catch { continue; }
+    for (const slug of slugs) {
+      if (!isValidSlug(slug)) continue;
+      const slugDir = path.join(root, slug);
+      let files = [];
+      try { files = await fs.readdir(slugDir); } catch { continue; }
+      const entry = bySlug.get(slug) || { platforms: {} };
+      for (const file of files) {
+        const m = file.match(/^(\d{4}-\d{2}-\d{2}-\d{4})-(x|linkedin|reddit)\.json$/);
+        if (!m) continue;
+        const [, stamp, platform] = m;
+        let stat;
+        try { stat = await fs.stat(path.join(slugDir, file)); } catch { continue; }
+        signatureParts.push(`${slug}/${file}@${stat.mtimeMs}`);
+        const existing = entry.platforms[platform];
+        if (!existing || stamp > existing.stamp || (stamp === existing.stamp && stat.mtimeMs > existing.mtimeMs)) {
+          entry.platforms[platform] = { stamp, platform, file, dir: slugDir, mtimeMs: stat.mtimeMs };
+        }
+      }
+      bySlug.set(slug, entry);
+    }
+  }
+  return { bySlug, signature: signatureParts.sort().join('|') };
+}
+
+function browserSidecarDate(value) {
+  const d = value ? new Date(value) : null;
+  if (!d || Number.isNaN(d.getTime())) return '';
+  return d.toISOString().slice(0, 10);
+}
+
+function formatBrowserEngagement(value) {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  if (typeof value !== 'object') return '';
+  return Object.entries(value)
+    .filter(([, v]) => v != null && v !== '' && Number(v) !== 0)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(', ');
+}
+
+function browserSidecarSummary(item) {
+  const title = String(item.title || '').trim();
+  const body = String(item.body || '').replace(/\s+/g, ' ').trim();
+  if (title && body && !body.toLowerCase().includes(title.toLowerCase())) return `${title} — ${body}`;
+  return title || body || String(item.thread_context || '').trim() || '(post)';
+}
+
+function browserSidecarAuthor(item) {
+  const display = String(item.author_display || '').trim();
+  const handle = String(item.author_handle || '').trim();
+  if (display && handle && !display.includes(handle)) return `${display} (${handle})`;
+  return display || handle || '';
+}
+
+function browserSidecarIsRelevant(item, slug) {
+  const text = [item.title, item.body, item.url, item.thread_context, item.source]
+    .map((v) => String(v || '').toLowerCase())
+    .join(' ');
+  // Bare "cosmos" is noisy (NVIDIA Cosmos, novels, astronomy, etc.). For
+  // Azure Cosmos DB / DocumentDB, require a product phrase.
+  if (/cosmos/.test(String(slug || '').toLowerCase())) {
+    return ['cosmos db', 'cosmosdb', 'azure cosmos', 'documentdb'].some((term) => text.includes(term));
+  }
+  const slugTokens = String(slug || '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length >= 4 && !['azure', 'microsoft', 'cloud'].includes(token));
+  const terms = new Set(slugTokens);
+  if (!terms.size) return true;
+  return [...terms].some((term) => text.includes(term));
+}
+
+function browserSidecarConversation(item, { slug, platform, stamp }) {
+  return {
+    date: browserSidecarDate(item.post_date || item.scraped_at),
+    platform: BROWSER_SOCIAL_LABELS[platform] || platform,
+    author: browserSidecarAuthor(item),
+    summary: browserSidecarSummary(item),
+    sentiment: 'unknown',
+    community: 'community',
+    communityRaw: '',
+    engagement: formatBrowserEngagement(item.engagement),
+    url: String(item.url || '').trim(),
+    section: 'Browser scan sidecar',
+    report: `${stamp}-${slug}-content.md`,
+    source: `browser-scan:${platform}`,
+  };
+}
+
+function addConversationAggregate(c, slug, authors, sources) {
+  if (c.author) {
+    const key = c.author.toLowerCase();
+    const entry =
+      authors.get(key) ||
+      { name: c.author, items: 0, conversations: 0, lastSeen: '', sentiments: {}, slugs: new Set(), urls: new Set() };
+    entry.conversations += 1;
+    const s = (c.sentiment || 'unknown').toLowerCase();
+    entry.sentiments[s] = (entry.sentiments[s] || 0) + 1;
+    if (c.date && c.date > entry.lastSeen) entry.lastSeen = c.date;
+    if (slug) entry.slugs.add(slug);
+    if (c.url) entry.urls.add(c.url);
+    authors.set(key, entry);
+  }
+  if (c.platform) {
+    const key = c.platform.toLowerCase();
+    const entry = sources.get(key) || { source: c.platform, items: 0, lastSeen: '', skipped: 0 };
+    entry.items += 1;
+    if (c.date && c.date > entry.lastSeen) entry.lastSeen = c.date;
+    sources.set(key, entry);
+  }
+}
+
 async function _buildIndex() {
   const reports = (await listMarkdownFiles(REPORTS_DIR)).filter((r) =>
     /-content\.md$/.test(r.name)
   );
+  const latestReportStampBySlug = new Map();
+  for (const report of reports) {
+    const parsedName = parseContentReportName(report.name);
+    if (!parsedName) continue;
+    const prev = latestReportStampBySlug.get(parsedName.slug) || '';
+    if (parsedName.stamp > prev) latestReportStampBySlug.set(parsedName.slug, parsedName.stamp);
+  }
   // Cache signature also hashes sidecar mtime so a fresh JSON write (e.g. an
   // agent rerun that updates sentiment without touching the .md) invalidates.
-  const [sidecarMtimes, sentimentOverridesMtime] = await Promise.all([
+  const [sidecarMtimes, sentimentOverridesMtime, browserSidecars] = await Promise.all([
     Promise.all(
       reports.map(async (r) => {
         try {
@@ -2132,11 +2267,14 @@ async function _buildIndex() {
     // Sentiment overrides alter parsed conversation labels and totals even
     // though the report markdown/JSON files are untouched.
     stateFileMtime(SENTIMENT_OVERRIDES_FILE),
+    collectBrowserSocialSidecars(),
   ]);
   const signature = reports
     .map((r, idx) => `${r.name}@${r.mtime || ''}#${sidecarMtimes[idx] || ''}`)
     .sort()
-    .join('|') + `|sentiment-overrides@${sentimentOverridesMtime || ''}`;
+    .join('|') +
+    `|sentiment-overrides@${sentimentOverridesMtime || ''}` +
+    `|browser-social-sidecars@${browserSidecars.signature || ''}`;
   // Validate the cache by content fingerprint, not by wall-clock age. The
   // signature already captures every input that can change the parsed index
   // (each report's mtime + its JSON sidecar mtime + the sentiment-overrides
@@ -2232,6 +2370,38 @@ async function _buildIndex() {
       entry.skipped += 1;
       entry.lastSkipReason = s.reason;
       sources.set(key, entry);
+    }
+  }
+
+  // Safety net for freshness: browser-scan sidecars are written before the
+  // agent/report step. If the report generation is still in flight or fails,
+  // expose the newest social sidecars directly as conversation rows so the
+  // dashboard does not keep showing stale community activity. Once a later
+  // report is written for the same slug, these sidecar rows are skipped.
+  const existingConversationKeys = new Set(conversations.map((c) => convoKey(c)).filter(Boolean));
+  for (const [slug, entry] of browserSidecars.bySlug.entries()) {
+    const latestReportStamp = latestReportStampBySlug.get(slug) || '';
+    for (const platform of BROWSER_SOCIAL_PLATFORMS) {
+      const sidecar = entry.platforms[platform];
+      if (!sidecar) continue;
+      if (latestReportStamp && sidecar.stamp <= latestReportStamp) continue;
+      let raw = [];
+      try {
+        raw = JSON.parse(await fs.readFile(path.join(sidecar.dir, sidecar.file), 'utf8'));
+      } catch { continue; }
+      if (!Array.isArray(raw)) continue;
+      for (const item of raw) {
+        if (!item || typeof item !== 'object') continue;
+        if (isHiringContent(item)) continue;
+        if (!browserSidecarIsRelevant(item, slug)) continue;
+        const conversation = browserSidecarConversation(item, { slug, platform, stamp: sidecar.stamp });
+        if (!conversation.url && !conversation.summary) continue;
+        const key = convoKey(conversation);
+        if (key && existingConversationKeys.has(key)) continue;
+        if (key) existingConversationKeys.add(key);
+        conversations.push(conversation);
+        addConversationAggregate(conversation, slug, authors, sources);
+      }
     }
   }
 

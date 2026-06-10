@@ -317,8 +317,8 @@
     'c2c', 'c2h', 'w2 only', 'usc only', 'gc only',
     'job opportunity', 'job opportunities', 'job opening', 'job openings', 'recruiter',
     'looking to take on', 'critical role in a high-impact', 'are you an experienced',
-    'oportunidade:', 'oportunidade de', 'estamos em busca', 'em busca de uma referência',
-    'estamos contratando',
+    'em busca de uma referência',
+    'oportunidade:', 'oportunidade de', 'estamos em busca', 'estamos contratando',
     'vaga:', 'vaga de', 'vagas de',
     'búsqueda de', 'búsqueda laboral', 'busco trabajo', 'busco empleo',
     'nous recrutons', 'nous cherchons',
@@ -329,7 +329,9 @@
     '1099 requirement', 'w2 requirement', 'w2/c2c', 'w2/c2h',
     'corp to corp', 'corp-to-corp', 'no h1b', 'h1b transfer', 'h-1b transfer',
     'visa status:', 'visa sponsorship',
-    'mandatory skills', 'required skills:', 'must-have skills', 'must have skills', 'must have skill',
+    'mandatory skills', 'key responsibilities', 'required qualifications',
+    'need local profiles', 'local profiles only', 'months contract', 'likely extension',
+    'thanks and regards', 'required skills:', 'must-have skills', 'must have skills', 'must have skill',
     'pay rate:', 'bill rate:', 'hourly rate:',
     'job description:', 'job title:', 'job summary:', 'job role:',
     'looking for consultants', 'looking for candidates',
@@ -349,6 +351,7 @@
     'work mode:', 'work location:',
     'experience:', 'skills:', 'mandatory skills',
     'visa:', 'visa status', 'job description', 'must have',
+    'responsibilities:', 'key responsibilities', 'required qualifications',
     'nice to have', 'tax term', 'work authorization',
   ];
   const _HIRING_SUBS = [
@@ -1775,43 +1778,6 @@
     return raw && raw.length <= 24 ? raw : 'Other';
   }
 
-  // Prepend a hint to the social-activity card when the sign-in (browser)
-  // scan has captured posts that postdate the latest report — i.e. they're
-  // sitting in sidecars on disk but no /scout-scan run has folded them into
-  // a report's conversations yet. Without this, fresh chatter is invisible
-  // and the card looks stale even though newer data exists. Idempotent.
-  async function renderPendingSidecarHint(host, fallbackSlug) {
-    if (!host) return;
-    const slug =
-      ((window.activeRoleSlug && window.activeRoleSlug()) || '').trim() ||
-      (fallbackSlug || '').trim();
-    if (!slug) return;
-    let data;
-    try {
-      data = await fetchJsonWithTimeout(
-        `/api/browser-scan/pending?slug=${encodeURIComponent(slug)}`,
-        8000
-      );
-    } catch { return; }
-    host.querySelector(':scope > .dash-pending-hint')?.remove();
-    if (!data || !data.pending || !Array.isArray(data.platforms)) return;
-    const PLAT_LABEL = { x: 'X', linkedin: 'LinkedIn', reddit: 'Reddit' };
-    const parts = data.platforms
-      .filter((p) => p && p.count > 0)
-      .map((p) => `${p.count} ${PLAT_LABEL[p.platform] || p.platform}`);
-    if (!parts.length) return;
-    const fresh = _freshnessFor(_reportStampDate(data.newestSidecarStamp));
-    const whenText = fresh.rel ? `captured ${fresh.rel}` : 'captured by the sign-in scan';
-    const banner = document.createElement('div');
-    banner.className = 'dash-pending-hint';
-    banner.innerHTML =
-      `<span class="dash-pending-icon" aria-hidden="true">📡</span>` +
-      `<span class="dash-pending-text"><strong>${esc(parts.join(' · '))}</strong> ` +
-      `${esc(whenText)} aren't in a report yet. ` +
-      `<a href="#run" class="dash-pending-link">Run a scan to ingest →</a></span>`;
-    host.prepend(banner);
-  }
-
   async function loadSocialActivity() {
     const host = document.getElementById('dash-social-activity');
     const summary = document.getElementById('dash-social-summary');
@@ -1943,9 +1909,18 @@
         byPlatform.set(k, bucket);
       }
 
+      const byDateDesc = (a, b) => {
+        const da = _parseDate(a?.date)?.getTime();
+        const db = _parseDate(b?.date)?.getTime();
+        if (Number.isFinite(db) && Number.isFinite(da) && db !== da) return db - da;
+        if (Number.isFinite(db) && !Number.isFinite(da)) return -1;
+        if (!Number.isFinite(db) && Number.isFinite(da)) return 1;
+        return String(b?.date || '').localeCompare(String(a?.date || ''));
+      };
+
       const needs = all
         .filter((c) => c.sentiment === 'negative' || c.sentiment === 'mixed')
-        .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+        .sort(byDateDesc);
 
       if (meta) {
         const platformsSeen = byPlatform.size;
@@ -2008,7 +1983,6 @@
           // the API response. Without this sort the bucket order is stable
           // across scans, so the same (often oldest) Reddit post stuck on the
           // card run after run even when fresher chatter had arrived.
-          const byDateDesc = (x, y) => String(y.date || '').localeCompare(String(x.date || ''));
           const communitySorted = [...b.community].sort(byDateDesc);
           const productSorted = [...b.product].sort(byDateDesc);
           const sample =
@@ -2112,13 +2086,6 @@
       // the probe completes. Server caches probe results for 1h, so
       // subsequent dashboard loads finish near-instantly.
       queueMicrotask(() => decayDeadDashLinks(host));
-
-      // Surface sign-in-scan posts captured *after* the latest report (so
-      // they aren't in any report's conversations yet) — otherwise fresh
-      // chatter sits on disk and the card silently looks stale. Non-blocking.
-      // activeRoleSlug() is empty on a cold dashboard (it's populated by the
-      // Reports view), so fall back to the slug parsed from the latest report.
-      renderPendingSidecarHint(host, _slugFromReport(latestReport)).catch(() => {});
 
       // Keyed social-pulse links open the tracked conversation in-app on a
       // plain click; Ctrl/Cmd/middle-click still opens the external source.
