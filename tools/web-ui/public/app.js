@@ -20,6 +20,14 @@
     return true;
   }
   window.fetch = function (input, init) {
+    // Callers that pass their own AbortSignal (intel.js's timeout wrappers,
+    // the URL-liveness probe) must keep full control of cancellation. The
+    // coalescing path below returns a *shared* in-flight promise that can't
+    // honor a second caller's signal, so a timeout would fire without
+    // actually aborting — leaving a card stuck. Bypass dedup/cache entirely
+    // when a signal is present; correct timeouts matter more than the
+    // marginal dedup win.
+    if (init && init.signal) return origFetch(input, init);
     const url = typeof input === 'string' ? input : (input && input.url) || '';
     const method = String(
       (init && init.method) ||

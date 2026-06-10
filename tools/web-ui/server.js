@@ -451,6 +451,13 @@ function closeRun(run, status) {
   if (status === 'success') {
     clearArtifactResponseCaches();
     _indexCache = null;
+    // Rebuild the index in the background with the now-fresh directory
+    // listing so the next dashboard / Conversations load after a scan is
+    // served warm. Without this, a just-finished scan invalidates the cache
+    // and the next visit pays a cold rebuild that can time out the
+    // Community-signals card and make the dashboard look broken until a
+    // manual refresh. Fire-and-forget; failures simply rebuild on demand.
+    getIndex().catch(() => { /* will rebuild on demand */ });
   }
   // Auto-render thumbnails for any run that produces a social-posts/*.md
   // (scout-post bulk + solo, plus scout-scan when posts are auto-generated).
@@ -2701,11 +2708,21 @@ app.get('/api/sentiment-summary', async (_req, res) => {
       list.push(r);
       bySlug.set(r.slug, list);
     }
+    const sentTotal = (t) =>
+      ((t && (t.positive || 0) + (t.neutral || 0) + (t.mixed || 0) + (t.negative || 0)) || 0);
     const groups = [];
     for (const [slug, list] of bySlug.entries()) {
       list.sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''));
-      const latest = list[0];
-      const prior = list[1];
+      const newest = list[0];
+      // Show the freshest report that actually classified sentiment, not just
+      // the newest file. A Mindshare-only or items-only scan has 0 classified
+      // conversations, and rigidly using it left the card blank ("No
+      // conversations in latest scan") even though a recent scan DID have
+      // sentiment — which read as stale/broken. Fall back to newest when none
+      // have sentiment so brand-new subjects still render.
+      const withSent = list.filter((r) => sentTotal(r.sentimentTotals) > 0);
+      const latest = withSent[0] || newest;
+      const prior = withSent[0] ? withSent[1] : list[1];
       groups.push({
         slug,
         latest: latest && {
@@ -2714,6 +2731,13 @@ app.get('/api/sentiment-summary', async (_req, res) => {
           totals: latest.sentimentTotals,
           convoCount: latest.convoCount,
           itemCount: latest.itemCount,
+        },
+        // The literal newest scan, so the client can note when the sentiment
+        // shown is carried from an earlier scan rather than the latest run.
+        newest: newest && {
+          report: newest.name,
+          generatedAt: newest.generatedAt,
+          convoCount: newest.convoCount,
         },
         prior: prior && {
           report: prior.name,
@@ -3325,6 +3349,9 @@ app.post('/api/sentiment/review-bulk', express.json({ limit: '2mb' }), async (re
       // Conversations, and /api/sentiment-summary see the new verdicts on the
       // next request instead of waiting for the cache TTL.
       _indexCache = null;
+      // Re-prime in the background so the next read is warm (see run-success
+      // handler for rationale).
+      getIndex().catch(() => { /* will rebuild on demand */ });
     } catch (err) {
       return res.json({ ok: true, results, persistError: err.message });
     }

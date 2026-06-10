@@ -216,9 +216,9 @@
       // Always fetch team-member (product) rows too. The client-side
       // team-mode filter decides whether to show, hide, or isolate them.
       params.set('includeProduct', '1');
-      const data = await fetch('/api/conversations?' + params.toString()).then((r) => r.json());
+      const data = await fetchJsonResilient('/api/conversations?' + params.toString());
       _allConvs = Array.isArray(data.conversations) ? data.conversations : [];
-      _platforms = new Set(_allConvs.map((c) => c.platform).filter(Boolean));
+      _platforms = new Set(_allConvs.map((c) => canonicalPlatform(c.platform)).filter(Boolean));
       _selectedKeys = new Set();
       const sel = document.getElementById('conv-platform');
       if (sel) {
@@ -554,7 +554,7 @@
       convs = convs.filter((c) => _looksLikeJob(c));
     }
     if (sentiment) convs = convs.filter((c) => c.sentiment === sentiment);
-    if (platform) convs = convs.filter((c) => c.platform === platform);
+    if (platform) convs = convs.filter((c) => canonicalPlatform(c.platform) === platform);
     if (timeframe) {
       const days = parseInt(timeframe, 10);
       if (Number.isFinite(days) && days > 0) {
@@ -1734,6 +1734,47 @@
     }
   }
 
+  // Retry a JSON GET a couple of times with backoff. The dashboard's
+  // index-backed endpoints (conversations / sentiment / authors / source-
+  // health) can trigger a cold server-side index build on the very first
+  // load. Before this, a single slow attempt left the card showing an error
+  // and the user had to manually refresh — the "dashboard is useless on first
+  // visit" complaint. With a retry the page heals itself: the 2nd attempt is
+  // served warm once the build finishes.
+  async function fetchJsonResilient(url, { timeoutMs = 12000, retries = 1, backoffMs = 700 } = {}) {
+    let lastErr;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await fetchJsonWithTimeout(url, timeoutMs);
+      } catch (err) {
+        lastErr = err;
+        if (attempt < retries) await new Promise((r) => setTimeout(r, backoffMs * (attempt + 1)));
+      }
+    }
+    throw lastErr;
+  }
+
+  // Collapse the many raw platform spellings the corpus accumulates over time
+  // ("X", "x", "X / Twitter", "X + Bluesky", "Reddit", "reddit", "r/AZURE",
+  // "Bluesky", "bluesky", "LinkedIn", "linkedin"…) into one canonical label per
+  // real platform. Without this the Conversations platform filter listed a
+  // dozen case/spelling variants of the same handful of platforms, which is
+  // exactly the kind of thing that made the view feel broken.
+  function canonicalPlatform(raw) {
+    const s = String(raw || '').trim().toLowerCase();
+    if (!s) return 'Unknown';
+    if (/reddit|^r\//.test(s)) return 'Reddit';
+    if (/bluesky|bsky/.test(s)) return 'Bluesky';
+    if (/linkedin/.test(s)) return 'LinkedIn';
+    if (/hacker\s*news|ycombinator|^hn$/.test(s)) return 'Hacker News';
+    if (/stack\s*overflow/.test(s)) return 'Stack Overflow';
+    if (/youtube|youtu\.be/.test(s)) return 'YouTube';
+    if (/twitter|x\.com|^x$|^x\b|\bx\b|x\s*[\/+]/.test(s)) return 'X';
+    // Single unrecognized token: title-case-ish passthrough, but cap length
+    // so a stray sentence can't blow out the dropdown.
+    return raw && raw.length <= 24 ? raw : 'Other';
+  }
+
   async function loadSocialActivity() {
     const host = document.getElementById('dash-social-activity');
     const summary = document.getElementById('dash-social-summary');
@@ -1746,7 +1787,7 @@
       // failing fast enough that the user sees an actionable error instead
       // of a stuck card.
       const [data, itemsData] = await Promise.all([
-        fetchJsonWithTimeout('/api/conversations?includeProduct=1', 15000),
+        fetchJsonResilient('/api/conversations?includeProduct=1', { timeoutMs: 12000, retries: 1 }),
         // Pull social-kind items in parallel so we can backfill the Pulse
         // card when agents file Reddit/X/Bluesky/LinkedIn posts under
         // "Community Projects & Tools" instead of "Conversations & Mentions".
@@ -2142,7 +2183,7 @@
     const host = document.getElementById('dash-sentiment');
     if (!host) return;
     try {
-      const data = await fetch('/api/sentiment-summary').then((r) => r.json());
+      const data = await fetchJsonResilient('/api/sentiment-summary');
       const groups = data.groups || [];
       if (!groups.length) {
         host.innerHTML = `<p class="hint">No reports yet. Run a scan to see sentiment.</p>`;
@@ -2153,11 +2194,20 @@
           const t = g.latest?.totals || {};
           const total =
             (t.positive || 0) + (t.neutral || 0) + (t.mixed || 0) + (t.negative || 0);
-          if (!total)
+          if (!total) {
+            // Don't claim "no conversations" when the scan did surface some but
+            // none carried a strong enough product stance to classify — that
+            // contradicted the Community-signals card right above and read as
+            // a bug. Use the real conversation count to tell the two apart.
+            const convoCount = g.latest?.convoCount || 0;
+            const msg = convoCount
+              ? `${convoCount} conversation${convoCount === 1 ? '' : 's'} · sentiment not yet classified`
+              : 'No conversations in latest scan';
             return `<div class="sent-row">
               <strong>${esc(g.slug)}</strong>
-              <span class="hint">No conversations in latest scan</span>
+              <span class="hint">${msg}</span>
             </div>`;
+          }
           const bar = (n, cls) => {
             const pct = Math.round((n / total) * 100);
             return pct
@@ -2175,6 +2225,14 @@
               } critical</span>`;
             }
           }
+          // When the newest scan added no classified conversations, we show
+          // sentiment carried from the most recent scan that did. Say so
+          // plainly so a returning user doesn't read older numbers as current.
+          let carried = '';
+          if (g.newest && g.latest && g.newest.report !== g.latest.report) {
+            const d = (g.latest.generatedAt || '').slice(0, 10);
+            carried = `<div class="hint" style="margin-top:0.25rem">Latest scan added no new conversations — showing sentiment from ${d ? `the ${esc(d)} scan` : 'the most recent scan with conversations'}.</div>`;
+          }
           return `<div class="sent-row">
             <div class="sent-head">
               <strong>${esc(g.slug)}</strong>
@@ -2187,6 +2245,7 @@
               ${bar(t.mixed || 0, 'mix')}
               ${bar(t.negative || 0, 'neg')}
             </div>
+            ${carried}
             <div class="sent-legend">
               ${t.positive ? `<span><span class="tone-dot tone-positive"></span>${t.positive} advocate${t.positive === 1 ? '' : 's'}</span>` : ''}
               ${t.neutral ? `<span><span class="tone-dot tone-neutral"></span>${t.neutral} neutral</span>` : ''}
@@ -2205,7 +2264,7 @@
     const host = document.getElementById('dash-creators');
     if (!host) return;
     try {
-      const data = await fetch('/api/authors').then((r) => r.json());
+      const data = await fetchJsonResilient('/api/authors');
       const top = (data.authors || [])
         .filter((a) => a.name && a.name !== '(unknown)' && a.name.length < 80)
         .slice(0, 8);
@@ -2253,7 +2312,7 @@
     const host = document.getElementById('dash-source-health');
     if (!host) return;
     try {
-      const data = await fetch('/api/source-health').then((r) => r.json());
+      const data = await fetchJsonResilient('/api/source-health');
       const skipped = data.lastSkipped || [];
       const sources = (data.sources || []).slice(0, 6);
       const skippedHtml = skipped.length

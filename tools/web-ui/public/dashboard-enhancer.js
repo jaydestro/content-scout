@@ -63,13 +63,19 @@
   async function loadAll() {
     let configs = { configs: [] }, reports = { reports: [] };
     let activity = null;
-    try {
-      [configs, reports, activity] = await Promise.all([
-        fetchJSON('/api/configs'),
-        fetchJSON('/api/reports'),
-        fetchJSON('/api/activity'),
-      ]);
-    } catch { /* keep defaults */ }
+    // Settle each independently: /api/activity triggers a server-side index
+    // build that is slow on a cold first load, and a single Promise.all
+    // reject used to blank the stats, subjects, and latest-report cards too —
+    // even though /api/configs and /api/reports had already resolved. With
+    // allSettled each card renders from whatever data it has.
+    const [cfgRes, repRes, actRes] = await Promise.allSettled([
+      fetchJSON('/api/configs'),
+      fetchJSON('/api/reports'),
+      fetchJSON('/api/activity'),
+    ]);
+    if (cfgRes.status === 'fulfilled') configs = cfgRes.value;
+    if (repRes.status === 'fulfilled') reports = repRes.value;
+    if (actRes.status === 'fulfilled') activity = actRes.value;
 
     const social = (reports.social || []);
     const configList = configs.configs || [];
