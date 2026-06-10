@@ -6,6 +6,11 @@
 // fetch coalescer below still applies because api() reads the (patched) global
 // fetch at call time, long after the IIFE installs the patch.
 import { $, api, escape, escapeAttr } from './lib/core.js';
+import {
+  getMdSection, getMdSubsection, parseBulletList, bulletListBlock,
+  stripHtmlComments, leadingComment, listSectionBody, getKvField,
+  replaceKvField, parseKvSection, replaceMdSubsection, replaceMdSection,
+} from './lib/config-md.js';
 
 // --- /api GET coalescing + short-TTL cache --------------------------
 // The dashboard fires ~11 GETs across three modules (app.js loadDashboard,
@@ -2262,78 +2267,11 @@ function markCfgFormDirty() {
   $(id)?.addEventListener('input', markCfgFormDirty);
 });
 
-// Extract a `## Section` body (everything until the next `## ` heading or EOF).
-function getMdSection(raw, heading) {
-  const re = new RegExp(`(^|\\n)##\\s+${heading.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}[^\\n]*\\n([\\s\\S]*?)(?=\\n##\\s|\\n*$)`, 'i');
-  const m = raw.match(re);
-  return m ? m[2] : '';
-}
+// Markdown config helpers (getMdSection, getMdSubsection, parseBulletList,
+// bulletListBlock, stripHtmlComments, leadingComment, listSectionBody,
+// getKvField, replaceKvField, parseKvSection) are imported from
+// lib/config-md.js (top of file).
 
-// Same but for a `### Subheading` under the doc.
-function getMdSubsection(raw, heading) {
-  const re = new RegExp(`(^|\\n)###\\s+${heading.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}[^\\n]*\\n([\\s\\S]*?)(?=\\n##\\s|\\n###\\s|\\n*$)`, 'i');
-  const m = raw.match(re);
-  return m ? m[2] : '';
-}
-
-// Parse a bullet list out of a markdown body. Returns array of trimmed values
-// (without the leading "- " or "* " marker).
-function parseBulletList(body) {
-  if (!body) return [];
-  return body
-    .split('\n')
-    .map((l) => l.replace(/^\s*[-*]\s+/, '').trim())
-    .filter((l) => l && !l.startsWith('<!--') && !l.startsWith('_'));
-}
-
-function bulletListBlock(items, emptyComment) {
-  const cleaned = (items || []).map((s) => s.trim()).filter(Boolean);
-  if (cleaned.length === 0) {
-    return emptyComment ? `\n${emptyComment}\n\n` : '\n- none\n\n';
-  }
-  return '\n' + cleaned.map((s) => `- ${s}`).join('\n') + '\n\n';
-}
-
-// Strip HTML comment blocks (`<!-- ... -->`, possibly multi-line) from a body.
-function stripHtmlComments(s) {
-  return (s || '').replace(/<!--[\s\S]*?-->/g, '');
-}
-
-// Extract the leading `<!-- ... -->` comment block from a section body, if any.
-function leadingComment(body) {
-  const m = (body || '').match(/^\s*(<!--[\s\S]*?-->)/);
-  return m ? m[1] : '';
-}
-
-// Build a list-section body that preserves an optional leading comment.
-function listSectionBody(comment, items) {
-  const cleaned = (items || []).map((s) => s.trim()).filter(Boolean);
-  let out = '\n';
-  if (comment) out += comment + '\n\n';
-  if (cleaned.length) out += cleaned.map((s) => `- ${s}`).join('\n') + '\n\n';
-  return out;
-}
-
-// Read a `- **Key:** value` field value from anywhere in the raw markdown.
-function getKvField(raw, key) {
-  const m = raw.match(new RegExp(`^\\s*-\\s*\\*\\*${key.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}:\\*\\*\\s*(.+)$`, 'm'));
-  return m ? m[1].trim() : '';
-}
-
-// Replace a `- **Key:** value` field value in place. No-op if the field is absent.
-function replaceKvField(raw, key, val) {
-  const re = new RegExp(`(^\\s*-\\s*\\*\\*${key.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}:\\*\\*\\s*).*$`, 'm');
-  return re.test(raw) ? raw.replace(re, `$1${val}`) : raw;
-}
-
-// Parse a `## Section` body into ordered key/value entries. Lines that are not
-// `- **Key:** value` (comments, blanks) are preserved verbatim for round-tripping.
-function parseKvSection(body) {
-  return (body || '').replace(/\r/g, '').split('\n').map((line) => {
-    const m = line.match(/^\s*-\s+\*\*(.+?):\*\*\s*(.*)$/);
-    return m ? { line, key: m[1].trim(), value: m[2].trim() } : { line };
-  });
-}
 
 // Role & behavior flags: render the `## Role` key/value entries as toggles
 // (on/off) and text inputs, preserving order + unknown lines on save.
@@ -2417,25 +2355,8 @@ function populateConfigForm(raw) {
   $('cfg-form-status').textContent = '';
 }
 
-// Replace a `### Subheading` body in raw with new content.
-function replaceMdSubsection(raw, heading, newBodyBlock) {
-  const re = new RegExp(`(^|\\n)(###\\s+${heading.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}[^\\n]*\\n)([\\s\\S]*?)(?=\\n##\\s|\\n###\\s|$)`, 'i');
-  if (re.test(raw)) {
-    return raw.replace(re, (_m, lead, head) => `${lead}${head}${newBodyBlock.replace(/^\n/, '')}`);
-  }
-  return raw; // subsection not present — skip silently to avoid corrupting unfamiliar configs
-}
-
-// Replace a `## Section` body in raw with new content; if missing, append at end.
-function replaceMdSection(raw, heading, newBodyBlock) {
-  const re = new RegExp(`(^|\\n)(##\\s+${heading.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}[^\\n]*\\n)([\\s\\S]*?)(?=\\n##\\s|$)`, 'i');
-  if (re.test(raw)) {
-    return raw.replace(re, (_m, lead, head) => `${lead}${head}${newBodyBlock.replace(/^\n/, '')}`);
-  }
-  // Append new section at end of file.
-  const sep = raw.endsWith('\n') ? '' : '\n';
-  return `${raw}${sep}\n## ${heading}\n${newBodyBlock}`;
-}
+// replaceMdSubsection / replaceMdSection are imported from lib/config-md.js
+// (top of file).
 
 function linesFromTa(id) {
   return ($(id)?.value || '').split('\n').map((s) => s.trim()).filter(Boolean);
