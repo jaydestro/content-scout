@@ -13,6 +13,12 @@ import {
 } from './lib/config-md.js';
 import { initNavigation, isKnownView } from './lib/nav.js';
 import { loadDashboard as loadDashboardPage } from './pages/dashboard.js';
+import { activeRoleSlug, setReportsPayload } from './pages/report-state.js';
+import {
+  loadReports as loadReportsPage,
+  scrollReportToSection,
+  setReportsActiveTab,
+} from './pages/reports.js';
 
 // --- Navigation ----------------------------------------------------
 const { gotoView } = initNavigation({
@@ -1992,11 +1998,15 @@ $('env-save').addEventListener('click', async () => {
 // --- Dashboard -----------------------------------------------------
 // Exposed on window so runs-queue.js can refresh the active view when a
 // scan finishes. app.js is a module, so top-level fns aren't auto-global.
+window.activeRoleSlug = activeRoleSlug;
 window.loadDashboard = () => loadDashboard();
 window.loadReports = () => loadReports();
 window.loadSocial = () => loadSocial();
 async function loadDashboard() {
   return loadDashboardPage({ setCachedStatus: (status) => { cachedStatus = status; } });
+}
+async function loadReports() {
+  return loadReportsPage();
 }
 
 // --- Configs -------------------------------------------------------
@@ -2804,282 +2814,25 @@ $('cmd-modal-copy')?.addEventListener('click', async () => {
 
 // --- Reports / Social ---------------------------------------------
 
-// --- Reports view: tabbed IA ---------------------------------------
-// Top-level tabs pick which *part* of the saved reports the panel shows.
-// Each /scout-scan produces ONE consolidated scan report that contains
-// Mindshare, CFPs, and Conferences sections inline. Rather than burying
-// those behind an in-doc section nav (confusing — looked like the doc
-// had hidden tabs), each section now gets its own top-level tab:
-//   • Full Report — the complete scan report, unsliced.
-//   • Mindshare — only the "## Mindshare" section of the open report
-//                 (plus any standalone monthly mindshare docs, shown whole).
-//   • CFPs & Events — only the CFP + Conferences sections of the report.
-// The same `##` headings still exist in the raw markdown, so the doc
-// stays fully navigable in a plain editor (parity).
-const REPORTS_TABS = ['content', 'mindshare', 'cfp'];
-// When one of these tabs is active and a *scan* (content-kind) report is
-// opened, render only the matching `## ` section(s) instead of the whole
-// doc. Standalone docs of the tab's own kind (e.g. a -mindshare.md file)
-// are always shown whole.
-const TAB_SECTION_MATCH = {
-  mindshare: /^mindshare\b/i,
-  cfp: /^(open calls for papers|cfps?\b|calls? for papers\b|conferences?\b)/i,
-};
-
-// Does a report list row belong under `tab`? Scan (content) reports only
-// appear under Mindshare / CFPs & Events when they actually carry that
-// section (flagged server-side via meta.sections → li.dataset.has*). This
-// keeps each tab's list honest instead of repeating every scan everywhere.
-function rowMatchesTab(li, tab) {
-  const kind = li.dataset.kind || '';
-  switch (tab) {
-    case 'content':
-      return kind === 'content';
-    case 'mindshare':
-      return kind === 'mindshare'
-        || (kind === 'content' && li.dataset.hasMindshare === '1');
-    case 'cfp':
-      return kind === 'cfp' || kind === 'conference'
-        || (kind === 'content' && li.dataset.hasCfp === '1');
-    default:
-      return false;
-  }
-}
-
-function setReportsRowTabBadge(li, tab, match) {
-  const badge = li.querySelector('.entry-kind');
-  if (!badge) return;
-  if (!li.dataset.baseKindLabel) li.dataset.baseKindLabel = badge.textContent.trim();
-  if (!match) {
-    badge.textContent = li.dataset.baseKindLabel;
+document.addEventListener('click', (e) => {
+  const tabBtn = e.target.closest('#reports-tabs button[data-tab]');
+  if (tabBtn) {
+    e.preventDefault();
+    setReportsActiveTab(tabBtn.dataset.tab);
     return;
   }
-
-  let label = li.dataset.baseKindLabel;
-  let kindClass = `kind-${li.dataset.kind || 'doc'}`;
-  if (tab === 'content' && li.dataset.kind === 'content') {
-    label = 'Full Report';
-    kindClass = 'kind-content';
-  } else if (tab === 'mindshare' && (li.dataset.kind === 'content' || li.dataset.kind === 'mindshare')) {
-    label = 'Mindshare';
-    kindClass = 'kind-mindshare';
-  } else if (tab === 'cfp' && ['content', 'cfp', 'conference'].includes(li.dataset.kind || '')) {
-    label = 'CFPs & Events';
-    kindClass = 'kind-cfp';
-  }
-  badge.textContent = label;
-  for (const cls of [...badge.classList]) {
-    if (cls.startsWith('kind-')) badge.classList.remove(cls);
-  }
-  badge.classList.add(kindClass);
-}
-
-// In-doc sections of a consolidated scan report, matched against the
-// rendered <h2>/<h3> heading text. `all` jumps back to the top.
-const REPORT_SECTIONS = [
-  { key: 'all', label: 'All', match: null },
-  { key: 'mindshare', label: 'Mindshare', match: /^mindshare\b/i },
-  { key: 'cfps', label: 'CFPs', match: /^(open calls for papers|cfps?\b|calls? for papers\b)/i },
-  { key: 'conferences', label: 'Conferences', match: /^conferences?\b/i },
-];
-let _reportsActiveTab = 'content';
-let _reportsCache = null; // last /api/reports payload (so tab switches don't re-fetch)
-
-// The active subject slug for slug-aware actions. Resolves, in order: the
-// Scan view's subject picker, then the dominant subject among the loaded
-// reports (so the Reports view works even when the Scan form was never
-// touched).
-window.activeRoleSlug = function activeRoleSlug() {
-  const picked = (($('run-slug') && $('run-slug').value) || '').trim();
-  if (picked) return picked;
-  const reports = (_reportsCache && _reportsCache.reports) || [];
-  const counts = new Map();
-  for (const r of reports) {
-    const s = (r.meta && r.meta.subject) || '';
-    if (s) counts.set(s, (counts.get(s) || 0) + 1);
-  }
-  let best = '';
-  let bestN = 0;
-  for (const [s, n] of counts) {
-    if (n > bestN) { best = s; bestN = n; }
-  }
-  return best;
-};
-
-// Slice a rendered report's HTML down to the `## ` section(s) whose heading
-// matches `regex`, returning the matched headings + their content. Returns
-// '' when no section matches. Used to give Mindshare / CFPs & Events tabs a
-// focused view of a consolidated scan report.
-function extractSectionsHtml(fullHtml, regex) {
-  if (!fullHtml || !regex) return '';
-  const tpl = document.createElement('template');
-  tpl.innerHTML = fullHtml;
-  const nodes = Array.from(tpl.content.childNodes);
-  const out = [];
-  let capturing = false;
-  for (const node of nodes) {
-    const isH2 = node.nodeType === 1 && node.tagName === 'H2';
-    if (isH2) {
-      capturing = regex.test((node.textContent || '').trim());
-    }
-    if (capturing) out.push(node);
-  }
-  if (!out.length) return '';
-  const wrap = document.createElement('div');
-  out.forEach((n) => wrap.appendChild(n.cloneNode(true)));
-  return wrap.innerHTML;
-}
-
-function setReportsActiveTab(tab) {
-  if (!REPORTS_TABS.includes(tab)) tab = 'content';
-  _reportsActiveTab = tab;
-  document.querySelectorAll('#reports-tabs button').forEach((b) => {
-    const on = b.dataset.tab === tab;
-    b.classList.toggle('active', on);
-    b.setAttribute('aria-selected', on ? 'true' : 'false');
-  });
-  renderReportsActionBar(tab);
-  applyReportsTabFilter();
-}
-
-// Find the first rendered heading in `body` whose text matches a section.
-function findReportHeading(body, section) {
-  if (!body || !section || !section.match) return null;
-  for (const h of body.querySelectorAll('h2, h3')) {
-    if (section.match.test(h.textContent.trim())) return h;
-  }
-  return null;
-}
-
-// Build the in-doc section nav for a consolidated scan report. Only the
-// sections actually present in the rendered body get a button; if a scan
-// has neither Mindshare/CFPs/Conferences, the nav stays hidden.
-function buildReportSectionNav(kind) {
-  const nav = $('reports-section-nav');
-  const body = $('reports-body');
-  if (!nav) return;
-  if (kind !== 'content' || !body) {
-    nav.hidden = true;
-    nav.innerHTML = '';
+  const secBtn = e.target.closest('#reports-section-nav button[data-section]');
+  if (secBtn) {
+    e.preventDefault();
+    scrollReportToSection(secBtn.dataset.section);
     return;
   }
-  const present = REPORT_SECTIONS.filter(
-    (s) => s.key === 'all' || findReportHeading(body, s)
-  );
-  if (present.length <= 1) {
-    nav.hidden = true;
-    nav.innerHTML = '';
-    return;
+  const chip = e.target.closest('[data-ask-chip]');
+  if (chip) {
+    e.preventDefault();
+    fillAskChip(chip.dataset.askChip);
   }
-  nav.innerHTML = present
-    .map(
-      (s, i) =>
-        `<button type="button" data-section="${escapeAttr(s.key)}" class="${i === 0 ? 'active' : ''}">${escape(s.label)}</button>`
-    )
-    .join('');
-  nav.hidden = false;
-}
-
-// Scroll the open report to a section heading (or back to the top for `all`).
-function scrollReportToSection(key) {
-  const body = $('reports-body');
-  if (!body) return;
-  const section = REPORT_SECTIONS.find((s) => s.key === key);
-  if (!section || !section.match) {
-    body.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  } else {
-    const h = findReportHeading(body, section);
-    if (h) h.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-  document.querySelectorAll('#reports-section-nav button').forEach((b) =>
-    b.classList.toggle('active', b.dataset.section === key)
-  );
-}
-
-// Open a report list row, rendering either the whole doc (Full Report, or a
-// standalone doc of the tab's own kind) or just the tab's matching section(s)
-// (Mindshare / CFPs & Events on a consolidated scan report).
-async function openReportRow(li) {
-  if (!li) return;
-  document.querySelectorAll('#reports-list li').forEach((x) => x.classList.remove('selected'));
-  li.classList.add('selected');
-  const name = li.dataset.name;
-  const kind = li.dataset.kind || '';
-  const body = $('reports-body');
-  const sectionRe = TAB_SECTION_MATCH[_reportsActiveTab];
-  const r = await api(`/api/reports/${encodeURIComponent(name)}`);
-  // Slice to a section only for scan (content-kind) reports under a
-  // section tab. Standalone docs of the tab's own kind render whole.
-  if (sectionRe && kind === 'content') {
-    const sliced = extractSectionsHtml(r.html, sectionRe);
-    if (sliced) {
-      const label = _reportsActiveTab === 'cfp' ? 'CFPs & Events' : 'Mindshare';
-      renderDocBody(body, {
-        name,
-        html: `<p class="hint">${escape(label)} section of <code>${escape(name)}</code> — open the <strong>Full Report</strong> tab for the full report.</p>${sliced}`,
-        kind: 'reports',
-      });
-    } else {
-      body.innerHTML = `<p class="hint">This scan report has no ${_reportsActiveTab === 'cfp' ? 'CFP/Conferences' : 'Mindshare'} section. Open the <strong>Full Report</strong> tab for the full report.</p>`;
-    }
-  } else {
-    // Full Report tab (and standalone docs of a tab's own kind): render the whole
-    // report. The Full Report tab intentionally shows the complete scan, including
-    // its Mindshare / CFP sections — those also get a focused view under their
-    // own tabs, but the full report stays intact here.
-    renderDocBody(body, { name, html: r.html, kind: 'reports' });
-  }
-  body.dataset.name = name;
-  // The in-doc section nav is retired now that sections have their own
-  // tabs; keep it hidden to avoid duplicate, confusing navigation.
-  const nav = $('reports-section-nav');
-  if (nav) { nav.hidden = true; nav.innerHTML = ''; }
-}
-
-function applyReportsTabFilter() {
-  const lis = document.querySelectorAll('#reports-list li[data-name]');
-  let firstVisible = null;
-  let visibleCount = 0;
-  lis.forEach((li) => {
-    const match = rowMatchesTab(li, _reportsActiveTab);
-    setReportsRowTabBadge(li, _reportsActiveTab, match);
-    li.hidden = !match;
-    if (match) {
-      visibleCount += 1;
-      if (!firstVisible) firstVisible = li;
-    }
-  });
-  // Always (re)render the active row through openReportRow so the per-tab
-  // section slice is applied — even when the same row stays selected across
-  // a tab switch (e.g. a scan report shown full under Full Report, then sliced to
-  // its Mindshare section under Mindshare).
-  const selected = document.querySelector('#reports-list li.selected');
-  const target = selected && !selected.hidden ? selected : firstVisible;
-  if (visibleCount > 0 && target) {
-    openReportRow(target);
-  } else if (visibleCount === 0) {
-    // No rows match. Show a hint pointing at /scout-scan.
-    const body = $('reports-body');
-    if (body) {
-      body.innerHTML = `<p class="hint">No <strong>${escapeAttr(_reportsActiveTab)}</strong> content yet. Run <code>/scout-scan</code> to populate it.</p>`;
-      delete body.dataset.name;
-    }
-  }
-}
-
-function renderReportsActionBar(tab) {
-  const bar = $('reports-action-bar');
-  if (!bar) return;
-  if (tab === 'content') {
-    bar.innerHTML = `<span class="hint">The complete scan report. Its Mindshare and CFPs &amp; Events sections also get a focused view under their own tabs. New scans land here after <code>/scout-scan</code> completes.</span>`;
-  } else if (tab === 'mindshare') {
-    bar.innerHTML = `<span class="hint">Mindshare only — the Mindshare section of each scan report, plus any standalone monthly mindshare docs.</span>`;
-  } else if (tab === 'cfp') {
-    bar.innerHTML = `<span class="hint">CFPs &amp; Events only — the Calls for Papers and Conferences sections of each scan report.</span>`;
-  } else {
-    bar.innerHTML = '';
-  }
-}
+});
 
 async function computeAnalytics(kind) {
   const slug = (window.activeRoleSlug && window.activeRoleSlug()) || '';
@@ -3224,60 +2977,6 @@ function renderConferenceRow(c) {
   return `<tr><td>${escape(c.name)}</td><td>${escape(c.dates || '')}</td><td>${escape(c.location || '')}</td><td>${linksCell}</td></tr>`;
 }
 
-async function loadReports() {
-  const payload = await api('/api/reports');
-  _reportsCache = payload;
-  const { reports } = payload;
-  $('reports-list').innerHTML = reports.map(renderDocListItem).join('')
-    || '<li class="hint">No reports yet.</li>';
-  // Stamp every <li> with its kind so the tab filter can show/hide
-  // without a re-render.
-  $('reports-list').querySelectorAll('li[data-name]').forEach((li, idx) => {
-    const meta = reports[idx]?.meta || {};
-    li.dataset.kind = meta.kind || 'doc';
-    // Stamp which special sections this report carries so the Mindshare /
-    // CFPs & Events tabs can list only reports that actually have them.
-    const sections = meta.sections || {};
-    li.dataset.hasMindshare = sections.mindshare ? '1' : '';
-    li.dataset.hasCfp = sections.cfp ? '1' : '';
-    li.addEventListener('click', (e) => {
-      // Don't hijack clicks on the "open in new window" link.
-      if (e.target.closest('.entry-open')) return;
-      openReportRow(li);
-    });
-  });
-  wireListFilter({
-    inputId: 'reports-filter',
-    listId: 'reports-list',
-    kind: 'reports',
-    includeItem: (li) => rowMatchesTab(li, _reportsActiveTab),
-  });
-  // Apply tab filter + open the first matching row.
-  setReportsActiveTab(_reportsActiveTab);
-}
-
-// Wire the tab strip + Ask panel once the DOM is ready. The Reports view
-// is rendered into the page on load, so these elements exist on first paint.
-document.addEventListener('click', (e) => {
-  const tabBtn = e.target.closest('#reports-tabs button[data-tab]');
-  if (tabBtn) {
-    e.preventDefault();
-    setReportsActiveTab(tabBtn.dataset.tab);
-    return;
-  }
-  const secBtn = e.target.closest('#reports-section-nav button[data-section]');
-  if (secBtn) {
-    e.preventDefault();
-    scrollReportToSection(secBtn.dataset.section);
-    return;
-  }
-  const chip = e.target.closest('[data-ask-chip]');
-  if (chip) {
-    e.preventDefault();
-    fillAskChip(chip.dataset.askChip);
-  }
-});
-
 // --- Tools view (SEO / Ask) -----------------------------------------
 // Tools is its own top-level nav section, separate from Reports. SEO is
 // an on-demand utility whose dated outputs land in #tools-list (filtered
@@ -3353,7 +3052,7 @@ function renderToolsActionBar(tab) {
 
 async function loadTools() {
   const payload = await api('/api/reports');
-  _reportsCache = payload; // shared cache for the Tools view
+  setReportsPayload(payload); // shared cache for activeRoleSlug()
   const { reports } = payload;
   $('tools-list').innerHTML = reports.map(renderDocListItem).join('')
     || '<li class="hint">No tool outputs yet.</li>';
