@@ -437,6 +437,16 @@ function closeRun(run, status) {
     } catch {}
   }
   run.listeners.clear();
+  // A finished scan/post run has (likely) written new reports or social-posts
+  // to disk. Proactively drop the TTL response caches and the parsed index so
+  // the dashboard, Conversations, and Reports reflect the new artifacts on the
+  // next request instead of serving up-to-30s-stale data. The index also
+  // self-invalidates via its content signature, but clearing here removes the
+  // directory-cache lag so a just-completed scan shows up immediately.
+  if (status === 'success') {
+    clearArtifactResponseCaches();
+    _indexCache = null;
+  }
   // Auto-render thumbnails for any run that produces a social-posts/*.md
   // (scout-post bulk + solo, plus scout-scan when posts are auto-generated).
   // Fire-and-forget so the SSE close above isn't delayed. Honor the
