@@ -84,6 +84,18 @@ Examples:
 
 if (!command) usageAndExit();
 
+let unhandledAsyncWarning = null;
+process.on('unhandledRejection', (reason) => {
+  const msg = reason && reason.stack ? reason.stack : String(reason && reason.message ? reason.message : reason);
+  unhandledAsyncWarning = msg;
+  console.warn(`[browser-scan] async warning (continuing): ${msg}`);
+  // For scan mode, platform-level failures are handled in the per-platform
+  // loop and the final sidecar writes are the source of truth. A late Google
+  // timeout should not flip an otherwise-successful social scan to exit 1.
+  // For non-scan commands, preserve the normal fail-fast behavior.
+  if (command !== 'scan') process.exit(1);
+});
+
 // ---- launch command (delegates to launch-edge.mjs) ----
 if (command === 'launch') {
   const launcherPath = path.join(__dirname, 'launch-edge.mjs');
@@ -296,6 +308,9 @@ if (command === 'launch') {
   }
   if (sharedHandle) await sharedHandle.browser.close().catch(() => {});
 
+  if (unhandledAsyncWarning) {
+    console.warn('[browser-scan] Completed with async warning(s); persisted sidecars above are still usable.');
+  }
   console.log(`[browser-scan] Done. scout scan will pick up results from ${outDir} on its next run.`);
   process.exit(0);
 } else {
