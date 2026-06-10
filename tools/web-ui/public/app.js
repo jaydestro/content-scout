@@ -3304,10 +3304,12 @@ async function computeAnalytics(kind) {
         if (status) status.textContent = 'enter at least one URL';
         return;
       }
+      const rewrites = $('seo-rewrites') ? $('seo-rewrites').checked : true;
+      if (status) status.textContent = rewrites ? 'Auditing + AI rewrites...' : 'Auditing...';
       res = await fetch('/api/analytics/seo', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ urls, slug }),
+        body: JSON.stringify({ urls, slug, rewrites }),
       });
     } else return;
     const data = await res.json();
@@ -3315,7 +3317,11 @@ async function computeAnalytics(kind) {
       if (status) status.textContent = `error: ${data.error || res.status}`;
       return;
     }
-    if (status) status.textContent = `Wrote ${data.fileName}`;
+    if (status) {
+      const n = data.rewriteCount || 0;
+      const extra = n ? ` | ${n} AI rewrite${n === 1 ? '' : 's'}` : '';
+      status.textContent = `Wrote ${data.fileName}${extra}`;
+    }
     if (kind === 'seo') {
       // SEO outputs live in the Tools view.
       await loadTools();
@@ -3542,6 +3548,9 @@ function renderToolsActionBar(tab) {
     bar.innerHTML = `
       <label class="field-inline" style="flex:1;min-width:240px">URLs (one per line, max 5)
         <textarea id="seo-urls" rows="3" placeholder="https://example.com/page-1&#10;https://example.com/page-2"></textarea>
+      </label>
+      <label class="field-inline" style="align-self:flex-end;white-space:nowrap" title="Generate title, meta, H1s, opening paragraph & JSON-LD inline using your configured LLM (set SEO_REWRITE_PROVIDER in .env; defaults to your agent runner). Uncheck for a fast deterministic-only audit.">
+        <input type="checkbox" id="seo-rewrites" checked> AI rewrites
       </label>
       <button type="button" id="btn-seo-compute">+ Audit now</button>
       <span class="hint" id="analytics-status"></span>

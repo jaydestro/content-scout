@@ -14,11 +14,14 @@ import { ROLE_PRESETS, renderConfigTemplate } from './lib/config-template.js';
 import { findMissingPrompts, findUnreferencedPrompts } from './lib/prompt-health.js';
 import { describeImage, formatVisionReport, probeVision, getVisionProvider } from './lib/vision.js';
 import { reviewSentiment, probeSentiment, getSentimentProvider } from './lib/sentiment-review.js';
+import { getSeoRewriteProvider, generateSeoRewrites, hasAnyRewrite } from './lib/seo-rewrite.js';
 import { searchCorpus } from '../lib/corpus-search.mjs';
 import { extractDocMeta } from '../lib/doc-meta.mjs';
 import { responseCache } from '../lib/response-cache.mjs';
 import {
   runSeoAudit,
+  extractSeoSnapshot,
+  htmlToText,
 } from '../lib/analytics.mjs';
 import {
   loadReport,
@@ -2024,7 +2027,6 @@ app.get('/view/social/:name', async (req, res) => {
 
 let _indexCache = null;// { builtAt, signature, items, conversations, authors, sources, reports }
 let _indexBuilding = null; // in-flight build promise — concurrent callers share it
-const INDEX_TTL_MS = 30_000;
 
 async function stateFileMtime(name) {
   try {
@@ -2076,11 +2078,17 @@ async function _buildIndex() {
     .map((r, idx) => `${r.name}@${r.mtime || ''}#${sidecarMtimes[idx] || ''}`)
     .sort()
     .join('|') + `|sentiment-overrides@${sentimentOverridesMtime || ''}`;
-  if (
-    _indexCache &&
-    _indexCache.signature === signature &&
-    Date.now() - _indexCache.builtAt < INDEX_TTL_MS
-  ) {
+  // Validate the cache by content fingerprint, not by wall-clock age. The
+  // signature already captures every input that can change the parsed index
+  // (each report's mtime + its JSON sidecar mtime + the sentiment-overrides
+  // mtime, all surfaced through listMarkdownFiles' own 30s directory cache).
+  // If the fingerprint is unchanged, a rebuild would reparse the entire
+  // corpus only to produce byte-identical output — so reuse it regardless of
+  // age. Re-parsing every 30s was the dominant dashboard cold-load cost
+  // (a full /api/conversations went from ~3.6s cold to ~0.6s warm purely on
+  // index reuse). Freshness is unchanged: any real file change flips a
+  // mtime, the signature differs, and the index rebuilds on the next call.
+  if (_indexCache && _indexCache.signature === signature) {
     return _indexCache;
   }
 
@@ -4120,7 +4128,7 @@ app.post('/api/browser-scan/scan', async (req, res) => {
 });
 
 // --- In-browser analytics endpoints --------------------------------
-// Same artifacts the /scout-seo agent command produces — but computed in
+// Same artifacts the /scout-seo agent command produces, but computed in
 // pure Node from data already on disk so the Reports view can run with one
 // click. No LLM, no subprocess. See tools/lib/analytics.mjs for the engine.
 
@@ -4147,9 +4155,49 @@ app.post('/api/analytics/seo', express.json(), async (req, res) => {
         }
       })
     );
-    const result = runSeoAudit({ pages, slug: isValidSlug(slug) ? slug : '' });
+    // Optional LLM rewrite pass. Folds the /scout-seo "Suggested rewrites"
+    // (title, meta description, alternative H1s, opening paragraph, JSON-LD)
+    // into this audit when a provider is configured. Best-effort and serial:
+    // any failure degrades to a note and the deterministic audit still
+    // returns. Default provider reuses the configured agent runner. See
+    // tools/web-ui/lib/seo-rewrite.js.
+    const rewritesByUrl = {};
+    let rewriteProvider = null;
+    const wantRewrites = (req.body || {}).rewrites !== false;
+    const env = await readEnvObject();
+    const provider = getSeoRewriteProvider(env);
+    if (wantRewrites && provider !== 'none') {
+      rewriteProvider = provider;
+      const productName = await resolveProductName(slug || '');
+      const { runner } = await getRunner();
+      const { keywords, audience, goal } = req.body || {};
+      for (const p of pages) {
+        if (!p.html) continue;
+        try {
+          const snapshot = extractSeoSnapshot(p.html, p.url);
+          const excerpt = htmlToText(p.html).slice(0, 1500);
+          rewritesByUrl[p.url] = await generateSeoRewrites(
+            {
+              url: p.url,
+              snapshot,
+              excerpt,
+              productName,
+              keywords: String(keywords || '').slice(0, 200),
+              audience: String(audience || '').slice(0, 200),
+              goal: String(goal || '').slice(0, 200),
+            },
+            env,
+            { runner, cwd: REPO_ROOT },
+          );
+        } catch (e) {
+          rewritesByUrl[p.url] = { provider, error: String(e.message || e) };
+        }
+      }
+    }
+    const result = runSeoAudit({ pages, slug: isValidSlug(slug) ? slug : '', rewritesByUrl });
     await fs.writeFile(path.join(REPORTS_DIR, result.fileName), result.markdown, 'utf8');
-    res.json({ ok: true, fileName: result.fileName, data: result.data });
+    const rewriteCount = Object.values(rewritesByUrl).filter((r) => hasAnyRewrite(r)).length;
+    res.json({ ok: true, fileName: result.fileName, data: result.data, rewriteProvider, rewriteCount });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
   }
@@ -4183,4 +4231,10 @@ app.listen(PORT, HOST, async () => {
   if (unreferenced.length) {
     console.warn(`[warn] unreferenced prompt files (${unreferenced.length}) — on disk but not wired into the UI: ${unreferenced.join(', ')}`);
   }
+  // Prime the report index in the background so the first dashboard load is
+  // served warm. Building it lazily on the first /api/conversations call is
+  // what made a freshly-started server feel slow on the very first open.
+  // Fire-and-forget — failures here are non-fatal and will simply rebuild on
+  // demand.
+  getIndex().catch(() => { /* will rebuild on first request */ });
 });

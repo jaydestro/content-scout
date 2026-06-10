@@ -109,42 +109,87 @@
   }
 
   // Switch to the Conversations view and scroll/highlight the row that
-  // matches `key`. If the row isn't in the current view (filtered out
-  // by include/platform), broaden filters and reload before scrolling.
-  // Called from Social pulse links so users can read the post inline
-  // instead of being kicked out to the external site.
+  // matches `key`. Called from Social pulse links so users can read the post
+  // inline instead of being kicked out to the external site.
+  //
+  // The Social pulse card surfaces official/product posts (it fetches with
+  // includeProduct=1), job-ish posts, muted/closed rows, and items up to 30
+  // days old. The Conversations view, by contrast, defaults to community-only,
+  // hides job posts, hides closed/muted, splits anything older than 14 days
+  // into collapsed "by week" <details>, and remembers the last
+  // tab/sentiment/platform/timeframe/search the user set. Any one of those
+  // would filter out — or visually hide — the exact row we're jumping to,
+  // which is why "open in Conversations" used to land on nothing. So we
+  // neutralise every hide filter, refetch, then expand the row's week bucket
+  // before flashing it.
   async function _navigateToConversation(key) {
     if (!key) return;
     const navBtn = document.querySelector('nav button[data-view="conversations"]');
     if (navBtn) navBtn.click();
+
     const findRow = () => document.querySelector(`#conv-list .conv-row[data-key="${CSS.escape(key)}"]`);
-    const flash = (row) => {
+
+    const reveal = (row) => {
       if (!row) return;
+      // scrollIntoView/focus can't reach a child of a closed <details>, so
+      // open the older-week bucket first (and remember it so a later
+      // re-render keeps it open).
+      const wk = row.closest('details.conv-week');
+      if (wk && !wk.open) {
+        wk.open = true;
+        if (wk.dataset.week) _expandedWeeks.add(wk.dataset.week);
+      }
       row.scrollIntoView({ behavior: 'smooth', block: 'center' });
       row.classList.add('conv-row-flash');
       setTimeout(() => row.classList.remove('conv-row-flash'), 2200);
       try { row.focus({ preventScroll: true }); } catch {}
     };
-    // Wait one tick for the view swap to render the existing list.
-    await new Promise((r) => setTimeout(r, 60));
-    let row = findRow();
-    if (row) { flash(row); return; }
-    // Not in current view — broaden filters: include=all, clear platform.
-    const show = document.getElementById('conv-show');
-    const plat = document.getElementById('conv-platform');
-    let mutated = false;
-    if (show && show.value !== 'all') { show.value = 'all'; mutated = true; }
-    if (plat && plat.value) { plat.value = ''; mutated = true; }
-    if (mutated) {
-      (show || plat).dispatchEvent(new Event('change', { bubbles: true }));
-      // loadConversations is async — poll briefly for the row to land.
-      for (let i = 0; i < 30; i++) {
-        await new Promise((r) => setTimeout(r, 80));
-        row = findRow();
-        if (row) break;
-      }
+
+    const setControl = (id, value) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (el.type === 'checkbox') el.checked = !!value;
+      else el.value = value;
+      // Persist so wireConversationsUI's localStorage restore doesn't revert
+      // the value on a later visit.
+      try {
+        localStorage.setItem('cs.conv.' + id, el.type === 'checkbox' ? (value ? '1' : '0') : String(value));
+      } catch {}
+    };
+
+    // Reset the All / Conversations / Mentions tab so a row of the "other"
+    // kind isn't filtered out.
+    _activeTab = 'all';
+    try { localStorage.setItem('cs.conv.activeTab', 'all'); } catch {}
+    document.querySelectorAll('.conv-tab').forEach((b) => {
+      const on = b.dataset.convTab === 'all';
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+
+    // Clear every client-side filter, then widen the server fetch.
+    setControl('conv-q', '');
+    setControl('conv-sentiment', '');
+    setControl('conv-platform', '');
+    setControl('conv-timeframe', '');
+    setControl('conv-jobs', '');             // include job posts
+    setControl('conv-needs-reply', false);
+    setControl('conv-team-mode', 'everyone'); // community + team/product
+    setControl('conv-show', 'all');           // open + closed + muted
+
+    // conv-show drives the server fetch (include=all also pulls muted +
+    // product). loadConversations reads the controls we just set and
+    // re-renders with the cleared client filters.
+    try { await loadConversations(); } catch {}
+
+    // loadConversations renders synchronously on resolve, but the initial
+    // view-mount load may still be settling — poll briefly so we reliably
+    // catch the row, then reveal it.
+    for (let i = 0; i < 40; i++) {
+      const row = findRow();
+      if (row) { reveal(row); return; }
+      await new Promise((r) => setTimeout(r, 80));
     }
-    if (row) flash(row);
   }
 
   const REASON_LABELS = {
@@ -1571,6 +1616,13 @@
     try { parsed = new URL(u); } catch { return false; }
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
     if (!parsed.hostname || !parsed.hostname.includes('.')) return false;
+    // LinkedIn SDUI search results expose only a synthesized
+    // `/feed/sdui-post/{hash}/` permalink — LinkedIn lazy-loads the real
+    // post URL on "..." menu open, so this hash never resolves to a public
+    // page and clicking it dead-ends. Treat it as non-navigable so the card
+    // renders these as plain text (and prefers a sibling sample that has a
+    // working link) instead of shipping a broken LinkedIn link.
+    if (/linkedin\.com$/i.test(parsed.hostname) && /\/feed\/sdui-post\//i.test(parsed.pathname)) return false;
     return true;
   }
   const _urlLiveCache = new Map(); // url -> Promise<{ok,status}>
@@ -1671,9 +1723,21 @@
       // Dashboard card is intentionally scoped to the most recent 30 days.
       // Anything older lives in the Conversations view, which has its own
       // searchable timeframe filter (30d / 90d / 6m / 1y / all time).
+      //
+      // Exception: always include everything from the *latest scan* even if
+      // its post date is older than 30 days. Scans routinely surface posts
+      // that were authored weeks ago but only just discovered — a strict
+      // post-date window would hide that fresh-from-the-last-scan activity
+      // from Community signals, which is exactly what users expect to see.
+      const latestReport = allEver.reduce(
+        (acc, c) => (c.report && c.report > acc ? c.report : acc),
+        ''
+      );
       const WINDOW_DAYS = 30;
       const cutoffMs = Date.now() - WINDOW_DAYS * 86400000;
       const all = allEver.filter((c) => {
+        // Anything from the most recent scan stays, regardless of post age.
+        if (latestReport && c.report === latestReport) return true;
         const dt = _parseDate(c.date);
         // Keep undated items so they don't silently disappear.
         return !dt || dt.getTime() >= cutoffMs;
@@ -1741,7 +1805,7 @@
           ? ` · ${olderCount} older in Conversations`
           : '';
         meta.textContent =
-          `Last 30d · ${platformsSeen} platform${platformsSeen === 1 ? '' : 's'}` +
+          `Latest scan · last 30d · ${platformsSeen} platform${platformsSeen === 1 ? '' : 's'}` +
           (needs.length ? ` · ${needs.length} need review` : '') +
           olderNote;
       }
@@ -1800,12 +1864,29 @@
             productSorted[0];
           const prev = sample ? extractSamplePreview(sample) : { text: '', url: '' };
           const sampleHasUrl = !!prev.url && isValidPostUrl(prev.url);
+          const sampleHasKey = !!(sample && sample.key);
           const sampleTone = sample?.sentiment || 'unknown';
           const sentTitle = sample ? esc(sample.sentiment || 'unknown') : '';
+          // Three render modes for the sample line:
+          //  1. valid external URL + key → link that opens Conversations on
+          //     plain click and the real source on Ctrl/Cmd-click.
+          //  2. key but no usable URL (e.g. LinkedIn SDUI posts, whose
+          //     synthesized permalinks dead-end) → still a link, but it only
+          //     navigates into Conversations; no broken external href.
+          //  3. neither → plain text.
+          const sampleLabel = esc(trim(prev.text, 100));
+          let sampleLink;
+          if (sampleHasUrl) {
+            sampleLink = `<a href="${esc(prev.url)}" class="dash-link" data-check-url="${esc(prev.url)}" data-conv-key="${esc(sample.key || '')}" target="_blank" rel="noopener" title="Open in Conversations (Ctrl/Cmd-click for source)">${sampleLabel}</a>`;
+          } else if (sampleHasKey) {
+            sampleLink = `<a href="#conversations" class="dash-link" data-conv-key="${esc(sample.key)}" title="Open in Conversations (no public source link available)">${sampleLabel}</a>`;
+          } else {
+            sampleLink = sampleLabel;
+          }
           const sampleHtml = sample
             ? `<div class="dash-plat-sample">
                 <span class="dash-plat-sent tone-dot tone-${esc(sampleTone)}" title="${sentTitle}" aria-label="sentiment: ${sentTitle}"></span>
-                ${sampleHasUrl ? `<a href="${esc(prev.url)}" class="dash-link" data-check-url="${esc(prev.url)}" data-conv-key="${esc(sample.key || '')}" target="_blank" rel="noopener" title="Open in Conversations (Ctrl/Cmd-click for source)">${esc(trim(prev.text, 100))}</a>` : esc(trim(prev.text, 100))}
+                ${sampleLink}
                 <div class="hint">${esc(sample.author || '')}${sample.author && sample.date ? ' · ' : ''}${esc(sample.date || '')}</div>
               </div>`
             : '';
@@ -1834,7 +1915,9 @@
               const hasUrl = isValidPostUrl(c.url);
               const link = hasUrl
                 ? `<a href="${esc(c.url)}" class="dash-link" data-check-url="${esc(c.url)}" data-conv-key="${esc(c.key || '')}" target="_blank" rel="noopener" title="Open in Conversations (Ctrl/Cmd-click for source)">Source ↗</a>`
-                : '';
+                : (c.key
+                    ? `<a href="#conversations" class="dash-link" data-conv-key="${esc(c.key)}" title="Open in Conversations (no public source link available)">Open ↗</a>`
+                    : '');
               const replyBtn = hasUrl
                 ? `<button type="button" class="dash-reply-btn" data-url="${esc(c.url)}">Draft reply</button>`
                 : '';
