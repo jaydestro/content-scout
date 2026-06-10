@@ -2707,6 +2707,38 @@ html[data-theme="light"] .dash-plat-chip.dash-plat-product {
   vertical-align: 0;
 }
 
+/* Freshness badges — relative age of a sample post (per-platform) and of the
+   most recent scan (signal-strip metric). Color encodes recency tier. */
+.dash-fresh-badge {
+  display: inline-block;
+  margin-left: .35rem;
+  padding: .02rem .4rem;
+  border-radius: 999px;
+  font-size: .66rem;
+  font-weight: 600;
+  letter-spacing: .02em;
+  border: 1px solid var(--border);
+  vertical-align: baseline;
+}
+.dash-fresh-fresh  { background: rgba(4,120,87,.16);  border-color: rgba(4,120,87,.34);  color: var(--accent-2, #34d399); }
+.dash-fresh-recent { background: rgba(59,130,246,.14); border-color: rgba(59,130,246,.32); color: #60a5fa; }
+.dash-fresh-aging  { background: rgba(202,138,4,.16);  border-color: rgba(202,138,4,.34);  color: #fbbf24; }
+.dash-fresh-stale  { background: rgba(220,38,38,.14);  border-color: rgba(220,38,38,.32);  color: #f87171; }
+.dash-fresh-unknown { background: rgba(148,163,184,.14); border-color: var(--border); color: var(--muted, #94a3b8); }
+
+/* Same tiers applied to the "last scan" signal-strip metric value. */
+.dash-fresh-metric.dash-fresh-fresh  strong { color: var(--accent-2, #34d399); }
+.dash-fresh-metric.dash-fresh-recent strong { color: #60a5fa; }
+.dash-fresh-metric.dash-fresh-aging  strong { color: #fbbf24; }
+.dash-fresh-metric.dash-fresh-stale  strong { color: #f87171; }
+
+html[data-theme="light"] .dash-fresh-recent { color: #2563eb; }
+html[data-theme="light"] .dash-fresh-aging  { color: #b45309; }
+html[data-theme="light"] .dash-fresh-stale  { color: #b91c1c; }
+html[data-theme="light"] .dash-fresh-metric.dash-fresh-recent strong { color: #2563eb; }
+html[data-theme="light"] .dash-fresh-metric.dash-fresh-aging  strong { color: #b45309; }
+html[data-theme="light"] .dash-fresh-metric.dash-fresh-stale  strong { color: #b91c1c; }
+
 @media (max-width: 640px) {
   .dash-signal-strip { grid-template-columns: 1fr; }
   .dash-plat-counts { width: 100%; margin-left: 2.1rem; justify-content: flex-start; }

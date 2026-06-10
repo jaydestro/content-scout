@@ -381,6 +381,61 @@
     return false;
   }
 
+  // ----- Social activity quality + freshness ----------------------
+  // Quality gate for the dashboard Community-signals card. Drops the noise
+  // that shouldn't count as community sentiment: recruiter/job posts (already
+  // hard-banned at scan time, but legacy persisted rows can still carry them)
+  // and empty shells with no readable summary or author. Conservative by
+  // design — when in doubt we keep the row so real chatter never silently
+  // disappears from the card.
+  function _passesSocialQuality(c) {
+    if (!c) return false;
+    if (_looksLikeJob(c)) return false;
+    const text = String(c.summary || '')
+      .replace(/\[([^\]]+)\]\(https?:\/\/[^\s)]+\)/g, '$1')
+      .trim();
+    const author = String(c.author || '').trim();
+    // Neither prose nor an author → empty shell (usually a parse miss); it
+    // adds nothing but a blank row.
+    if (!text && !author) return false;
+    // A "summary" that is nothing but a bare URL carries no signal on its own.
+    if (!author && /^https?:\/\/\S+$/i.test(text)) return false;
+    return true;
+  }
+
+  // Parse the leading YYYY-MM-DD-HHmm stamp out of a report filename/stem so
+  // the card can show how fresh the underlying scan is.
+  function _reportStampDate(report) {
+    const m = String(report || '').match(/(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})/);
+    if (!m) return null;
+    const dt = new Date(
+      Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5])
+    );
+    return Number.isFinite(dt.getTime()) ? dt : null;
+  }
+
+  // Compact relative-age label + freshness tier for a Date. Tiers drive the
+  // badge color: fresh (<24h), recent (<3d), aging (<7d), stale (≥7d).
+  function _freshnessFor(dt) {
+    if (!dt) return { rel: '', tier: 'unknown', label: 'unknown age' };
+    const ms = Date.now() - dt.getTime();
+    if (ms < 0) return { rel: 'just now', tier: 'fresh', label: 'just now' };
+    const mins = Math.round(ms / 60000);
+    const hrs = Math.round(ms / 3600000);
+    const days = Math.round(ms / 86400000);
+    let rel;
+    if (mins < 1) rel = 'just now';
+    else if (mins < 60) rel = `${mins}m ago`;
+    else if (hrs < 24) rel = `${hrs}h ago`;
+    else rel = `${days}d ago`;
+    let tier;
+    if (ms < 24 * 3600000) tier = 'fresh';
+    else if (ms < 3 * 86400000) tier = 'recent';
+    else if (ms < 7 * 86400000) tier = 'aging';
+    else tier = 'stale';
+    return { rel, tier, label: rel };
+  }
+
   function _convRowHtml(c) {
     const dot = SENTIMENT_DOT[c.sentiment] || '·';
     const kind = _convKind(c);
@@ -1720,6 +1775,15 @@
           _fromItems: true,
         }));
       allEver.push(...socialItems);
+      // Quality gate: strip recruiter/job noise and empty parse-miss shells
+      // so the Community-signals card reflects real conversation. Job posts
+      // are hard-banned at scan time, but older persisted rows can still
+      // carry them, and item-backfilled rows occasionally arrive bodyless.
+      const _preQualityCount = allEver.length;
+      const _qualityKept = allEver.filter(_passesSocialQuality);
+      const lowQualityCount = _preQualityCount - _qualityKept.length;
+      allEver.length = 0;
+      allEver.push(..._qualityKept);
       // Dashboard card is intentionally scoped to the most recent 30 days.
       // Anything older lives in the Conversations view, which has its own
       // searchable timeframe filter (30d / 90d / 6m / 1y / all time).
@@ -1744,6 +1808,11 @@
       });
       const olderCount = allEver.length - all.length;
 
+      // Freshness of the underlying data, derived from the most recent scan's
+      // report stamp. Drives a colored badge so users can tell at a glance
+      // whether the card reflects current chatter or needs a fresh scan.
+      const scanFresh = _freshnessFor(_reportStampDate(latestReport));
+
       // Sentiment pills (top of card)
       const totals = { positive: 0, neutral: 0, mixed: 0, negative: 0, unknown: 0 };
       all.forEach((c) => { totals[c.sentiment] = (totals[c.sentiment] || 0) + 1; });
@@ -1762,6 +1831,7 @@
               <div class="dash-signal-metric"><strong>${all.length}</strong><span>conversations</span></div>
               <div class="dash-signal-metric"><strong>${flaggedCount}</strong><span>need review</span></div>
               <div class="dash-signal-metric"><strong>${olderCount}</strong><span>older archived</span></div>
+              <div class="dash-signal-metric dash-fresh-metric dash-fresh-${scanFresh.tier}" title="Most recent scan ${scanFresh.tier === 'unknown' ? 'date unknown' : scanFresh.label}${scanFresh.tier === 'stale' || scanFresh.tier === 'aging' ? ' — run a scan to refresh' : ''}"><strong>${scanFresh.rel || '—'}</strong><span>last scan</span></div>
             </div>
             <div class="dash-sent-pills">${pills.join('')}</div>`
           : `<p class="hint">No conversations tracked yet. Run a scan to surface community chatter.</p>`;
@@ -1804,9 +1874,15 @@
         const olderNote = olderCount > 0
           ? ` · ${olderCount} older in Conversations`
           : '';
+        const qualityNote = lowQualityCount > 0
+          ? ` · ${lowQualityCount} low-quality hidden`
+          : '';
+        const freshNote = scanFresh.rel ? ` · scanned ${scanFresh.label}` : '';
         meta.textContent =
           `Latest scan · last 30d · ${platformsSeen} platform${platformsSeen === 1 ? '' : 's'}` +
           (needs.length ? ` · ${needs.length} need review` : '') +
+          qualityNote +
+          freshNote +
           olderNote;
       }
 
@@ -1887,7 +1963,12 @@
             ? `<div class="dash-plat-sample">
                 <span class="dash-plat-sent tone-dot tone-${esc(sampleTone)}" title="${sentTitle}" aria-label="sentiment: ${sentTitle}"></span>
                 ${sampleLink}
-                <div class="hint">${esc(sample.author || '')}${sample.author && sample.date ? ' · ' : ''}${esc(sample.date || '')}</div>
+                <div class="hint">${esc(sample.author || '')}${sample.author && sample.date ? ' · ' : ''}${esc(sample.date || '')}${(() => {
+                  const f = _freshnessFor(_parseDate(sample.date));
+                  return f.rel
+                    ? ` <span class="dash-fresh-badge dash-fresh-${f.tier}" title="Posted ${esc(f.label)}">${esc(f.rel)}</span>`
+                    : '';
+                })()}</div>
               </div>`
             : '';
           return `<div class="dash-plat-row" data-platform="${p.key}">
