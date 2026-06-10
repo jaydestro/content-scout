@@ -5,7 +5,6 @@
 // extracted helpers were already module-scoped locals, never exposed on window.
 import './lib/cache.js';
 import { $, api, escape, escapeAttr } from './lib/core.js';
-import { wireListFilter, renderDocListItem, renderDocBody } from './lib/doc-list.js';
 import {
   getMdSection, getMdSubsection, parseBulletList, bulletListBlock,
   stripHtmlComments, leadingComment, listSectionBody, getKvField,
@@ -19,6 +18,7 @@ import {
   scrollReportToSection,
   setReportsActiveTab,
 } from './pages/reports.js';
+import { loadSocial as loadSocialPage } from './pages/social.js';
 import { fillAskChip, initToolsView, loadTools as loadToolsPage } from './pages/tools.js';
 
 // --- Navigation ----------------------------------------------------
@@ -2013,6 +2013,9 @@ async function loadReports() {
 async function loadTools() {
   return loadToolsPage();
 }
+async function loadSocial() {
+  return loadSocialPage();
+}
 
 // --- Configs -------------------------------------------------------
 let selectedConfig = null;
@@ -2933,242 +2936,6 @@ function renderConferenceRow(c) {
   if (c.site) links.push(`<a href="${escapeAttr(c.site)}" target="_blank" rel="noopener">Site</a>`);
   const linksCell = links.length ? links.join(' &middot; ') : '<span class="hint">&mdash;</span>';
   return `<tr><td>${escape(c.name)}</td><td>${escape(c.dates || '')}</td><td>${escape(c.location || '')}</td><td>${linksCell}</td></tr>`;
-}
-
-async function loadSocial() {
-  const { social } = await api('/api/reports');
-  // Same row renderer, but the open-in-window link should hit /view/social/.
-  $('social-list').innerHTML = social
-    .map((r) => renderDocListItem(r).replace('/view/reports/', '/view/social/'))
-    .join('') || '<li class="hint">No social posts yet.</li>';
-  $('social-list').querySelectorAll('li[data-name]').forEach((li) => {
-    li.addEventListener('click', async (e) => {
-      if (e.target.closest('.entry-open')) return;
-      document.querySelectorAll('#social-list li').forEach((x) => x.classList.remove('selected'));
-      li.classList.add('selected');
-      const r = await api(`/api/social/${encodeURIComponent(li.dataset.name)}`);
-      renderDocBody($('social-body'), { name: li.dataset.name, html: r.html, kind: 'social' });
-      $('social-body').dataset.name = li.dataset.name;
-      enhanceSocialBody($('social-body'));
-    });
-  });
-  // Auto-open the most recent social-posts file (list is sorted desc by mtime)
-  // so the page never lands on an empty viewer.
-  const body = $('social-body');
-  const first = $('social-list').querySelector('li[data-name]');
-  if (first && body && !body.dataset.name) first.click();
-  wireListFilter({ inputId: 'social-filter', listId: 'social-list', kind: 'social-posts' });
-}
-
-// Enhance a rendered social-posts markdown view with:
-//  - a "Copy" button on every <pre> code block (one per post variant)
-//  - a URL chip row above the body listing every unique link found
-function enhanceSocialBody(root) {
-  if (!root) return;
-
-  // 1) Copy buttons on every code block (each post variant should be
-  //    in a fenced ``` block per the scout-post spec).
-  root.querySelectorAll('pre').forEach((pre) => {
-    if (pre.querySelector(':scope > .copy-btn')) return; // idempotent
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'copy-btn';
-    btn.textContent = 'Copy';
-    btn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      const text = (pre.querySelector('code')?.innerText ?? pre.innerText).trim();
-      try {
-        await navigator.clipboard.writeText(text);
-        btn.textContent = 'Copied ✓';
-        btn.classList.add('copied');
-        window.toast?.success?.({ title: 'Post copied to clipboard', duration: 2500 });
-      } catch {
-        btn.textContent = 'Copy failed';
-        window.toast?.error?.({ title: 'Could not copy', description: 'Browser blocked clipboard access.' });
-      }
-      setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
-    });
-    pre.appendChild(btn);
-  });
-
-  // 2) URL chip strip — collect unique http(s) links from the body.
-  const links = new Set();
-  root.querySelectorAll('a[href^="http"]').forEach((a) => links.add(a.href));
-  const existing = root.querySelector(':scope > .post-url-strip');
-  if (existing) existing.remove();
-  if (links.size) {
-    const strip = document.createElement('div');
-    strip.className = 'post-url-strip';
-    strip.innerHTML =
-      '<span class="post-url-label">URLs:</span>' +
-      [...links].map((href) => {
-        const safe = href.replace(/"/g, '&quot;');
-        const short = href.length > 60 ? href.slice(0, 57) + '…' : href;
-        return `<span class="post-url"><a href="${safe}" target="_blank" rel="noopener">${short}</a>` +
-          `<button type="button" class="post-url-copy" data-url="${safe}" title="Copy URL">⎘</button></span>`;
-      }).join('');
-    root.prepend(strip);
-    strip.querySelectorAll('.post-url-copy').forEach((b) => {
-      b.addEventListener('click', async (e) => {
-        e.preventDefault();
-        const u = b.dataset.url || '';
-        try {
-          await navigator.clipboard.writeText(u);
-          b.textContent = '✓';
-          window.toast?.success?.({ title: 'URL copied', duration: 2000 });
-          setTimeout(() => { b.textContent = '⎘'; }, 1500);
-        } catch {
-          window.toast?.error?.({ title: 'Could not copy URL' });
-        }
-      });
-    });
-  }
-
-  // 3) Inline thumbnails — the renderer now embeds each generated PNG
-  //    directly under its matching platform variant code block, but the
-  //    markdown uses repo-relative paths like `images/<batch>/<file>`.
-  //    Rewrite those to the server-served `/brand-assets/...` URL and
-  //    decorate each with download / copy-path controls (replacing the
-  //    old separate gallery section, which duplicated the same images).
-  const fileName = root.dataset.name;
-  if (fileName) decorateInlineSocialImages(root, fileName);
-}
-
-function decorateInlineSocialImages(root, fileName) {
-  // Idempotent: clear any previously injected actions and remove any
-  // legacy top-of-page gallery (older renderings of this file).
-  root.querySelectorAll(':scope .inline-thumb-actions').forEach((n) => n.remove());
-  const legacyGallery = root.querySelector(':scope > .social-image-gallery');
-  if (legacyGallery) legacyGallery.remove();
-
-  const imgs = [...root.querySelectorAll('.markdown img, .doc-content img')]
-    .filter((i) => !i.closest('.gallery-item'));
-  if (!imgs.length) return;
-
-  const fmtBytes = (n) => {
-    if (!Number.isFinite(n)) return '';
-    if (n < 1024) return `${n} B`;
-    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-    return `${(n / 1024 / 1024).toFixed(2)} MB`;
-  };
-  const safeAttr = (s) => String(s).replace(/"/g, '&quot;');
-
-  imgs.forEach((img) => {
-    // Rewrite repo-relative `images/<batch>/<name>` → `/brand-assets/<batch>/<name>`.
-    const raw = img.getAttribute('src') || '';
-    const m = raw.match(/^(?:\.?\/?)?images\/(.+)$/);
-    if (m) {
-      const newUrl = `/brand-assets/${m[1]}`;
-      img.src = newUrl;
-      // Wrap in a click-through anchor if not already.
-      if (!img.parentElement || img.parentElement.tagName !== 'A') {
-        const a = document.createElement('a');
-        a.href = newUrl;
-        a.target = '_blank';
-        a.rel = 'noopener';
-        a.title = `Open ${m[1].split('/').pop()}`;
-        img.parentNode.insertBefore(a, img);
-        a.appendChild(img);
-      }
-    }
-    img.classList.add('inline-thumb');
-    img.loading = 'lazy';
-
-    // Append a small actions row right after the image's containing block
-    // (typically a <p>) — copy repo path + download.
-    const finalUrl = img.getAttribute('src');
-    const fileBase = decodeURIComponent(finalUrl.split('/').pop());
-    const batch = (finalUrl.match(/^\/brand-assets\/(.+)\/[^/]+$/) || [, ''])[1];
-    const repoPath = `social-posts/images/${batch ? batch + '/' : ''}${fileBase}`;
-    const wrap = img.closest('p, figure, li, div') || img.parentElement;
-    const row = document.createElement('div');
-    row.className = 'inline-thumb-actions';
-    row.innerHTML =
-      `<button type="button" class="thumb-btn" data-copy-path="${safeAttr(repoPath)}" title="Copy repo path">Copy path</button>` +
-      `<a class="thumb-btn" href="${safeAttr(finalUrl)}" download="${safeAttr(fileBase)}">Download</a>` +
-      `<a class="thumb-btn thumb-btn-ghost" href="${safeAttr(finalUrl)}" target="_blank" rel="noopener">Open full size</a>`;
-    wrap.after(row);
-  });
-
-  // Wire the copy-path buttons.
-  root.querySelectorAll('.inline-thumb-actions [data-copy-path]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const p = btn.dataset.copyPath || '';
-      try {
-        await navigator.clipboard.writeText(p);
-        const label = btn.textContent;
-        btn.textContent = 'Copied ✓';
-        btn.classList.add('copied');
-        window.toast?.success?.({ title: 'Path copied', description: p, duration: 2000 });
-        setTimeout(() => { btn.textContent = label; btn.classList.remove('copied'); }, 1600);
-      } catch {
-        window.toast?.error?.({ title: 'Could not copy path' });
-      }
-    });
-  });
-}
-
-async function renderSocialImageGallery(root, fileName) {
-  // Remove any prior gallery (idempotent re-enhancement).
-  const prior = root.querySelector(':scope > .social-image-gallery');
-  if (prior) prior.remove();
-  let images = [];
-  try {
-    const r = await fetch(`/api/social/${encodeURIComponent(fileName)}/images`);
-    if (!r.ok) return;
-    const data = await r.json();
-    images = Array.isArray(data.images) ? data.images : [];
-  } catch { return; }
-  if (!images.length) return;
-
-  const fmtBytes = (n) => {
-    if (n < 1024) return `${n} B`;
-    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-    return `${(n / 1024 / 1024).toFixed(2)} MB`;
-  };
-  const safeAttr = (s) => String(s).replace(/"/g, '&quot;');
-
-  const section = document.createElement('section');
-  section.className = 'social-image-gallery';
-  section.innerHTML =
-    `<h4>Generated images <span class="hint" style="text-transform:none;font-weight:400;letter-spacing:0;color:var(--muted-2);margin-left:0.4rem;">(${images.length})</span></h4>` +
-    `<div class="gallery-grid">` +
-    images.map((img) => {
-      const repoPath = `social-posts/images/${img.batch ? img.batch + '/' : ''}${img.name}`;
-      return `
-        <figure class="gallery-item">
-          <a href="${safeAttr(img.url)}" target="_blank" rel="noopener" title="Open ${safeAttr(img.name)}">
-            <img src="${safeAttr(img.url)}" alt="${safeAttr(img.name)}" loading="lazy" />
-          </a>
-          <figcaption class="gallery-name" title="${safeAttr(repoPath)}">${escape(img.name)}</figcaption>
-          <div class="gallery-actions">
-            <button type="button" class="gallery-btn" data-copy-path="${safeAttr(repoPath)}" title="Copy repo path">Copy path</button>
-            <a class="gallery-btn" href="${safeAttr(img.url)}" download="${safeAttr(img.name)}">Download</a>
-            <span class="gallery-btn" style="cursor:default;border-style:dashed;">${fmtBytes(img.bytes)}</span>
-          </div>
-        </figure>`;
-    }).join('') +
-    `</div>`;
-
-  // Insert just after the URL strip if present, otherwise at the top.
-  const urlStrip = root.querySelector(':scope > .post-url-strip');
-  if (urlStrip) urlStrip.after(section);
-  else root.prepend(section);
-
-  section.querySelectorAll('button[data-copy-path]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const p = btn.dataset.copyPath || '';
-      try {
-        await navigator.clipboard.writeText(p);
-        btn.textContent = 'Copied ✓';
-        btn.classList.add('copied');
-        window.toast?.success?.({ title: 'Path copied', description: p, duration: 2200 });
-        setTimeout(() => { btn.textContent = 'Copy path'; btn.classList.remove('copied'); }, 1800);
-      } catch {
-        window.toast?.error?.({ title: 'Could not copy path' });
-      }
-    });
-  });
 }
 
 // --- "Create posts for me" — /scout-post runner ---------------------
