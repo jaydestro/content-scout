@@ -7,5 +7,6 @@
   "chat.modeFilesLocations": {
     ".github/agents": true,
     ".github/chatmodes": true
-  }
+  },
+  "diffEditor.maxComputationTime": 0
 }
