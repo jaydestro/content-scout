@@ -23,7 +23,7 @@ Read `.github/agents/content-scout.agent.md` for your complete operating instruc
 
 ## Configuration
 
-Before any operation, read config files from `.github/prompts/scout-config-*.prompt.md`. If none exist, run onboarding first. API keys are in `.env` — check before scanning and skip sources with missing keys.
+Before any operation, read config files from `.local/configs/scout-config-*.md` first. If none exist there, fall back to legacy `.github/prompts/scout-config-*.prompt.md`. If neither location has configs, run onboarding first. API keys are in `.env` — check before scanning and skip sources with missing keys.
 
 ## Commands
 

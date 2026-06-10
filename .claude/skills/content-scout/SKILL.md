@@ -11,7 +11,7 @@ The single source of truth is [.github/agents/content-scout.agent.md](../../../.
 ## How to use
 
 1. Read [.github/agents/content-scout.agent.md](../../../.github/agents/content-scout.agent.md) for full operating instructions (sources, quality filters, report templates, social post standards, subagent architecture). Ignore its YAML frontmatter — that's for VS Code agent mode.
-2. Read the active product config from `.github/prompts/scout-config-*.prompt.md`. If none exists, run onboarding first.
+2. Read the active product config from `.local/configs/scout-config-*.md` first. If none exists there, fall back to legacy `.github/prompts/scout-config-*.prompt.md`. If neither exists, run onboarding first.
 3. Check `.env` at the repo root for API keys before scanning. Skip sources whose keys are missing.
 
 ## Commands

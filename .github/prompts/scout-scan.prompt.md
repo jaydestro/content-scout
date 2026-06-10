@@ -46,11 +46,11 @@ Run a content scan using the Content Scout agent.
 
 ## Instructions
 
-1. Load topic configuration(s) from `scout-config-*.prompt.md` files in `.github/prompts/`:
-   - If the user specified a topic (e.g., `/scout-scan cosmos-db`, `/scout-scan python`), load only `scout-config-{slug}.prompt.md`.
+1. Load topic configuration(s) from `.local/configs/scout-config-*.md` first (canonical runtime location). If none exist there, fall back to legacy `.github/prompts/scout-config-*.prompt.md` files:
+   - If the user specified a topic (e.g., `/scout-scan cosmos-db`, `/scout-scan python`), load only `.local/configs/scout-config-{slug}.md` (or legacy `.github/prompts/scout-config-{slug}.prompt.md` if the local config is absent).
    - If the user said `/scout-scan` with no topic specified:
-     - If only **one** config file exists, use it.
-     - If **multiple** config files exist, ask: "You have configs for: {list of topic names}. Scan all of them, or just one? (say 'all' or a name/slug)"
+       - If only **one** config file exists, use it.
+       - If **multiple** config files exist, ask: "You have configs for: {list of topic names}. Scan all of them, or just one? (say 'all' or a name/slug)"
    - If no config exists, tell the user to run `/scout-onboard` first and stop.
 2. For each topic being scanned, determine the **time window**:
    - If the user specified a month/year (e.g., "March 2026"), scan that calendar month.
