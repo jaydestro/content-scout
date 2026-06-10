@@ -75,6 +75,11 @@ marked.setOptions({ breaks: true, gfm: true });
 // Repo root = tools/web-ui/../..
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const PROMPTS_DIR = path.join(REPO_ROOT, '.github', 'prompts');
+// Personal product configs live in the gitignored .local/configs/ dir
+// (standard location: scout-config-{slug}.md). Legacy installs kept them in
+// .github/prompts/scout-config-{slug}.prompt.md. Reads prefer .local; writes
+// always go to .local so a config can never be accidentally committed.
+const CONFIGS_DIR = path.join(REPO_ROOT, '.local', 'configs');
 const REPORTS_DIR = path.join(REPO_ROOT, 'reports');
 const SOCIAL_DIR = path.join(REPO_ROOT, 'social-posts');
 const ENV_FILE = path.join(REPO_ROOT, '.env');
@@ -498,48 +503,81 @@ async function autoRenderThumbnails(run) {
 }
 
 // --- helpers -------------------------------------------------------
+// Config file resolution: the standard home is .local/configs/scout-config-
+// {slug}.md (gitignored). The legacy home was .github/prompts/scout-config-
+// {slug}.prompt.md. Reads prefer .local and fall back to legacy; writes go to
+// .local only (and clean up any legacy copy) so configs stay uncommittable.
+function localConfigPath(slug) {
+  return safeJoin(CONFIGS_DIR, `scout-config-${slug}.md`);
+}
+function legacyConfigPath(slug) {
+  return safeJoin(PROMPTS_DIR, `scout-config-${slug}.prompt.md`);
+}
+async function resolveConfigPath(slug) {
+  for (const p of [localConfigPath(slug), legacyConfigPath(slug)]) {
+    try {
+      await fs.access(p);
+      return p;
+    } catch {}
+  }
+  return null;
+}
+
 async function listConfigs() {
-  try {
-    const files = await fs.readdir(PROMPTS_DIR);
+  const bySlug = new Map();
+  // Legacy first, then .local — .local entries win on slug collision.
+  for (const [dir, suffix] of [
+    [PROMPTS_DIR, '.prompt.md'],
+    [CONFIGS_DIR, '.md'],
+  ]) {
+    let files = [];
+    try {
+      files = await fs.readdir(dir);
+    } catch {
+      continue;
+    }
     const entries = files.filter(
       (f) =>
         f.startsWith('scout-config-') &&
-        f.endsWith('.prompt.md') &&
-        f !== 'scout-config-example.prompt.md' &&
+        f.endsWith(suffix) &&
+        f !== `scout-config-example${suffix}` &&
         !f.startsWith('scout-config-example-')
     );
-    const configs = await Promise.all(
-      entries.map(async (f) => {
-        const slug = f.replace(/^scout-config-/, '').replace(/\.prompt\.md$/, '');
-        let name = '';
-        let type = '';
-        try {
-          const raw = await fs.readFile(path.join(PROMPTS_DIR, f), 'utf8');
-          const nameM = raw.match(/^\s*-\s*\*\*Name:\*\*\s*(.+)$/m);
-          const typeM = raw.match(/^\s*-\s*\*\*Type:\*\*\s*(.+)$/m);
-          if (nameM) name = nameM[1].trim();
-          if (typeM) type = typeM[1].trim();
-        } catch {}
-        return { slug, file: f, name, type };
-      })
-    );
-    return configs;
-  } catch {
-    return [];
+    for (const f of entries) {
+      const slug = f.slice('scout-config-'.length, f.length - suffix.length);
+      if (!slug) continue;
+      let name = '';
+      let type = '';
+      try {
+        const raw = await fs.readFile(path.join(dir, f), 'utf8');
+        const nameM = raw.match(/^\s*-\s*\*\*Name:\*\*\s*(.+)$/m);
+        const typeM = raw.match(/^\s*-\s*\*\*Type:\*\*\s*(.+)$/m);
+        if (nameM) name = nameM[1].trim();
+        if (typeM) type = typeM[1].trim();
+      } catch {}
+      bySlug.set(slug, { slug, file: f, name, type });
+    }
   }
+  return [...bySlug.values()];
 }
 
 async function readConfig(slug) {
   if (!isValidSlug(slug)) throw new Error('invalid slug');
-  const file = safeJoin(PROMPTS_DIR, `scout-config-${slug}.prompt.md`);
+  const file = await resolveConfigPath(slug);
+  if (!file) throw new Error('config not found');
   const raw = await fs.readFile(file, 'utf8');
-  return { slug, file: `scout-config-${slug}.prompt.md`, raw };
+  return { slug, file: path.basename(file), raw };
 }
 
 async function writeConfig(slug, raw) {
   if (!isValidSlug(slug)) throw new Error('invalid slug');
-  const file = safeJoin(PROMPTS_DIR, `scout-config-${slug}.prompt.md`);
-  await fs.writeFile(file, raw, 'utf8');
+  await fs.mkdir(CONFIGS_DIR, { recursive: true });
+  await fs.writeFile(localConfigPath(slug), raw, 'utf8');
+  // Remove any legacy .github/prompts copy so the config lives only in the
+  // gitignored .local/ tree and can never be accidentally committed.
+  try {
+    await fs.unlink(legacyConfigPath(slug));
+  } catch {}
 }
 
 app.get('/api/role-presets', (_req, res) => {
@@ -1114,7 +1152,7 @@ app.post('/api/configs', async (req, res) => {
       competitors, conferences, customSources, standardSources,
     });
     await writeConfig(slug, raw);
-    res.json({ ok: true, slug, file: `scout-config-${slug}.prompt.md` });
+    res.json({ ok: true, slug, file: `scout-config-${slug}.md` });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
   }
@@ -1141,21 +1179,25 @@ app.put('/api/configs/:slug', async (req, res) => {
   }
 });
 
-// Delete a config by slug. The config file is removed from .github/prompts/.
-// Reports and social posts produced for this slug are kept on disk.
+// Delete a config by slug. The config file is removed from .local/configs/
+// (and any legacy .github/prompts/ copy). Reports and social posts produced
+// for this slug are kept on disk.
 app.delete('/api/configs/:slug', async (req, res) => {
   try {
     const slug = String(req.params.slug || '').toLowerCase();
     if (!isValidSlug(slug)) {
       return res.status(400).json({ error: 'invalid slug' });
     }
-    const file = safeJoin(PROMPTS_DIR, `scout-config-${slug}.prompt.md`);
-    try {
-      await fs.unlink(file);
-    } catch (err) {
-      if (err && err.code === 'ENOENT') return res.status(404).json({ error: 'not found' });
-      throw err;
+    let removed = false;
+    for (const file of [localConfigPath(slug), legacyConfigPath(slug)]) {
+      try {
+        await fs.unlink(file);
+        removed = true;
+      } catch (err) {
+        if (err && err.code !== 'ENOENT') throw err;
+      }
     }
+    if (!removed) return res.status(404).json({ error: 'not found' });
     res.json({ ok: true, slug });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
@@ -3152,7 +3194,8 @@ async function resolveProductName(slug) {
   if (!s) return '';
   try {
     if (!isValidSlug(s)) return _titleCaseSlug(s);
-    const configPath = path.join(PROMPTS_DIR, `scout-config-${s}.prompt.md`);
+    const configPath = await resolveConfigPath(s);
+    if (!configPath) return _titleCaseSlug(s);
     const raw = await fs.readFile(configPath, 'utf8');
     const m = raw.match(/^[-*]?\s*\*\*Name:\*\*\s*(.+)$/m);
     if (m) return m[1].trim();
