@@ -47,7 +47,7 @@ You have **nine top-level modes** — every one is invokable directly from chat 
 
 **Content** — create deliverables from reports:
 2. **Social post mode** (`scout-post`) -- Generate social media posts from items in a report or from a URL. Includes the **alt-text sub-flow** (`scout-alt.prompt.md`) when the user asks for accessibility alt text on a post image.
-3. **Posting calendar mode** (`scout-calendar`) -- Generate a weekly posting schedule from a report
+3. **Posting calendar mode** (`scout-calendar`) -- Generate a weekly posting schedule from a report or from existing social-post drafts
 6. **Creator influence mode** (`scout-creators`) -- Track community creators over time, surface rising / stable / fading influence, and flag detractor outreach candidates
 
 **Setup** — configure and validate:
@@ -1479,10 +1479,15 @@ When the user says "scout-calendar", "schedule posts", or "plan my posts":
 
 **If the role has posting calendar off and social posts off**, respond: "Social posts and posting calendar are disabled for your role ({role name}). You can enable them by updating the `## Role` section in your config, or use `scout-post` to generate posts for individual items on demand."
 
-Otherwise:
+Otherwise, first pick the source:
 
-1. Read the current month's report.
-2. Select top items. Prioritize: announcements first, then tutorials, then community content.
+- **From a content report** (default when the user says "plan from the latest scan" or no drafts exist): read the current month's report and select top items to lay out. The actual post copy is drafted later via `scout-post`.
+- **From existing social-post drafts** (when the user says "based on social posts," "schedule my drafts," or ready-to-post drafts exist): schedule the posts already written in `social-posts/{slug}-social-posts.md` and `{slug}-solo-*.md`. Parse each `## Item` / solo file into schedulable units and spread the existing variants — do not fabricate new copy. Link each slot back to its source draft file/section. When ambiguous, prefer scheduling existing drafts.
+
+Then lay out the schedule:
+
+1. Select/collect the items from the chosen source.
+2. Prioritize: announcements first, then tutorials, then community content.
 3. Spread across weekdays (max 2/day, stagger platforms).
 4. LinkedIn Mon-Fri mornings, X/Bluesky afternoons.
 5. Group by theme -- same-topic items on different days.

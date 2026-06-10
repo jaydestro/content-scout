@@ -613,8 +613,8 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             <div class="stat"><div class="stat-num" id="stat-last-scan"><span class="skeleton" style="width:3em;display:inline-block"></span></div><div class="stat-label">Last scan</div></div>
           </div>
 
-          <!-- 3. Needs your attention: actionable items at the top of the fold -->
-          <h3 class="dash-section-head">Needs your attention</h3>
+          <!-- 3. From your latest scan: the headline results -->
+          <h3 class="dash-section-head">From your latest scan</h3>
 
           <div class="cards dash-row-2">
             <div class="card" id="dash-latest-report-card">
@@ -633,23 +633,8 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             </div>
           </div>
 
-          <div class="cards dash-row-2">
-            <div class="card" id="dash-cfp-card">
-              <div class="dash-card-head">
-                <h3>CFPs &amp; events</h3>
-                <span class="hint" id="dash-cfp-meta"></span>
-              </div>
-              <div id="dash-cfp-events"><span class="skeleton" style="width:75%"></span><span class="skeleton" style="width:52%"></span></div>
-            </div>
-            <div class="card dash-action-items">
-              <div class="dash-action-items-head">
-                <h3>Action items</h3>
-                <span class="hint" id="dash-action-items-meta"></span>
-              </div>
-              <div id="dash-action-items"><span class="skeleton" style="width:80%"></span><span class="skeleton" style="width:60%"></span></div>
-            </div>
-          </div>
-
+          <!-- 4. Community signals from the last 30 days of scans -->
+          <h3 class="dash-section-head">Community signals</h3>
           <div class="card dash-social-activity" id="dash-social-activity-card">
             <div class="dash-social-activity-head">
               <h3>Social activity — last 30 days</h3>
@@ -658,30 +643,6 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             <div class="dash-social-summary" id="dash-social-summary"></div>
             <div id="dash-social-activity"><span class="skeleton" style="width:65%"></span><span class="skeleton" style="width:45%"></span></div>
           </div>
-
-          <div class="card">
-            <h3>Suggestions</h3>
-            <ul id="dash-suggestions"><li><span class="skeleton" style="width:75%"></span><span class="skeleton" style="width:50%"></span></li></ul>
-          </div>
-
-          <!-- 4. What's been happening: subjects + activity log -->
-          <h3 class="dash-section-head">Recent activity</h3>
-          <div class="cards dash-row-2">
-            <div class="card">
-              <h3>Subjects &amp; last scan</h3>
-              <ul id="dash-subjects"><li><span class="skeleton" style="width:60%"></span><span class="skeleton" style="width:40%"></span></li></ul>
-            </div>
-            <div class="card dash-activity-card">
-              <div class="dash-card-head">
-                <h3>Latest artifacts</h3>
-                <span class="hint" id="dash-activity-meta"></span>
-              </div>
-              <ul id="dash-activity" class="dash-activity"><li><span class="skeleton" style="width:80%"></span><span class="skeleton" style="width:55%"></span><span class="skeleton" style="width:65%"></span></li></ul>
-            </div>
-          </div>
-
-          <!-- 5. Intel: deeper signals from the latest scan -->
-          <h3 class="dash-section-head">Intel</h3>
           <div class="cards" id="dash-intel-cards">
             <div class="card">
               <h3>Sentiment pulse</h3>
@@ -694,6 +655,35 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             <div class="card">
               <h3>Source health</h3>
               <div id="dash-source-health"><span class="skeleton" style="width:55%"></span><span class="skeleton" style="width:65%"></span></div>
+            </div>
+          </div>
+
+          <!-- 5. Events & next steps -->
+          <h3 class="dash-section-head">Events &amp; next steps</h3>
+          <div class="cards dash-row-2">
+            <div class="card" id="dash-cfp-card">
+              <div class="dash-card-head">
+                <h3>CFPs &amp; events</h3>
+                <span class="hint" id="dash-cfp-meta"></span>
+              </div>
+              <div id="dash-cfp-events"><span class="skeleton" style="width:75%"></span><span class="skeleton" style="width:52%"></span></div>
+            </div>
+            <div class="card">
+              <h3>Suggestions</h3>
+              <ul id="dash-suggestions"><li><span class="skeleton" style="width:75%"></span><span class="skeleton" style="width:50%"></span></li></ul>
+            </div>
+          </div>
+          <div class="cards dash-row-2">
+            <div class="card">
+              <h3>Subjects &amp; last scan</h3>
+              <ul id="dash-subjects"><li><span class="skeleton" style="width:60%"></span><span class="skeleton" style="width:40%"></span></li></ul>
+            </div>
+            <div class="card dash-activity-card">
+              <div class="dash-card-head">
+                <h3>Latest artifacts</h3>
+                <span class="hint" id="dash-activity-meta"></span>
+              </div>
+              <ul id="dash-activity" class="dash-activity"><li><span class="skeleton" style="width:80%"></span><span class="skeleton" style="width:55%"></span><span class="skeleton" style="width:65%"></span></li></ul>
             </div>
           </div>
 
@@ -1477,7 +1467,6 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
     <script src="run-enhancer.js" defer></script>
     <script src="bulk-urls.js" defer></script>
     <script src="dashboard-enhancer.js" defer></script>
-    <script src="dashboard-tabs.js" defer></script>
     <script src="help.js" defer></script>
     <script src="command-palette.js" defer></script>
     <script src="theme.js" defer></script>

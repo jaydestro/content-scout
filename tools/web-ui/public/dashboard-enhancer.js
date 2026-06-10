@@ -82,7 +82,6 @@
     renderLatestReport(reportList);
     renderAnalyticsSummary(reportList);
     loadCfpEvents(configList);
-    loadActionItems();
     // Social activity / sentiment / creators / source health are owned by
     // intel.js. Do not add loaders for #dash-social-activity, #dash-sentiment,
     // #dash-creators, or #dash-source-health here — two writers on the same

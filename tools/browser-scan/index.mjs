@@ -27,7 +27,7 @@ import { scanReddit, openRedditLogin } from './platforms/reddit.mjs';
 import { scanGoogle, openGoogleLogin } from './platforms/google.mjs';
 import { loadConfig } from './lib/config.mjs';
 import { ensureProfileDir, launchEdge, attachEdge, newPage } from './lib/browser.mjs';
-import { filterHiring } from './lib/hiring-filter.mjs';
+import { filterHiring, categorizeRoles, ROLE_ORDER } from './lib/hiring-filter.mjs';
 import { browserScanSlugDir } from '../lib/paths.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -179,6 +179,11 @@ if (command === 'launch') {
   // mentions for a given month as a market-demand signal. Items missing a
   // valid post_date are bucketed under "unknown".
   const hiringDroppedByMonth = {};
+  // Aggregate role-demand breakdown of dropped hiring posts, keyed by
+  // YYYY-MM, then by role label. Categories overlap (one listing can match
+  // several roles), so per-role counts sum to more than the number of
+  // listings. AGGREGATE ONLY — no individual job post is ever surfaced.
+  const hiringRolesByMonth = {};
 
   // In CDP mode, attach ONCE and reuse the same context for all platforms —
   // the user is already logged in to all three in one Edge window.
@@ -257,6 +262,10 @@ if (command === 'launch') {
       }
       hiringDroppedByMonth[bucket] = hiringDroppedByMonth[bucket] || {};
       hiringDroppedByMonth[bucket][platform] = (hiringDroppedByMonth[bucket][platform] || 0) + 1;
+      for (const role of categorizeRoles(it)) {
+        hiringRolesByMonth[bucket] = hiringRolesByMonth[bucket] || {};
+        hiringRolesByMonth[bucket][role] = (hiringRolesByMonth[bucket][role] || 0) + 1;
+      }
     }
     fs.writeFileSync(outFile, JSON.stringify(kept, null, 2));
     const droppedNote = dropped.length ? ` (dropped ${dropped.length} hiring/recruiting)` : '';
@@ -274,6 +283,8 @@ if (command === 'launch') {
     hiringDropped,
     hiringDroppedTotal: totalDropped,
     hiringDroppedByMonth,
+    hiringRolesByMonth,
+    hiringRoleOrder: ROLE_ORDER,
   }, null, 2));
 
   // In CDP mode we do NOT close the user's Edge — they own it. Just

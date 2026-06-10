@@ -269,3 +269,42 @@ export function filterHiring(items) {
   }
   return { kept, dropped };
 }
+
+// Role buckets for the aggregate "Hiring signal" / role-demand breakdown the
+// report surfaces from dropped hiring posts. These are AGGREGATE counts only —
+// no individual job post is ever surfaced (the No Hiring Content ban still
+// applies). Categories intentionally OVERLAP: most listings span several
+// roles, so a single post can increment multiple buckets and the per-role
+// counts sum to more than the number of distinct listings. Patterns are
+// matched against the NFKD-lowercased title + body.
+const ROLE_CATEGORIES = [
+  { role: 'AI / ML / GenAI Engineer', re: /\bai\b|\bml\b|machine learning|genai|\bllm\b|agentic|\brag\b|\bgpt\b/ },
+  { role: 'DevOps / Platform Engineer', re: /devops|platform engineer|\bsre\b|terraform/ },
+  { role: '.NET / C# Developer', re: /\.net|c#|asp\.net|dotnet/ },
+  { role: 'Data Engineer / Architect', re: /data engineer|data architect|databricks|fabric|\betl\b|data platform/ },
+  { role: 'Backend / Software Engineer', re: /backend|back[\s-]?end|software engineer|\bsde\b/ },
+  { role: 'Full Stack Developer', re: /full[\s-]?stack/ },
+  { role: 'Cloud / Azure Architect', re: /cloud architect|azure architect|solution architect|enterprise architect/ },
+  { role: 'Java Developer', re: /\bjava\b|spring boot/ },
+];
+
+/**
+ * Returns the list of role buckets a (hiring) item matches. Categories
+ * overlap, so the return value may contain multiple roles for one item.
+ *
+ * @param {{title?: string, body?: string}} item
+ * @returns {string[]} matched role labels (possibly empty)
+ */
+export function categorizeRoles(item) {
+  if (!item) return [];
+  const haystack = normalize(`${item.title || ''}\n${item.body || ''}`);
+  if (!haystack.trim()) return [];
+  const roles = [];
+  for (const { role, re } of ROLE_CATEGORIES) {
+    if (re.test(haystack)) roles.push(role);
+  }
+  return roles;
+}
+
+/** Canonical role-bucket order, exported so callers render a stable list. */
+export const ROLE_ORDER = ROLE_CATEGORIES.map((c) => c.role);

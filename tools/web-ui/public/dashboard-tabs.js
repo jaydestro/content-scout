@@ -8,9 +8,9 @@
  *   [ Pulse | Activity | Intel ]  <- tabs
  *   [ tab panel content ]
  *
- *   Pulse    = Needs your attention (social activity + suggestions)
- *   Activity = Recent activity (subjects + latest artifacts)
- *   Intel    = Sentiment + creators + source health
+ *   Pulse    = Needs your attention (latest report, gaps & trends, action items)
+ *   Activity = Recent activity (CFPs & events, suggestions, subjects, latest artifacts)
+ *   Intel    = Social activity, sentiment, creators, source health
  */
 (function () {
   'use strict';

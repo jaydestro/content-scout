@@ -1926,13 +1926,27 @@
     }
   }
 
+  // Hosts that routinely block automated HEAD/GET probes (bot walls, 403,
+  // 999, or silent timeouts) even though the post URL is perfectly valid for
+  // a human clicking through. A failed probe to these is a false negative, so
+  // we must never strip their links — otherwise every X / LinkedIn / Reddit
+  // post in the dashboard silently downgrades to dead plain text.
+  const PROBE_EXEMPT_HOSTS = /(^|\.)(x\.com|twitter\.com|linkedin\.com|reddit\.com|bsky\.app|youtube\.com|youtu\.be)$/i;
+  function isProbeExemptUrl(u) {
+    try { return PROBE_EXEMPT_HOSTS.test(new URL(u).hostname); } catch { return false; }
+  }
+
   // Probe every rendered `data-check-url` in the host and remove the `href`
   // / collapse the `<a>` to a plain `<span>` when the URL is unreachable.
   // Runs in the background after the card paints — never blocks render.
   async function decayDeadDashLinks(host) {
     const anchors = Array.from(host.querySelectorAll('a.dash-link[data-check-url]'));
     if (!anchors.length) return;
-    const urls = [...new Set(anchors.map((a) => a.dataset.checkUrl).filter(Boolean))].slice(0, 24);
+    // Skip probing (and thus never strip) links on social platforms that
+    // block bots — keep them clickable so users can open the remote post.
+    const urls = [...new Set(anchors.map((a) => a.dataset.checkUrl).filter(Boolean))]
+      .filter((u) => !isProbeExemptUrl(u))
+      .slice(0, 24);
     const CONC = 6;
     let i = 0;
     async function worker() {
