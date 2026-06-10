@@ -1,134 +1,33 @@
 // Content Scout web UI — vanilla JS SPA
 
 // Shared DOM + fetch helpers ($, api, escape, escapeAttr) live in lib/core.js.
-// app.js is loaded as type="module", so this import is behavior-preserving:
-// these were already module-scoped locals, never exposed on window. The /api
-// fetch coalescer below still applies because api() reads the (patched) global
-// fetch at call time, long after the IIFE installs the patch.
+// app.js is loaded as type="module", so these imports are behavior-preserving:
+// extracted helpers were already module-scoped locals, never exposed on window.
+import './lib/cache.js';
 import { $, api, escape, escapeAttr } from './lib/core.js';
 import {
   getMdSection, getMdSubsection, parseBulletList, bulletListBlock,
   stripHtmlComments, leadingComment, listSectionBody, getKvField,
   replaceKvField, parseKvSection, replaceMdSubsection, replaceMdSection,
 } from './lib/config-md.js';
-
-// --- /api GET coalescing + short-TTL cache --------------------------
-// The dashboard fires ~11 GETs across three modules (app.js loadDashboard,
-// dashboard-enhancer loadAll, intel.js loadIntelCards) and several
-// endpoints (/api/configs, /api/reports) are fetched twice in parallel.
-// We dedupe in-flight GETs and cache OK responses for 4s so the dashboard
-// renders without waiting on redundant round-trips. Streaming and
-// mutation requests are passed through untouched.
-(() => {
-  const TTL_MS = 4000;
-  const inflight = new Map(); // url -> Promise<Response>
-  const cache = new Map();    // url -> { at, body, status, ct }
-  const origFetch = window.fetch.bind(window);
-  function cacheable(url, method) {
-    if (method !== 'GET') return false;
-    if (!url.startsWith('/api/')) return false;
-    if (url.includes('/stream')) return false;       // SSE
-    if (url.startsWith('/api/runs/') && /\/(stream|output)$/.test(url)) return false;
-    return true;
-  }
-  window.fetch = function (input, init) {
-    // Callers that pass their own AbortSignal (intel.js's timeout wrappers,
-    // the URL-liveness probe) must keep full control of cancellation. The
-    // coalescing path below returns a *shared* in-flight promise that can't
-    // honor a second caller's signal, so a timeout would fire without
-    // actually aborting — leaving a card stuck. Bypass dedup/cache entirely
-    // when a signal is present; correct timeouts matter more than the
-    // marginal dedup win.
-    if (init && init.signal) return origFetch(input, init);
-    const url = typeof input === 'string' ? input : (input && input.url) || '';
-    const method = String(
-      (init && init.method) ||
-      (typeof input !== 'string' && input && input.method) ||
-      'GET'
-    ).toUpperCase();
-    if (!cacheable(url, method)) return origFetch(input, init);
-    const now = Date.now();
-    const hit = cache.get(url);
-    if (hit && now - hit.at < TTL_MS) {
-      return Promise.resolve(
-        new Response(hit.body, { status: hit.status, headers: { 'content-type': hit.ct } })
-      );
-    }
-    if (inflight.has(url)) {
-      return inflight.get(url).then((r) => r.clone());
-    }
-    const p = origFetch(input, init)
-      .then(async (r) => {
-        try {
-          if (r.ok) {
-            const text = await r.clone().text();
-            cache.set(url, {
-              at: Date.now(),
-              body: text,
-              status: r.status,
-              ct: r.headers.get('content-type') || 'application/json',
-            });
-          }
-        } catch { /* ignore caching errors */ }
-        inflight.delete(url);
-        return r;
-      })
-      .catch((e) => {
-        inflight.delete(url);
-        throw e;
-      });
-    inflight.set(url, p);
-    return p.then((r) => r.clone());
-  };
-  // Expose a tiny invalidator so mutation handlers can drop stale entries.
-  window.__apiCacheBust = (prefix) => {
-    for (const k of cache.keys()) if (!prefix || k.startsWith(prefix)) cache.delete(k);
-  };
-})();
-
-// $, api, escape, escapeAttr are imported from lib/core.js (top of file).
+import { initNavigation, isKnownView } from './lib/nav.js';
 
 // --- Navigation ----------------------------------------------------
-const KNOWN_VIEWS = ['dashboard', 'setup', 'configs', 'run', 'reports', 'tools', 'social', 'conversations'];
-function gotoView(view) {
-  document.querySelectorAll('nav button').forEach((b) => {
-    const isActive = b.dataset.view === view;
-    b.classList.toggle('active', isActive);
-    if (isActive) b.setAttribute('aria-current', 'page');
-    else b.removeAttribute('aria-current');
-  });
-  document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${view}`));
-  if (KNOWN_VIEWS.includes(view) && location.hash !== `#${view}`) {
-    history.replaceState(null, '', `#${view}`);
-  }
-  if (view === 'setup') loadSetup();
-  if (view === 'configs') { loadConfigList(); renderConfigsEnv(); }
-  if (view === 'reports') loadReports();
-  if (view === 'tools') loadTools();
-  if (view === 'social') loadSocial();
-  if (view === 'run') loadSlugOptions();
-  if (view === 'dashboard') loadDashboard();
-  if (view === 'conversations') {
+const { gotoView } = initNavigation({
+  loadSetup,
+  loadConfigList,
+  renderConfigsEnv,
+  loadReports,
+  loadTools,
+  loadSocial,
+  loadSlugOptions,
+  loadDashboard,
+  loadConversations: () => {
     // intel.js owns this view but only auto-loads on hashchange. gotoView
-    // uses history.replaceState (no hashchange fires), so we have to kick
-    // it manually — otherwise the panel stays stuck on "Loading…".
+    // uses history.replaceState (no hashchange fires), so kick it manually.
     window.contentScoutIntel?.wireConversationsUI?.();
     window.contentScoutIntel?.loadConversations?.();
-  }
-}
-document.querySelectorAll('nav button').forEach((btn) => {
-  btn.addEventListener('click', () => gotoView(btn.dataset.view));
-});
-window.addEventListener('hashchange', () => {
-  const v = location.hash.replace(/^#/, '');
-  if (KNOWN_VIEWS.includes(v)) gotoView(v);
-});
-document.addEventListener('click', (e) => {
-  const goto = e.target.closest?.('[data-goto]');
-  if (goto) {
-    e.preventDefault();
-    gotoView(goto.dataset.goto);
-  }
+  },
 });
 
 // --- Status pill ---------------------------------------------------
@@ -4590,7 +4489,7 @@ loadStatus().then((s) => {
   const isSetUp = s.runnerConfigured && s.hasConfigs;
   const hashView = location.hash.replace(/^#/, '');
   let target;
-  if (KNOWN_VIEWS.includes(hashView)) {
+  if (isKnownView(hashView)) {
     // Don't strand an unconfigured user on a view that needs setup.
     target = (!isSetUp && hashView !== 'setup') ? 'setup' : hashView;
   } else {
