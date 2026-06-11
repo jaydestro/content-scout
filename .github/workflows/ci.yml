@@ -39,6 +39,10 @@ jobs:
         working-directory: tools/web-ui
         run: npm install --no-audit --no-fund
 
+      - name: Install thumbnail renderer dependencies
+        working-directory: tools/render-thumbnails
+        run: npm install --no-audit --no-fund
+
       - name: Syntax check
         working-directory: tools/web-ui
         run: |
