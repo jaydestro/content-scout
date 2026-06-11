@@ -23,7 +23,7 @@
 //   node launch-edge.mjs --list                 # show detected browsers + exit
 //
 // IMPORTANT: by default this launches with a DEDICATED user-data-dir
-// at `tools/browser-scan/.cdp-profile/` (gitignored). You sign in once;
+// at `.local/state/browser-profile/` (gitignored). You sign in once;
 // the session sticks across runs. The script's name is historical — it
 // now launches whichever Chromium-family browser fits, not just Edge.
 
@@ -32,6 +32,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pickBrowser, listKnownBrowsers } from './lib/browser-detect.mjs';
+import { BROWSER_PROFILE_DIR, LEGACY_BROWSER_PROFILE_DIR } from '../lib/paths.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -73,7 +74,16 @@ console.log(`[launch-edge] Browser: ${browser.name} (${source}) — ${browser.pa
 const args = [`--remote-debugging-port=${flags.port}`];
 
 if (!flags['use-default-profile']) {
-  const cdpProfileDir = path.join(__dirname, '.cdp-profile');
+  // Prefer the canonical .local/state/browser-profile, but if the user
+  // already has a populated legacy .cdp-profile (signed-in cookies), keep
+  // using it to avoid forcing a re-login.
+  let cdpProfileDir = BROWSER_PROFILE_DIR;
+  if (
+    !fs.existsSync(BROWSER_PROFILE_DIR) &&
+    fs.existsSync(LEGACY_BROWSER_PROFILE_DIR)
+  ) {
+    cdpProfileDir = LEGACY_BROWSER_PROFILE_DIR;
+  }
   fs.mkdirSync(cdpProfileDir, { recursive: true });
   args.push(`--user-data-dir=${cdpProfileDir}`);
   console.log(`[launch-edge] Using dedicated CDP profile: ${cdpProfileDir}`);
@@ -81,15 +91,18 @@ if (!flags['use-default-profile']) {
   console.log(`[launch-edge] Using your DEFAULT ${browser.name} profile. Close all other ${browser.name} windows first or this will fail.`);
 }
 
-// Open the three login pages so the user can sign in once.
+// Open the four login / landing pages so the user can sign in once.
+// (Google News works anonymously, but we open it so personalization can
+// be enabled by signing in if the user wants.)
 args.push(
   'https://x.com/login',
   'https://www.linkedin.com/login',
-  'https://www.reddit.com/login/'
+  'https://www.reddit.com/login/',
+  'https://news.google.com/'
 );
 
 console.log(`[launch-edge] Debug port: ${flags.port}`);
-console.log(`[launch-edge] Sign in to X, LinkedIn, and Reddit in the window that just opened.`);
+console.log(`[launch-edge] Sign in to X, LinkedIn, and Reddit in the window that just opened. Google News works without sign-in.`);
 console.log(`[launch-edge] Once signed in, leave the browser running and start a scan in another terminal:`);
 console.log(`[launch-edge]   node tools/browser-scan/index.mjs scan --slug <your-slug>`);
 console.log(`[launch-edge] (the scanner attaches over CDP and reuses these sessions)`);

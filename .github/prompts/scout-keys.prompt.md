@@ -1,6 +1,5 @@
 ---
 mode: agent
-agent: content-scout
 description: "Interactive setup for API credentials in .env (Reddit, Bluesky, X, LinkedIn, YouTube, GitHub)"
 ---
 

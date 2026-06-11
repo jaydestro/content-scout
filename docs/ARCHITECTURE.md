@@ -68,27 +68,25 @@ When a post uses "link in first comment" or a URL won't generate a link card, th
 .github/
 ├── agents/
 │   └── content-scout.agent.md             # Agent definition (single source of truth)
-├── copilot-instructions.md                # GitHub Copilot CLI adapter
+├── copilot-instructions.md                # GitHub Copilot chat adapter
 └── prompts/
     ├── scout-onboard.prompt.md            # Onboarding wizard
     ├── scout-config-{slug}.prompt.md      # Your config (gitignored)
     ├── scout-scan.prompt.md
     ├── scout-post.prompt.md
-    ├── scout-calendar.prompt.md
-    ├── scout-gaps.prompt.md
-    └── scout-trends.prompt.md
+    └── scout-calendar.prompt.md
 CLAUDE.md                                  # Claude Code adapter
 .clinerules                                # Cline adapter
 .windsurfrules                             # Windsurf adapter
 .cursor/rules/content-scout.mdc            # Cursor adapter
 docs/                                      # WORKFLOW, SOURCES, API-KEYS, EDITORS, ARCHITECTURE
 examples/                                  # Sample outputs
-reports/                                   # Generated content & trends reports (.md/.json gitignored)
-reports/.closed-conversations.json         # Dismissed Conversations & mentions rows (shared by web UI + CLI)
+reports/                                   # Generated content reports (.md/.json gitignored)
+reports/.closed-conversations.json         # Dismissed Conversations & mentions rows (shared by web UI + helper scripts)
 social-posts/                              # Generated posts, calendars, thumbnails (.md/.json gitignored)
 tools/web-ui/                              # Local browser dashboard (Express server on :4477)
 tools/web-ui/lib/closed-conversations.js   # Storage layer for dismissed conversation rows
-tools/conversations-cli.mjs                # CLI for closing/listing conversations from the terminal
+tools/conversations-cli.mjs                # Helper script for closing/listing conversations from the terminal
 tools/browser-scan/                        # Logged-in browser scraper (Edge/Chrome/Brave/etc. via CDP) for X / LinkedIn / Reddit Layer 0
 .github/team-members.md.example            # Template for team-member exclusion list (copy to team-members.md, gitignored)
 .env.example                               # API key template (copy to .env)

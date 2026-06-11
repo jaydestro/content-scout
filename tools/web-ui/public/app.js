@@ -1,52 +1,45 @@
 // Content Scout web UI — vanilla JS SPA
-const $ = (id) => document.getElementById(id);
-const api = async (path, opts) => {
-  const r = await fetch(path, opts);
-  if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`);
-  return r.json();
-};
+
+// Shared DOM + fetch helpers ($, api, escape, escapeAttr) live in lib/core.js.
+// app.js is loaded as type="module", so these imports are behavior-preserving:
+// extracted helpers were already module-scoped locals, never exposed on window.
+import './lib/cache.js';
+import { mountVisionIntegrations } from './components/vision-config.js';
+import { $, api, escape, escapeAttr } from './lib/core.js';
+import {
+  getMdSection, getMdSubsection, parseBulletList, bulletListBlock,
+  stripHtmlComments, leadingComment, listSectionBody, getKvField,
+  replaceKvField, parseKvSection, replaceMdSubsection, replaceMdSection,
+} from './lib/config-md.js';
+import { initNavigation, isKnownView } from './lib/nav.js';
+import { loadDashboard as loadDashboardPage } from './pages/dashboard.js';
+import { activeRoleSlug } from './pages/report-state.js';
+import {
+  loadReports as loadReportsPage,
+  scrollReportToSection,
+  setReportsActiveTab,
+} from './pages/reports.js';
+import { loadSocial as loadSocialPage } from './pages/social.js';
+import { fillAskChip, initToolsView, loadTools as loadToolsPage } from './pages/tools.js';
 
 // --- Navigation ----------------------------------------------------
-const KNOWN_VIEWS = ['dashboard', 'setup', 'configs', 'run', 'reports', 'social', 'conversations'];
-function gotoView(view) {
-  document.querySelectorAll('nav button').forEach((b) => {
-    const isActive = b.dataset.view === view;
-    b.classList.toggle('active', isActive);
-    if (isActive) b.setAttribute('aria-current', 'page');
-    else b.removeAttribute('aria-current');
-  });
-  document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${view}`));
-  if (KNOWN_VIEWS.includes(view) && location.hash !== `#${view}`) {
-    history.replaceState(null, '', `#${view}`);
-  }
-  if (view === 'setup') loadSetup();
-  if (view === 'configs') { loadConfigList(); renderConfigsEnv(); }
-  if (view === 'reports') loadReports();
-  if (view === 'social') loadSocial();
-  if (view === 'run') loadSlugOptions();
-  if (view === 'dashboard') loadDashboard();
-  if (view === 'conversations') {
+const { gotoView } = initNavigation({
+  loadSetup,
+  loadConfigList,
+  renderConfigsEnv,
+  loadReports,
+  loadTools,
+  loadSocial,
+  loadSlugOptions,
+  loadDashboard,
+  loadConversations: () => {
     // intel.js owns this view but only auto-loads on hashchange. gotoView
-    // uses history.replaceState (no hashchange fires), so we have to kick
-    // it manually — otherwise the panel stays stuck on "Loading…".
+    // uses history.replaceState (no hashchange fires), so kick it manually.
     window.contentScoutIntel?.wireConversationsUI?.();
     window.contentScoutIntel?.loadConversations?.();
-  }
-}
-document.querySelectorAll('nav button').forEach((btn) => {
-  btn.addEventListener('click', () => gotoView(btn.dataset.view));
+  },
 });
-window.addEventListener('hashchange', () => {
-  const v = location.hash.replace(/^#/, '');
-  if (KNOWN_VIEWS.includes(v)) gotoView(v);
-});
-document.addEventListener('click', (e) => {
-  const goto = e.target.closest?.('[data-goto]');
-  if (goto) {
-    e.preventDefault();
-    gotoView(goto.dataset.goto);
-  }
-});
+initToolsView();
 
 // --- Status pill ---------------------------------------------------
 let cachedStatus = null;
@@ -54,7 +47,7 @@ async function loadStatus() {
   const s = await api('/api/status');
   cachedStatus = s;
   const pill = $('status-pill');
-  // External activity from another agent (Copilot Chat / `claude` CLI / etc.)
+  // External activity from another agent chat or headless runner
   // takes precedence over the static "agent: …" label so the user can see
   // at a glance that something is happening outside the web UI.
   if (s.externalActivity && s.externalActivity.active) {
@@ -63,7 +56,7 @@ async function loadStatus() {
       ? `${a.ageSeconds}s ago`
       : `${Math.round(a.ageSeconds / 60)}m ago`;
     pill.textContent = `🟢 agent active — wrote ${a.kind} ${ago}`;
-    pill.title = `Detected external activity: ${a.file} (${ago}). This is from a CLI / Copilot Chat session, not the web UI.`;
+    pill.title = `Detected external activity: ${a.file} (${ago}). This is from an agent chat/headless runner session, not the web UI.`;
     pill.classList.add('agent-active');
     pill.classList.remove('warn');
     return s;
@@ -81,8 +74,8 @@ async function loadStatus() {
   return s;
 }
 
-// Poll status periodically so external-agent activity (Copilot Chat /
-// `claude` CLI) is reflected in the pill within ~10s without a refresh.
+// Poll status periodically so external-agent activity is reflected in the
+// pill within ~10s without a refresh.
 // Skip the poll when the tab is hidden.
 setInterval(() => {
   if (document.hidden) return;
@@ -140,12 +133,15 @@ async function loadSetup() {
     ? `<span class="ok">${status.configCount} config${status.configCount === 1 ? '' : 's'} detected.</span>`
     : `<span class="warn-text">No configs yet — create one below.</span>`;
   const agentSaved = !!status.agent;
-  $('setup-run-onboard').disabled = !agentSaved;
-  $('setup-run-onboard').title = agentSaved
-    ? (status.runnerConfigured
-        ? 'Runs /scout-onboard in your chosen agent.'
-        : 'Opens the Run view — you can copy the prompt and paste it into your editor chat.')
-    : 'Pick an agent above first.';
+  const onboardBtn = $('setup-run-onboard');
+  if (onboardBtn) {
+    onboardBtn.disabled = !agentSaved;
+    onboardBtn.title = agentSaved
+      ? (status.runnerConfigured
+          ? 'Runs /scout-onboard in your chosen agent.'
+          : 'Opens the Run view — you can copy the prompt and paste it into your editor chat.')
+      : 'Pick an agent above first.';
+  }
 
   // Section 3: env keys — editable
   await renderEnvEditor();
@@ -217,7 +213,7 @@ const ENV_KEY_META = {
     anchor: 'google-pse',
   },
   BRAVE_SEARCH_API_KEY: {
-    tip: 'Brave Search API key (free tier: 2,000 queries/month, 1 query/sec). RECOMMENDED — the primary free path for Reddit Layer 3 + LinkedIn Layer 1 + X/Twitter Layer 2. Sign up at brave.com/search/api and create a key at api.search.brave.com/app/keys.',
+    tip: 'Brave Search API key. RECOMMENDED — this is the free public-search path for Reddit, LinkedIn, and X/Twitter (covers what anyone could see while logged out). Pairs nicely with the optional sign-in scan in the Run view, which adds logged-in fidelity on top. Free AI plan: $5/mo auto-credits (~1,000 requests/mo) at 50 req/sec, no card required. Paid plans use the same key at higher usage. Sign up at brave.com/search/api and create a key at api.search.brave.com/app/keys.',
     anchor: 'brave-search',
   },
   BLUESKY_HANDLE: {
@@ -408,14 +404,12 @@ async function saveAgentChoice() {
   }
 }
 
-$('setup-run-onboard').addEventListener('click', async () => {
-  // Jump to Run view with scout-onboard preselected.
-  gotoView('run');
-  $('run-command').value = 'scout-onboard';
-  $('run-command').dispatchEvent(new Event('change'));
-});
+// Note: /scout-onboard is interactive — use the embedded chat runner in
+// the Setup wizard, or run it in your editor's chat. The old "open in Run
+// view" button has been removed as part of the IA refactor that scopes
+// the Run view to /scout-scan only.
 
-// --- Embedded scout-onboard CLI (inside the "Prefer guided chat wizard?" disclosure) ---
+// --- Embedded scout-onboard chat runner (inside the "Prefer guided chat wizard?" disclosure) ---
 (() => {
   const details = $('onboard-cli-details');
   const startBtn = $('onboard-cli-start');
@@ -2008,63 +2002,23 @@ $('env-save').addEventListener('click', async () => {
 });
 
 // --- Dashboard -----------------------------------------------------
+// Exposed on window so runs-queue.js can refresh the active view when a
+// scan finishes. app.js is a module, so top-level fns aren't auto-global.
+window.activeRoleSlug = activeRoleSlug;
+window.loadDashboard = () => loadDashboard();
+window.loadReports = () => loadReports();
+window.loadSocial = () => loadSocial();
 async function loadDashboard() {
-  let status, configs, reports, runs;
-  try {
-    [status, configs, reports, runs] = await Promise.all([
-      api('/api/status'),
-      api('/api/configs'),
-      api('/api/reports'),
-      api('/api/runs'),
-    ]);
-  } catch (err) {
-    // Network/server problem — still show the onboarding banner instead
-    // of leaving the dashboard blank.
-    $('dash-empty').hidden = false;
-    $('dash-body').hidden = true;
-    $('dash-empty-msg').innerHTML =
-      `Couldn't reach the server (<code>${escape(err.message)}</code>). Make sure the web UI process is running, then refresh.`;
-    return;
-  }
-  cachedStatus = status;
-
-  const ready = status.hasConfigs && status.runnerConfigured;
-  $('dash-empty').hidden = ready;
-  $('dash-body').hidden = !ready;
-  if (!status.runnerConfigured && !status.hasConfigs) {
-    $('dash-empty-msg').innerHTML =
-      'No agent configured and no configs yet. Open <a href="#" data-goto="setup">Setup</a> to get started.';
-  } else if (!status.runnerConfigured) {
-    $('dash-empty-msg').innerHTML =
-      'No agent configured. Open <a href="#" data-goto="setup">Setup</a> to pick one so you can run commands.';
-  } else if (!status.hasConfigs) {
-    $('dash-empty-msg').innerHTML =
-      'No configs yet. Open <a href="#" data-goto="setup">Setup</a> to run <code>/scout-onboard</code> and create one.';
-  }
-  if (!ready) return; // nothing else to render
-
-  $('dash-configs').innerHTML = configs.configs.length
-    ? configs.configs.map((c) => `<li><code>${escape(c.slug)}</code></li>`).join('')
-    : '<li class="hint">No configs yet — see <a href="#" data-goto="setup">Setup</a>.</li>';
-
-  const recent = reports.reports.slice(0, 5);
-  $('dash-reports').innerHTML = recent.length
-    ? recent.map((r) => `<li>${r.name} <span class="hint">(${r.mtime.slice(0, 10)})</span></li>`).join('')
-    : '<li class="hint">No reports yet.</li>';
-
-  $('dash-runs').innerHTML = runs.runs.length
-    ? runs.runs.slice(0, 5).map((r) => `<li><code>${r.status}</code> — ${escape(r.command)}</li>`).join('')
-    : '<li class="hint">No runs yet.</li>';
-
-  const keys = status.env.keys
-    .map((k) => `<div><code>${k.key}</code> ${k.hasValue ? '✓' : '<span class="hint">(empty)</span>'}</div>`)
-    .join('');
-  $('dash-env').innerHTML = `
-    <div class="hint">Repo: <code>${escape(status.repoRoot)}</code></div>
-    <div class="hint">Runner: <code>${escape(status.runner || 'not set')}</code></div>
-    <hr style="border-color: var(--border)" />
-    ${keys || '<div class="hint">No .env entries.</div>'}
-  `;
+  return loadDashboardPage({ setCachedStatus: (status) => { cachedStatus = status; } });
+}
+async function loadReports() {
+  return loadReportsPage();
+}
+async function loadTools() {
+  return loadToolsPage();
+}
+async function loadSocial() {
+  return loadSocialPage();
 }
 
 // --- Configs -------------------------------------------------------
@@ -2165,48 +2119,77 @@ function setCfgMode(mode) {
 $('cfg-tab-form')?.addEventListener('click', () => setCfgMode('form'));
 $('cfg-tab-raw')?.addEventListener('click', () => setCfgMode('raw'));
 
-['cfg-form-search-terms', 'cfg-form-search-hashtags', 'cfg-form-rss-feeds', 'cfg-form-excluded'].forEach((id) => {
-  $(id)?.addEventListener('input', () => {
-    cfgFormDirty = true;
-    $('config-save').disabled = false;
-    $('config-status').textContent = 'unsaved changes';
-    $('cfg-form-status').textContent = 'unsaved field edits — click Save to write to file';
-  });
+function markCfgFormDirty() {
+  cfgFormDirty = true;
+  $('config-save').disabled = false;
+  $('config-status').textContent = 'unsaved changes';
+  $('cfg-form-status').textContent = 'unsaved field edits — click Save to write to file';
+}
+
+[
+  'cfg-form-name', 'cfg-form-type',
+  'cfg-form-search-terms', 'cfg-form-search-hashtags',
+  'cfg-form-team', 'cfg-form-influencers', 'cfg-form-competitors',
+  'cfg-form-rss-feeds', 'cfg-form-excluded',
+].forEach((id) => {
+  $(id)?.addEventListener('input', markCfgFormDirty);
 });
 
-// Extract a `## Section` body (everything until the next `## ` heading or EOF).
-function getMdSection(raw, heading) {
-  const re = new RegExp(`(^|\\n)##\\s+${heading.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}[^\\n]*\\n([\\s\\S]*?)(?=\\n##\\s|\\n*$)`, 'i');
-  const m = raw.match(re);
-  return m ? m[2] : '';
+// Markdown config helpers (getMdSection, getMdSubsection, parseBulletList,
+// bulletListBlock, stripHtmlComments, leadingComment, listSectionBody,
+// getKvField, replaceKvField, parseKvSection) are imported from
+// lib/config-md.js (top of file).
+
+
+// Role & behavior flags: render the `## Role` key/value entries as toggles
+// (on/off) and text inputs, preserving order + unknown lines on save.
+let cfgRoleEntries = [];
+function renderRoleFlags(raw) {
+  cfgRoleEntries = parseKvSection(getMdSection(raw, 'Role'));
+  const host = $('cfg-form-role-flags');
+  if (!host) return;
+  const rows = cfgRoleEntries
+    .map((e, i) => {
+      if (e.key === undefined) return '';
+      const v = e.value || '';
+      if (/^(on|off)$/i.test(v)) {
+        const on = /^on$/i.test(v);
+        return `<label class="cfg-kv-toggle"><input type="checkbox" data-role-idx="${i}" ${on ? 'checked' : ''}/><span>${escape(e.key)}</span></label>`;
+      }
+      return `<div class="cfg-field cfg-kv-text"><label>${escape(e.key)}</label><input type="text" data-role-idx="${i}" value="${escape(v)}" spellcheck="false"/></div>`;
+    })
+    .join('');
+  host.innerHTML = rows || '<p class="hint">No role flags in this config.</p>';
+  host.querySelectorAll('[data-role-idx]').forEach((el) => {
+    el.addEventListener('input', markCfgFormDirty);
+    el.addEventListener('change', markCfgFormDirty);
+  });
 }
 
-// Same but for a `### Subheading` under the doc.
-function getMdSubsection(raw, heading) {
-  const re = new RegExp(`(^|\\n)###\\s+${heading.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}[^\\n]*\\n([\\s\\S]*?)(?=\\n##\\s|\\n###\\s|\\n*$)`, 'i');
-  const m = raw.match(re);
-  return m ? m[2] : '';
-}
-
-// Parse a bullet list out of a markdown body. Returns array of trimmed values
-// (without the leading "- " or "* " marker).
-function parseBulletList(body) {
-  if (!body) return [];
-  return body
-    .split('\n')
-    .map((l) => l.replace(/^\s*[-*]\s+/, '').trim())
-    .filter((l) => l && !l.startsWith('<!--') && !l.startsWith('_'));
-}
-
-function bulletListBlock(items, emptyComment) {
-  const cleaned = (items || []).map((s) => s.trim()).filter(Boolean);
-  if (cleaned.length === 0) {
-    return emptyComment ? `\n${emptyComment}\n\n` : '\n- none\n\n';
-  }
-  return '\n' + cleaned.map((s) => `- ${s}`).join('\n') + '\n\n';
+function serializeRoleFlags(raw) {
+  const host = $('cfg-form-role-flags');
+  if (!host || !cfgRoleEntries.length) return raw;
+  const lines = cfgRoleEntries.map((e, i) => {
+    if (e.key === undefined) return e.line;
+    const el = host.querySelector(`[data-role-idx="${i}"]`);
+    if (!el) return e.line;
+    const v = el.type === 'checkbox' ? (el.checked ? 'on' : 'off') : el.value.trim();
+    return `- **${e.key}:** ${v}`;
+  });
+  while (lines.length && !lines[0].trim()) lines.shift();
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  return replaceMdSection(raw, 'Role', '\n' + lines.join('\n') + '\n\n');
 }
 
 function populateConfigForm(raw) {
+  // Topic Identity key/value fields.
+  $('cfg-form-name').value = getKvField(raw, 'Name');
+  $('cfg-form-slug').value = getKvField(raw, 'Slug');
+  $('cfg-form-type').value = getKvField(raw, 'Type');
+
+  // Role & behavior flags.
+  renderRoleFlags(raw);
+
   // Search Terms — `### Search Terms (text)` under `## Topic Identity`.
   const terms = parseBulletList(getMdSubsection(raw, 'Search Terms'));
   $('cfg-form-search-terms').value = terms.join('\n');
@@ -2214,6 +2197,18 @@ function populateConfigForm(raw) {
   // Search Hashtags — `### Search Hashtags`.
   const tags = parseBulletList(getMdSubsection(raw, 'Search Hashtags'));
   $('cfg-form-search-hashtags').value = tags.join('\n');
+
+  // Product Team Members — `### Product Team Members` (strip the multi-line HTML comment).
+  const team = parseBulletList(stripHtmlComments(getMdSubsection(raw, 'Product Team Members')));
+  $('cfg-form-team').value = team.join('\n');
+
+  // Influencers to Monitor — `## Influencers to Monitor`.
+  const influencers = parseBulletList(getMdSection(raw, 'Influencers to Monitor'));
+  $('cfg-form-influencers').value = influencers.join('\n');
+
+  // Competitors — `## Competitors` (placeholder `_None tracked_` filtered by parseBulletList).
+  const competitors = parseBulletList(getMdSection(raw, 'Competitors'));
+  $('cfg-form-competitors').value = competitors.join('\n');
 
   // Custom RSS Feeds — `## Custom RSS Feeds` (may not exist yet).
   const feeds = parseBulletList(getMdSection(raw, 'Custom RSS Feeds'));
@@ -2228,25 +2223,8 @@ function populateConfigForm(raw) {
   $('cfg-form-status').textContent = '';
 }
 
-// Replace a `### Subheading` body in raw with new content.
-function replaceMdSubsection(raw, heading, newBodyBlock) {
-  const re = new RegExp(`(^|\\n)(###\\s+${heading.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}[^\\n]*\\n)([\\s\\S]*?)(?=\\n##\\s|\\n###\\s|$)`, 'i');
-  if (re.test(raw)) {
-    return raw.replace(re, (_m, lead, head) => `${lead}${head}${newBodyBlock.replace(/^\n/, '')}`);
-  }
-  return raw; // subsection not present — skip silently to avoid corrupting unfamiliar configs
-}
-
-// Replace a `## Section` body in raw with new content; if missing, append at end.
-function replaceMdSection(raw, heading, newBodyBlock) {
-  const re = new RegExp(`(^|\\n)(##\\s+${heading.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}[^\\n]*\\n)([\\s\\S]*?)(?=\\n##\\s|$)`, 'i');
-  if (re.test(raw)) {
-    return raw.replace(re, (_m, lead, head) => `${lead}${head}${newBodyBlock.replace(/^\n/, '')}`);
-  }
-  // Append new section at end of file.
-  const sep = raw.endsWith('\n') ? '' : '\n';
-  return `${raw}${sep}\n## ${heading}\n${newBodyBlock}`;
-}
+// replaceMdSubsection / replaceMdSection are imported from lib/config-md.js
+// (top of file).
 
 function linesFromTa(id) {
   return ($(id)?.value || '').split('\n').map((s) => s.trim()).filter(Boolean);
@@ -2254,8 +2232,33 @@ function linesFromTa(id) {
 
 function serializeConfigForm(rawIn) {
   let raw = rawIn;
+  // Topic Identity key/value fields (Slug is read-only — never rewritten).
+  const nm = ($('cfg-form-name')?.value || '').trim();
+  if (nm) raw = replaceKvField(raw, 'Name', nm);
+  const ty = ($('cfg-form-type')?.value || '').trim();
+  if (ty) raw = replaceKvField(raw, 'Type', ty);
+
+  // Role & behavior flags.
+  raw = serializeRoleFlags(raw);
+
   raw = replaceMdSubsection(raw, 'Search Terms', bulletListBlock(linesFromTa('cfg-form-search-terms')));
   raw = replaceMdSubsection(raw, 'Search Hashtags', bulletListBlock(linesFromTa('cfg-form-search-hashtags')));
+
+  // People.
+  const team = linesFromTa('cfg-form-team');
+  const teamComment = leadingComment(getMdSubsection(raw, 'Product Team Members'));
+  raw = replaceMdSubsection(raw, 'Product Team Members', listSectionBody(teamComment, team));
+  const influencers = linesFromTa('cfg-form-influencers');
+  const inflComment = leadingComment(getMdSection(raw, 'Influencers to Monitor'))
+    || '<!-- High-signal accounts — mentions from these are important. -->';
+  raw = replaceMdSection(raw, 'Influencers to Monitor', listSectionBody(inflComment, influencers));
+
+  // Competitors — keep the canonical placeholder when empty.
+  const competitors = linesFromTa('cfg-form-competitors');
+  raw = replaceMdSection(raw, 'Competitors', competitors.length
+    ? bulletListBlock(competitors)
+    : '\n_None tracked. Add to enable competitor mention tracking._\n\n');
+
   raw = replaceMdSection(raw, 'Custom RSS Feeds', bulletListBlock(
     linesFromTa('cfg-form-rss-feeds'),
     '<!-- Add custom RSS/Atom feeds as `Name | URL` per line. Examples: personal blogs, RSS bridges, third-party aggregators. -->\n- none'
@@ -2397,42 +2400,154 @@ function updateRunPreview() {
   if (el) el.textContent = buildPrompt();
 }
 
+// Saved custom-prompt text (lives in memory + the modal's textarea).
+// Editing happens via the run-custom-prompt-dialog modal, not inline.
+let savedCustomPrompt = '';
+function refreshCustomPromptSummary() {
+  const preview = $('run-custom-prompt-preview');
+  if (!preview) return;
+  const text = (savedCustomPrompt || '').trim();
+  if (!text) {
+    preview.textContent = '(none yet)';
+    preview.classList.add('is-empty');
+  } else {
+    preview.textContent = text.length > 80 ? text.slice(0, 77) + '…' : text;
+    preview.classList.remove('is-empty');
+  }
+}
+function openCustomPromptDialog() {
+  const dlg = $('run-custom-prompt-dialog');
+  const ta = $('run-custom-prompt-text');
+  if (!dlg || !ta) return;
+  ta.value = savedCustomPrompt;
+  if (typeof dlg.showModal === 'function') dlg.showModal();
+  else dlg.setAttribute('open', '');
+  setTimeout(() => ta.focus(), 0);
+}
 $('run-command').addEventListener('change', (e) => {
   const custom = e.target.value === 'custom';
-  $('run-prompt-wrap').hidden = !custom;
-  $('run-extra-wrap').hidden = custom;
+  // "Additional context" textarea is for non-custom commands; the modal
+  // owns the custom-prompt body when the user picks Custom.
+  $('run-prompt-wrap').hidden = custom;
+  $('run-extra-wrap') && ($('run-extra-wrap').hidden = custom);
+  const summary = $('run-custom-prompt-summary');
+  if (summary) summary.hidden = !custom;
   const subjectWrap = $('run-subject-wrap');
   if (subjectWrap) subjectWrap.hidden = custom;
   const rangeWrap = $('run-range-wrap');
   if (rangeWrap) rangeWrap.hidden = custom || !COMMANDS_WITH_RANGE.has(e.target.value);
-  const bsWrap = $('run-browser-scan-wrap');
-  if (bsWrap) bsWrap.hidden = e.target.value !== 'scout-scan';
+  syncBrowserScanVisibility();
+  if (custom && !savedCustomPrompt.trim()) openCustomPromptDialog();
   updateRunPreview();
 });
 $('run-extra').addEventListener('input', updateRunPreview);
+$('run-custom-prompt-edit')?.addEventListener('click', openCustomPromptDialog);
+$('run-custom-prompt-save')?.addEventListener('click', (e) => {
+  // Form is method="dialog", so the click closes the dialog. Capture text first.
+  savedCustomPrompt = ($('run-custom-prompt-text')?.value || '').trim();
+  refreshCustomPromptSummary();
+  updateRunPreview();
+});
+$('run-custom-prompt-cancel')?.addEventListener('click', () => {
+  $('run-custom-prompt-dialog')?.close?.();
+});
+// Example-snippet buttons inside the dialog: insert (or append) into the
+// textarea so users can mix-and-match without re-typing the command shape.
+document.getElementById('run-custom-prompt-examples-list')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-snippet]');
+  if (!btn) return;
+  e.preventDefault();
+  const ta = $('run-custom-prompt-text');
+  if (!ta) return;
+  const snippet = btn.dataset.snippet || '';
+  ta.value = ta.value.trim() ? `${ta.value.trim()}\n${snippet}` : snippet;
+  ta.focus();
+});
+$('run-custom-browser-scan')?.addEventListener('change', syncBrowserScanVisibility);
+function syncBrowserScanVisibility() {
+  const bsWrap = $('run-browser-scan-wrap');
+  if (!bsWrap) return;
+  const cmd = $('run-command').value;
+  if (cmd === 'scout-scan') { bsWrap.hidden = false; return; }
+  if (cmd === 'custom' && $('run-custom-browser-scan')?.checked) {
+    bsWrap.hidden = false;
+    return;
+  }
+  bsWrap.hidden = true;
+}
+refreshCustomPromptSummary();
 
 // --- Date range helper ---------------------------------------------
 // Produces a natural-language phrase the prompts already understand
-// (e.g., "March 2026" or "from 2026-01-15 to 2026-02-10"). Emits empty
-// string for the default (agent uses last 30 days).
-const COMMANDS_WITH_RANGE = new Set(['scout-scan', 'scout-gaps', 'scout-trends']);
+// (e.g., "March 2026", "today only", "from 2026-01-15 to 2026-02-10").
+// Emits empty string for the default (agent uses last 30 days).
+const COMMANDS_WITH_RANGE = new Set(['scout-scan']);
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const RANGE_LS_KEY = 'cs.run.range.preset';
+function fmtDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function startOfWeek(now) {
+  // Monday as week start.
+  const d = new Date(now);
+  const day = d.getDay(); // 0=Sun..6=Sat
+  const diff = (day === 0 ? -6 : 1 - day);
+  d.setDate(d.getDate() + diff);
+  d.setHours(0,0,0,0);
+  return d;
+}
+function rangePreset() {
+  return $('run-range-preset')?.value || 'default';
+}
+// Whole-number "days" lookback derived from the date-range preset.
+// Mirrors dateRangePhrase() above but returns an integer the
+// browser-scan CLI can pass to --days. Default (rolling 30d) → 30.
+function rangeDaysFromPreset() {
+  const wrap = $('run-range-wrap');
+  if (!wrap || wrap.hidden) return 30;
+  const choice = rangePreset();
+  const now = new Date();
+  if (choice === 'default') return 30;
+  if (choice === 'today') return 1;
+  if (choice === 'this-week') {
+    const start = startOfWeek(now);
+    const days = Math.ceil((now.getTime() - start.getTime()) / 86400000) + 1;
+    return Math.max(1, days);
+  }
+  if (choice === 'this-month') {
+    return now.getDate();
+  }
+  if (choice === 'last-month') {
+    const last = new Date(now.getFullYear(), now.getMonth(), 0);
+    return last.getDate() + now.getDate();
+  }
+  if (choice === 'custom') {
+    const from = $('run-range-from')?.value;
+    const to = $('run-range-to')?.value;
+    if (!from && !to) return 30;
+    const start = from ? new Date(from) : new Date(now.getTime() - 30 * 86400000);
+    const days = Math.ceil((now.getTime() - start.getTime()) / 86400000);
+    return Math.max(1, Math.min(365, days));
+  }
+  return 30;
+}
 function dateRangePhrase() {
   const wrap = $('run-range-wrap');
   if (!wrap || wrap.hidden) return '';
-  const choice = wrap.querySelector('input[name="run-range"]:checked')?.value || 'default';
+  const choice = rangePreset();
   const now = new Date();
   if (choice === 'default') return '';
-  if (choice === 'current-month') return `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}`;
+  if (choice === 'today') return `today only (${fmtDate(now)})`;
+  if (choice === 'this-week') {
+    const start = startOfWeek(now);
+    return `this week so far (from ${fmtDate(start)} to ${fmtDate(now)})`;
+  }
+  if (choice === 'this-month') {
+    return `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()} so far (from ${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01 to ${fmtDate(now)})`;
+  }
   if (choice === 'last-month') {
     const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
-  }
-  if (choice === 'month') {
-    const v = $('run-range-month')?.value; // "YYYY-MM"
-    if (!v) return '';
-    const [y, m] = v.split('-').map(Number);
-    return `${MONTH_NAMES[m - 1]} ${y}`;
   }
   if (choice === 'custom') {
     const from = $('run-range-from')?.value;
@@ -2444,17 +2559,42 @@ function dateRangePhrase() {
   }
   return '';
 }
-document.querySelectorAll('input[name="run-range"]').forEach((r) => {
-  r.addEventListener('change', () => {
-    const choice = document.querySelector('input[name="run-range"]:checked')?.value;
-    $('run-range-month-wrap').hidden = choice !== 'month';
+function updateRangeSummary() {
+  const el = $('run-range-summary');
+  if (!el) return;
+  const choice = rangePreset();
+  if (choice === 'default') {
+    el.textContent = 'Rolling 30-day window ending now.';
+    return;
+  }
+  const phrase = dateRangePhrase();
+  el.textContent = phrase ? `Agent will scan: ${phrase}.` : 'Pick a date to continue.';
+}
+const presetEl = $('run-range-preset');
+if (presetEl) {
+  // Restore last choice.
+  try {
+    const saved = localStorage.getItem(RANGE_LS_KEY);
+    if (saved && presetEl.querySelector(`option[value="${saved}"]`)) {
+      presetEl.value = saved;
+    }
+  } catch {}
+  const syncDetailVisibility = () => {
+    const choice = rangePreset();
     $('run-range-custom-wrap').hidden = choice !== 'custom';
+  };
+  syncDetailVisibility();
+  presetEl.addEventListener('change', () => {
+    try { localStorage.setItem(RANGE_LS_KEY, rangePreset()); } catch {}
+    syncDetailVisibility();
+    updateRangeSummary();
     updateRunPreview();
   });
+}
+['run-range-from', 'run-range-to'].forEach((id) => {
+  $(id)?.addEventListener('input', () => { updateRangeSummary(); updateRunPreview(); });
 });
-['run-range-month', 'run-range-from', 'run-range-to'].forEach((id) => {
-  $(id)?.addEventListener('input', updateRunPreview);
-});
+updateRangeSummary();
 const runPromptEl = $('run-prompt');
 if (runPromptEl) runPromptEl.addEventListener('input', updateRunPreview);
 $('run-copy').addEventListener('click', async () => {
@@ -2466,9 +2606,10 @@ $('run-start').addEventListener('click', startRun);
 
 function buildPrompt() {
   const cmd = $('run-command').value;
-  if (cmd === 'custom') return $('run-prompt').value.trim();
+  if (cmd === 'custom') return savedCustomPrompt.trim();
   const slug = $('run-slug').value;
   const extra = $('run-extra').value.trim();
+  const context = ($('run-prompt')?.value || '').trim();
   const range = COMMANDS_WITH_RANGE.has(cmd) ? dateRangePhrase() : '';
   // If user picked "All subjects" and there's more than one config, pass "all"
   // explicitly so the agent doesn't interactively prompt.
@@ -2476,30 +2617,44 @@ function buildPrompt() {
     ? $('run-subject-list').querySelectorAll('input[name="run-slug-choice"]').length - 1
     : 0;
   const target = slug || (configCount > 1 ? 'all' : '');
-  return [`/${cmd}`, target, range, extra].filter(Boolean).join(' ');
+  return [`/${cmd}`, target, range, extra, context].filter(Boolean).join(' ');
 }
 
 async function startRun() {
   const cmd = $('run-command').value;
   const range = COMMANDS_WITH_RANGE.has(cmd) ? dateRangePhrase() : '';
   const extra = $('run-extra').value.trim();
-  const combinedExtra = [range, extra].filter(Boolean).join(' ');
+  const context = ($('run-prompt')?.value || '').trim();
+  const combinedExtra = [range, extra, context].filter(Boolean).join(' ');
   const args =
     cmd === 'custom'
-      ? { prompt: $('run-prompt').value.trim() }
+      ? { prompt: savedCustomPrompt.trim() }
       : { slug: $('run-slug').value, extra: combinedExtra };
   $('run-output').textContent = '';
   $('run-meta').textContent = 'Starting…';
-  // Browser-scan preflight option — only meaningful for /scout-scan.
+  // Browser-scan preflight option — /scout-scan always, custom only if opted in.
+  const customWantsBrowserScan = cmd === 'custom' && $('run-custom-browser-scan')?.checked;
   const browserScan =
     cmd === 'scout-scan'
       ? (document.querySelector('input[name="run-browser-scan"]:checked')?.value || 'auto')
-      : undefined;
+      : customWantsBrowserScan
+        ? (document.querySelector('input[name="run-browser-scan"]:checked')?.value || 'auto')
+        : undefined;
+  // Scope the browser-scan preflight to the user's date-range pick so
+  // the logged-in scrapers stay in the same window the agent will use.
+  const rangeDays = COMMANDS_WITH_RANGE.has(cmd) ? rangeDaysFromPreset() : undefined;
+  const options = {};
+  if (browserScan) options.browserScan = browserScan;
+  if (rangeDays) options.rangeDays = rangeDays;
   try {
     const res = await fetch('/api/runs', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ command: cmd, args, options: browserScan ? { browserScan } : undefined }),
+      body: JSON.stringify({
+        command: cmd,
+        args,
+        options: Object.keys(options).length ? options : undefined,
+      }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -2534,283 +2689,162 @@ function streamRun(id) {
   src.onerror = () => { src.close(); };
 }
 
-// --- Reports / Social ---------------------------------------------
-async function loadReports() {
-  const { reports } = await api('/api/reports');
-  $('reports-list').innerHTML = reports
-    .map((r) => `<li data-name="${r.name}">
-        <span class="entry-name">${r.name}</span>
-        <a class="entry-open" href="/view/reports/${encodeURIComponent(r.name)}" target="_blank" rel="noopener" title="Open in new window" aria-label="Open ${r.name} in new window">↗</a>
-        <span class="mtime">${r.mtime.slice(0, 10)}</span>
-      </li>`)
-    .join('') || '<li class="hint">No reports yet.</li>';
-  $('reports-list').querySelectorAll('li[data-name]').forEach((li) => {
-    li.addEventListener('click', async (e) => {
-      // Don't hijack clicks on the "open in new window" link.
-      if (e.target.closest('.entry-open')) return;
-      document.querySelectorAll('#reports-list li').forEach((x) => x.classList.remove('selected'));
-      li.classList.add('selected');
-      const r = await api(`/api/reports/${encodeURIComponent(li.dataset.name)}`);
-      renderDocBody($('reports-body'), { name: li.dataset.name, html: r.html, kind: 'reports' });
-    });
-  });
-  // Auto-open the most recent report (list is sorted desc by mtime) so the
-  // page never lands on an empty viewer.
-  const body = $('reports-body');
-  const first = $('reports-list').querySelector('li[data-name]');
-  if (first && body && !body.dataset.name) first.click();
-}
-async function loadSocial() {
-  const { social } = await api('/api/reports');
-  $('social-list').innerHTML = social
-    .map((r) => `<li data-name="${r.name}">
-        <span class="entry-name">${r.name}</span>
-        <a class="entry-open" href="/view/social/${encodeURIComponent(r.name)}" target="_blank" rel="noopener" title="Open in new window" aria-label="Open ${r.name} in new window">↗</a>
-        <span class="mtime">${r.mtime.slice(0, 10)}</span>
-      </li>`)
-    .join('') || '<li class="hint">No social posts yet.</li>';
-  $('social-list').querySelectorAll('li[data-name]').forEach((li) => {
-    li.addEventListener('click', async (e) => {
-      if (e.target.closest('.entry-open')) return;
-      document.querySelectorAll('#social-list li').forEach((x) => x.classList.remove('selected'));
-      li.classList.add('selected');
-      const r = await api(`/api/social/${encodeURIComponent(li.dataset.name)}`);
-      renderDocBody($('social-body'), { name: li.dataset.name, html: r.html, kind: 'social' });
-      $('social-body').dataset.name = li.dataset.name;
-      enhanceSocialBody($('social-body'));
-    });
-  });
-  // Auto-open the most recent social-posts file (list is sorted desc by mtime)
-  // so the page never lands on an empty viewer.
-  const body = $('social-body');
-  const first = $('social-list').querySelector('li[data-name]');
-  if (first && body && !body.dataset.name) first.click();
-}
-
-// Render a markdown doc into the inline article view, with a toolbar that
-// includes an "Open in new window" link pointing at the standalone /view/*
-// route. Used by both the Reports and Social lists.
-function renderDocBody(article, { name, html, kind }) {
-  if (!article) return;
-  const viewPath = `/view/${kind}/${encodeURIComponent(name)}`;
-  article.innerHTML = `
-    <div class="doc-toolbar">
-      <a href="${viewPath}" target="_blank" rel="noopener" class="doc-open-link" title="Open ${name} in a new window">Open in new window ↗</a>
-    </div>
-    <div class="doc-content">${html}</div>
-  `;
-}
-
-// Enhance a rendered social-posts markdown view with:
-//  - a "Copy" button on every <pre> code block (one per post variant)
-//  - a URL chip row above the body listing every unique link found
-function enhanceSocialBody(root) {
-  if (!root) return;
-
-  // 1) Copy buttons on every code block (each post variant should be
-  //    in a fenced ``` block per the scout-post spec).
-  root.querySelectorAll('pre').forEach((pre) => {
-    if (pre.querySelector(':scope > .copy-btn')) return; // idempotent
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'copy-btn';
-    btn.textContent = 'Copy';
-    btn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      const text = (pre.querySelector('code')?.innerText ?? pre.innerText).trim();
-      try {
-        await navigator.clipboard.writeText(text);
-        btn.textContent = 'Copied ✓';
-        btn.classList.add('copied');
-        window.toast?.success?.({ title: 'Post copied to clipboard', duration: 2500 });
-      } catch {
-        btn.textContent = 'Copy failed';
-        window.toast?.error?.({ title: 'Could not copy', description: 'Browser blocked clipboard access.' });
-      }
-      setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
-    });
-    pre.appendChild(btn);
-  });
-
-  // 2) URL chip strip — collect unique http(s) links from the body.
-  const links = new Set();
-  root.querySelectorAll('a[href^="http"]').forEach((a) => links.add(a.href));
-  const existing = root.querySelector(':scope > .post-url-strip');
-  if (existing) existing.remove();
-  if (links.size) {
-    const strip = document.createElement('div');
-    strip.className = 'post-url-strip';
-    strip.innerHTML =
-      '<span class="post-url-label">URLs:</span>' +
-      [...links].map((href) => {
-        const safe = href.replace(/"/g, '&quot;');
-        const short = href.length > 60 ? href.slice(0, 57) + '…' : href;
-        return `<span class="post-url"><a href="${safe}" target="_blank" rel="noopener">${short}</a>` +
-          `<button type="button" class="post-url-copy" data-url="${safe}" title="Copy URL">⎘</button></span>`;
-      }).join('');
-    root.prepend(strip);
-    strip.querySelectorAll('.post-url-copy').forEach((b) => {
-      b.addEventListener('click', async (e) => {
-        e.preventDefault();
-        const u = b.dataset.url || '';
-        try {
-          await navigator.clipboard.writeText(u);
-          b.textContent = '✓';
-          window.toast?.success?.({ title: 'URL copied', duration: 2000 });
-          setTimeout(() => { b.textContent = '⎘'; }, 1500);
-        } catch {
-          window.toast?.error?.({ title: 'Could not copy URL' });
-        }
-      });
-    });
-  }
-
-  // 3) Inline thumbnails — the renderer now embeds each generated PNG
-  //    directly under its matching platform variant code block, but the
-  //    markdown uses repo-relative paths like `images/<batch>/<file>`.
-  //    Rewrite those to the server-served `/brand-assets/...` URL and
-  //    decorate each with download / copy-path controls (replacing the
-  //    old separate gallery section, which duplicated the same images).
-  const fileName = root.dataset.name;
-  if (fileName) decorateInlineSocialImages(root, fileName);
-}
-
-function decorateInlineSocialImages(root, fileName) {
-  // Idempotent: clear any previously injected actions and remove any
-  // legacy top-of-page gallery (older renderings of this file).
-  root.querySelectorAll(':scope .inline-thumb-actions').forEach((n) => n.remove());
-  const legacyGallery = root.querySelector(':scope > .social-image-gallery');
-  if (legacyGallery) legacyGallery.remove();
-
-  const imgs = [...root.querySelectorAll('.markdown img, .doc-content img')]
-    .filter((i) => !i.closest('.gallery-item'));
-  if (!imgs.length) return;
-
-  const fmtBytes = (n) => {
-    if (!Number.isFinite(n)) return '';
-    if (n < 1024) return `${n} B`;
-    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-    return `${(n / 1024 / 1024).toFixed(2)} MB`;
-  };
-  const safeAttr = (s) => String(s).replace(/"/g, '&quot;');
-
-  imgs.forEach((img) => {
-    // Rewrite repo-relative `images/<batch>/<name>` → `/brand-assets/<batch>/<name>`.
-    const raw = img.getAttribute('src') || '';
-    const m = raw.match(/^(?:\.?\/?)?images\/(.+)$/);
-    if (m) {
-      const newUrl = `/brand-assets/${m[1]}`;
-      img.src = newUrl;
-      // Wrap in a click-through anchor if not already.
-      if (!img.parentElement || img.parentElement.tagName !== 'A') {
-        const a = document.createElement('a');
-        a.href = newUrl;
-        a.target = '_blank';
-        a.rel = 'noopener';
-        a.title = `Open ${m[1].split('/').pop()}`;
-        img.parentNode.insertBefore(a, img);
-        a.appendChild(img);
-      }
+// --- Modal command runner ------------------------------------------
+// Used by [data-launch-cmd] buttons sprinkled across owning views
+// (Setup, Reports, Social, Conversations) so each command lives in
+// its logical home instead of a single kitchen-drawer Run view.
+const cmdModal = {
+  active: null,        // EventSource
+  cmd: null,
+  needsExtra: false,
+  extraLabel: '',
+  withRange: false,
+  open({ cmd, title, desc, needsExtra, extraLabel, withRange, chatOnly }) {
+    this.cmd = cmd;
+    this.needsExtra = !!needsExtra;
+    this.extraLabel = extraLabel || 'Extra args';
+    this.withRange = !!withRange;
+    $('cmd-modal-title').textContent = title || `/${cmd}`;
+    $('cmd-modal-desc').textContent = desc || '';
+    $('cmd-modal-output').textContent = '';
+    $('cmd-modal-meta').textContent = '';
+    $('cmd-modal-stop').hidden = true;
+    $('cmd-modal-start').disabled = false;
+    const extraWrap = $('cmd-modal-extra-wrap');
+    extraWrap.hidden = !this.needsExtra;
+    if (this.needsExtra) {
+      $('cmd-modal-extra-label').textContent = this.extraLabel;
+      $('cmd-modal-extra').value = '';
     }
-    img.classList.add('inline-thumb');
-    img.loading = 'lazy';
-
-    // Append a small actions row right after the image's containing block
-    // (typically a <p>) — copy repo path + download.
-    const finalUrl = img.getAttribute('src');
-    const fileBase = decodeURIComponent(finalUrl.split('/').pop());
-    const batch = (finalUrl.match(/^\/brand-assets\/(.+)\/[^/]+$/) || [, ''])[1];
-    const repoPath = `social-posts/images/${batch ? batch + '/' : ''}${fileBase}`;
-    const wrap = img.closest('p, figure, li, div') || img.parentElement;
-    const row = document.createElement('div');
-    row.className = 'inline-thumb-actions';
-    row.innerHTML =
-      `<button type="button" class="thumb-btn" data-copy-path="${safeAttr(repoPath)}" title="Copy repo path">Copy path</button>` +
-      `<a class="thumb-btn" href="${safeAttr(finalUrl)}" download="${safeAttr(fileBase)}">Download</a>` +
-      `<a class="thumb-btn thumb-btn-ghost" href="${safeAttr(finalUrl)}" target="_blank" rel="noopener">Open full size</a>`;
-    wrap.after(row);
-  });
-
-  // Wire the copy-path buttons.
-  root.querySelectorAll('.inline-thumb-actions [data-copy-path]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const p = btn.dataset.copyPath || '';
-      try {
-        await navigator.clipboard.writeText(p);
-        const label = btn.textContent;
-        btn.textContent = 'Copied ✓';
-        btn.classList.add('copied');
-        window.toast?.success?.({ title: 'Path copied', description: p, duration: 2000 });
-        setTimeout(() => { btn.textContent = label; btn.classList.remove('copied'); }, 1600);
-      } catch {
-        window.toast?.error?.({ title: 'Could not copy path' });
+    const chat = $('cmd-modal-chat');
+    const form = $('cmd-modal-form');
+    if (chatOnly) {
+      chat.hidden = false;
+      form.hidden = true;
+      $('cmd-modal-prompt').textContent = `/${cmd}`;
+    } else {
+      chat.hidden = true;
+      form.hidden = false;
+    }
+    $('cmd-modal').hidden = false;
+    document.body.classList.add('cmd-modal-open');
+  },
+  close() {
+    if (this.active) { try { this.active.close(); } catch {} this.active = null; }
+    $('cmd-modal').hidden = true;
+    document.body.classList.remove('cmd-modal-open');
+  },
+  async start() {
+    if (!this.cmd) return;
+    const slug = (window.activeRoleSlug && window.activeRoleSlug()) || $('run-slug')?.value || '';
+    const extra = this.needsExtra ? $('cmd-modal-extra').value.trim() : '';
+    const range = this.withRange ? (typeof dateRangePhrase === 'function' ? dateRangePhrase() : '') : '';
+    const combinedExtra = [range, extra].filter(Boolean).join(' ');
+    const out = $('cmd-modal-output');
+    out.textContent = '';
+    $('cmd-modal-meta').textContent = 'Starting…';
+    $('cmd-modal-start').disabled = true;
+    try {
+      const res = await fetch('/api/runs', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          command: this.cmd,
+          args: { slug, extra: combinedExtra },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        $('cmd-modal-meta').textContent = data.error || 'error';
+        if (data.prompt) out.textContent = `Prompt: ${data.prompt}\n\nSet SCOUT_RUNNER env var to execute this command from the web UI, or copy the prompt into your AI chat.`;
+        $('cmd-modal-start').disabled = false;
+        return;
       }
-    });
-  });
-}
+      $('cmd-modal-meta').textContent = `Running: ${data.command}`;
+      $('cmd-modal-stop').hidden = false;
+      const src = new EventSource(`/api/runs/${data.id}/stream`);
+      this.active = src;
+      src.onmessage = (e) => {
+        try {
+          const { chunk } = JSON.parse(e.data);
+          out.textContent += chunk;
+          out.scrollTop = out.scrollHeight;
+        } catch {}
+      };
+      src.addEventListener('done', (e) => {
+        try {
+          const { status } = JSON.parse(e.data);
+          $('cmd-modal-meta').textContent = `Done: ${status}`;
+        } catch {}
+        $('cmd-modal-stop').hidden = true;
+        $('cmd-modal-start').disabled = false;
+        src.close();
+        this.active = null;
+      });
+      src.onerror = () => { src.close(); this.active = null; };
+    } catch (err) {
+      $('cmd-modal-meta').textContent = `error: ${err.message}`;
+      $('cmd-modal-start').disabled = false;
+    }
+  },
+};
 
-async function renderSocialImageGallery(root, fileName) {
-  // Remove any prior gallery (idempotent re-enhancement).
-  const prior = root.querySelector(':scope > .social-image-gallery');
-  if (prior) prior.remove();
-  let images = [];
+// Wire global launchers (event delegation so dynamic content works too).
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-launch-cmd]');
+  if (btn) {
+    e.preventDefault();
+    cmdModal.open({
+      cmd: btn.dataset.launchCmd,
+      title: btn.dataset.launchTitle,
+      desc: btn.dataset.launchDesc,
+      needsExtra: !!btn.dataset.launchNeedsExtra,
+      extraLabel: btn.dataset.launchNeedsExtra,
+      withRange: btn.dataset.launchRange === 'true',
+      chatOnly: btn.dataset.launchChatOnly === 'true',
+    });
+    return;
+  }
+  if (e.target.closest('[data-cmd-modal-close]')) {
+    cmdModal.close();
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('cmd-modal').hidden) cmdModal.close();
+});
+$('cmd-modal-start')?.addEventListener('click', () => cmdModal.start());
+$('cmd-modal-stop')?.addEventListener('click', () => cmdModal.close());
+$('cmd-modal-copy')?.addEventListener('click', async () => {
+  const text = $('cmd-modal-prompt').textContent || '';
   try {
-    const r = await fetch(`/api/social/${encodeURIComponent(fileName)}/images`);
-    if (!r.ok) return;
-    const data = await r.json();
-    images = Array.isArray(data.images) ? data.images : [];
-  } catch { return; }
-  if (!images.length) return;
+    await navigator.clipboard.writeText(text);
+    $('cmd-modal-meta').textContent = 'Copied ✓';
+  } catch {
+    $('cmd-modal-meta').textContent = 'Copy failed — select and copy manually.';
+  }
+});
 
-  const fmtBytes = (n) => {
-    if (n < 1024) return `${n} B`;
-    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-    return `${(n / 1024 / 1024).toFixed(2)} MB`;
-  };
-  const safeAttr = (s) => String(s).replace(/"/g, '&quot;');
+// --- Reports / Social ---------------------------------------------
 
-  const section = document.createElement('section');
-  section.className = 'social-image-gallery';
-  section.innerHTML =
-    `<h4>Generated images <span class="hint" style="text-transform:none;font-weight:400;letter-spacing:0;color:var(--muted-2);margin-left:0.4rem;">(${images.length})</span></h4>` +
-    `<div class="gallery-grid">` +
-    images.map((img) => {
-      const repoPath = `social-posts/images/${img.batch ? img.batch + '/' : ''}${img.name}`;
-      return `
-        <figure class="gallery-item">
-          <a href="${safeAttr(img.url)}" target="_blank" rel="noopener" title="Open ${safeAttr(img.name)}">
-            <img src="${safeAttr(img.url)}" alt="${safeAttr(img.name)}" loading="lazy" />
-          </a>
-          <figcaption class="gallery-name" title="${safeAttr(repoPath)}">${escape(img.name)}</figcaption>
-          <div class="gallery-actions">
-            <button type="button" class="gallery-btn" data-copy-path="${safeAttr(repoPath)}" title="Copy repo path">Copy path</button>
-            <a class="gallery-btn" href="${safeAttr(img.url)}" download="${safeAttr(img.name)}">Download</a>
-            <span class="gallery-btn" style="cursor:default;border-style:dashed;">${fmtBytes(img.bytes)}</span>
-          </div>
-        </figure>`;
-    }).join('') +
-    `</div>`;
-
-  // Insert just after the URL strip if present, otherwise at the top.
-  const urlStrip = root.querySelector(':scope > .post-url-strip');
-  if (urlStrip) urlStrip.after(section);
-  else root.prepend(section);
-
-  section.querySelectorAll('button[data-copy-path]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const p = btn.dataset.copyPath || '';
-      try {
-        await navigator.clipboard.writeText(p);
-        btn.textContent = 'Copied ✓';
-        btn.classList.add('copied');
-        window.toast?.success?.({ title: 'Path copied', description: p, duration: 2200 });
-        setTimeout(() => { btn.textContent = 'Copy path'; btn.classList.remove('copied'); }, 1800);
-      } catch {
-        window.toast?.error?.({ title: 'Could not copy path' });
-      }
-    });
-  });
-}
+document.addEventListener('click', (e) => {
+  const tabBtn = e.target.closest('#reports-tabs button[data-tab]');
+  if (tabBtn) {
+    e.preventDefault();
+    setReportsActiveTab(tabBtn.dataset.tab);
+    return;
+  }
+  const secBtn = e.target.closest('#reports-section-nav button[data-section]');
+  if (secBtn) {
+    e.preventDefault();
+    scrollReportToSection(secBtn.dataset.section);
+    return;
+  }
+  const chip = e.target.closest('[data-ask-chip]');
+  if (chip) {
+    e.preventDefault();
+    fillAskChip(chip.dataset.askChip);
+  }
+});
 
 // --- "Create posts for me" — /scout-post runner ---------------------
 (() => {
@@ -2818,6 +2852,8 @@ async function renderSocialImageGallery(root, fileName) {
   if (!form) return;
   const urlInput = $('social-gen-url');
   const ctxInput = $('social-gen-context');
+  const refineSel = $('social-gen-refine');
+  const refineHint = $('social-gen-refine-hint');
   const startBtn = $('social-gen-start');
   const stopBtn = $('social-gen-stop');
   const status = $('social-gen-status');
@@ -2858,18 +2894,71 @@ async function renderSocialImageGallery(root, fileName) {
     });
   }
 
+  // Populate the "Refine an existing post" select from the social posts API.
+  // Refreshed whenever the Social view loads and after each successful run.
+  async function refreshRefineOptions() {
+    if (!refineSel) return;
+    try {
+      const { social } = await api('/api/reports');
+      const prev = refineSel.value;
+      const opts = ['<option value="">— Create new (default) —</option>']
+        .concat((social || []).slice(0, 50).map((r) => {
+          const name = r.name || '';
+          return `<option value="${name}">${name}</option>`;
+        }));
+      refineSel.innerHTML = opts.join('');
+      if (prev && [...refineSel.options].some((o) => o.value === prev)) {
+        refineSel.value = prev;
+      }
+    } catch {}
+  }
+  refreshRefineOptions();
+  // Re-populate whenever the Social view becomes active.
+  window.addEventListener('scout:social-loaded', refreshRefineOptions);
+  // Toggle the refine-mode hint.
+  refineSel?.addEventListener('change', () => {
+    if (refineHint) refineHint.hidden = !refineSel.value;
+  });
+  // "Use latest" quick action — mirrors `/scout-post update` from chat:
+  // selects the most recent social-posts file (first non-placeholder option)
+  // and focuses the context box so the user can type their tweak.
+  $('social-gen-refine-latest')?.addEventListener('click', async () => {
+    if (!refineSel) return;
+    // Refresh first in case the list is stale, then pick the newest.
+    await refreshRefineOptions();
+    const firstFile = [...refineSel.options].find((o) => o.value);
+    if (!firstFile) {
+      setStatus('No social-posts files found to refine', 'error');
+      return;
+    }
+    refineSel.value = firstFile.value;
+    if (refineHint) refineHint.hidden = false;
+    ctxInput?.focus();
+    setStatus(`Refining ${firstFile.value} — describe your tweak in the context box`, 'ok');
+  });
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const url = urlInput.value.trim();
     const ctx = ctxInput.value.trim();
+    const refineTarget = (refineSel?.value || '').trim();
     const notLive = !!$('social-gen-not-live')?.checked;
-    if (!url && !ctx) {
-      setStatus('Provide a URL, source copy, or both', 'error');
-      return;
-    }
-    if ((!url || notLive) && ctx.length < 20) {
-      setStatus('Source copy is too short — paste the announcement text, draft, or detailed notes', 'error');
-      return;
+    if (refineTarget) {
+      // Refine mode: only the refinement instructions are required. URL is
+      // optional (keeps the original CTA unless the user supplies a new one).
+      if (!ctx) {
+        setStatus('Refine mode needs refinement instructions in the context box', 'error');
+        return;
+      }
+    } else {
+      if (!url && !ctx) {
+        setStatus('Provide a URL, source copy, or both', 'error');
+        return;
+      }
+      if ((!url || notLive) && ctx.length < 20) {
+        setStatus('Source copy is too short — paste the announcement text, draft, or detailed notes', 'error');
+        return;
+      }
     }
 
     // Read tuner controls (all optional — fall back to sensible defaults).
@@ -2912,7 +3001,19 @@ async function renderSocialImageGallery(root, fileName) {
       ` [thumbnails: ${thumbStyle}]` +
       (thumbNotes ? ` [thumbnail-notes: ${thumbNotes}]` : '');
     let extra;
-    if (url && !notLive) {
+    if (refineTarget) {
+      // Refine mode: edit the named file in place. Per scout-post.prompt.md
+      // "Refine mode", the [refine: <path>] tuner switches the agent to
+      // inline-edit + humanizer-only behavior. URL stays optional.
+      const refineToken = ` [refine: social-posts/${refineTarget}]`;
+      if (url && !notLive) {
+        extra = `${url} — ${ctx}${tuners}${refineToken}`;
+      } else if (url && notLive) {
+        extra = `${url} (link not live yet — use copy below as source of truth, do not fetch the URL) — ${ctx}${tuners}${refineToken}`;
+      } else {
+        extra = `${ctx}${tuners}${refineToken}`;
+      }
+    } else if (url && !notLive) {
       extra = ctx ? `${url} — ${ctx}${tuners}` : `${url}${tuners}`;
     } else if (url && notLive) {
       // URL is known but the page isn't live yet. Use the URL as the CTA in
@@ -2962,6 +3063,8 @@ async function renderSocialImageGallery(root, fileName) {
         stream = null;
         // Refresh the social posts list — a new file may have been written
         loadSocial().catch(() => {});
+        // Refresh the refine-target dropdown to pick up the new/edited file.
+        refreshRefineOptions();
       });
       stream.onerror = () => { stream && stream.close(); stream = null; setRunning(false); };
     } catch (err) {
@@ -3349,11 +3452,7 @@ document.addEventListener('click', (e) => {
   }
 })();
 
-function escape(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[c]));
-}
+// escape() is imported from lib/core.js (top of file).
 
 // --- Boot ----------------------------------------------------------
 // Honor the URL hash across refreshes so users stay on the view they were on.
@@ -3362,7 +3461,7 @@ loadStatus().then((s) => {
   const isSetUp = s.runnerConfigured && s.hasConfigs;
   const hashView = location.hash.replace(/^#/, '');
   let target;
-  if (KNOWN_VIEWS.includes(hashView)) {
+  if (isKnownView(hashView)) {
     // Don't strand an unconfigured user on a view that needs setup.
     target = (!isSetUp && hashView !== 'setup') ? 'setup' : hashView;
   } else {
@@ -3375,471 +3474,4 @@ loadStatus().then((s) => {
   gotoView('setup');
 });
 
-// --- Vision provider config panel (Setup + Configs) ---------------
-// Renders into any container with class .vision-config. Reads / writes
-// VISION_PROVIDER, OLLAMA_HOST, OLLAMA_VISION_MODEL, OPENAI_VISION_MODEL,
-// and OPENAI_API_KEY via /api/vision/config (which merges into .env without
-// disturbing other keys).
-const OLLAMA_MODEL_SUGGESTIONS = ['llama3.2-vision', 'llama3.2-vision:11b', 'moondream', 'llava', 'qwen2.5vl:7b', 'bakllava'];
-const OPENAI_MODEL_SUGGESTIONS = ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini'];
-const CUSTOM_PRESETS = [
-  { label: 'Azure OpenAI', baseUrl: 'https://YOUR-RESOURCE.openai.azure.com/openai/deployments/YOUR-DEPLOYMENT/chat/completions?api-version=2024-10-21', auth: 'api-key', model: 'gpt-4o-mini' },
-  { label: 'Azure AI Foundry (Models)', baseUrl: 'https://YOUR-RESOURCE.services.ai.azure.com/models', auth: 'api-key', model: 'gpt-4o-mini' },
-  { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', auth: 'bearer', model: 'openai/gpt-4o-mini' },
-  { label: 'LM Studio (local)', baseUrl: 'http://localhost:1234/v1', auth: 'bearer', model: 'lmstudio-community/llava' },
-  { label: 'vLLM / llama.cpp server', baseUrl: 'http://localhost:8000/v1', auth: 'bearer', model: 'your-model' },
-  { label: 'Together.ai', baseUrl: 'https://api.together.xyz/v1', auth: 'bearer', model: 'meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo' },
-  { label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', auth: 'bearer', model: 'llama-3.2-11b-vision-preview' },
-];
-
-function visionPanelHtml(cfg, instanceId) {
-  const provider = cfg.provider || 'none';
-  const ollamaHost = cfg.ollamaHost || 'http://localhost:11434';
-  const ollamaModel = cfg.ollamaModel || 'llama3.2-vision';
-  const openaiModel = cfg.openaiModel || 'gpt-4o-mini';
-  const hasKey = !!cfg.hasOpenaiKey;
-  const customBaseUrl = cfg.customBaseUrl || '';
-  const customModel = cfg.customModel || '';
-  const customAuthStyle = cfg.customAuthStyle || 'bearer';
-  const hasCustomKey = !!cfg.hasCustomKey;
-  const id = (k) => `${instanceId}-${k}`;
-  return `
-    <div class="vision-grid">
-      <label for="${id('provider')}"><strong>Provider</strong></label>
-      <select id="${id('provider')}" data-vc="provider">
-        <option value="none"${provider === 'none' ? ' selected' : ''}>none — work from typed description only</option>
-        <option value="ollama"${provider === 'ollama' ? ' selected' : ''}>ollama — local, free, private (recommended)</option>
-        <option value="openai"${provider === 'openai' ? ' selected' : ''}>openai — cloud, ~$0.0002/image</option>
-        <option value="custom"${provider === 'custom' ? ' selected' : ''}>custom — Azure OpenAI / Foundry / any OpenAI-compatible endpoint</option>
-      </select>
-    </div>
-
-    <div class="vision-section" data-section="ollama" hidden>
-      <p class="hint">
-        Local vision via <a href="https://ollama.com" target="_blank" rel="noreferrer noopener">Ollama</a>.
-        After install: <code>ollama pull moondream</code> (fast, ~2 GB) or <code>ollama pull llama3.2-vision</code> (better, ~8 GB).
-      </p>
-      <details class="vision-install-help">
-        <summary>Don't have Ollama? Show install instructions</summary>
-        <ul class="hint">
-          <li><strong>Windows:</strong> download from <a href="https://ollama.com/download/windows" target="_blank" rel="noreferrer noopener">ollama.com/download/windows</a> and run the installer.</li>
-          <li><strong>macOS:</strong> <code>brew install ollama</code> then <code>ollama serve</code>.</li>
-          <li><strong>Linux:</strong> <code>curl -fsSL https://ollama.com/install.sh | sh</code></li>
-          <li>Then run: <code>ollama pull llama3.2-vision</code> (or <code>moondream</code>) and click <strong>Test connection</strong>.</li>
-        </ul>
-      </details>
-      <div class="vision-grid">
-        <label for="${id('ollama-host')}">Host URL</label>
-        <input id="${id('ollama-host')}" data-vc="ollamaHost" type="url" value="${escape(ollamaHost)}" placeholder="http://localhost:11434" />
-        <label for="${id('ollama-model')}">Model</label>
-        <input id="${id('ollama-model')}" data-vc="ollamaModel" list="ollama-models" value="${escape(ollamaModel)}" placeholder="llama3.2-vision" />
-      </div>
-    </div>
-
-    <div class="vision-section" data-section="openai" hidden>
-      <p class="hint">
-        OpenAI cloud. <code>gpt-4o-mini</code> is the cheapest and works fine for most images.
-        Get an API key at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer noopener">platform.openai.com/api-keys</a>.
-      </p>
-      <div class="vision-grid">
-        <label for="${id('openai-key')}">API key</label>
-        <input id="${id('openai-key')}" data-vc="openaiApiKey" type="password" autocomplete="off" placeholder="${hasKey ? '••• key set in .env (leave blank to keep)' : 'sk-…'}" />
-        <label for="${id('openai-model')}">Model</label>
-        <input id="${id('openai-model')}" data-vc="openaiModel" list="openai-models" value="${escape(openaiModel)}" placeholder="gpt-4o-mini" />
-      </div>
-    </div>
-
-    <div class="vision-section" data-section="custom" hidden>
-      <p class="hint">
-        Any OpenAI-compatible <code>/chat/completions</code> endpoint with vision support.
-        Pick a preset to autofill, then paste your key + adjust the deployment/model name.
-      </p>
-      <div class="vision-grid">
-        <label for="${id('custom-preset')}">Preset</label>
-        <select id="${id('custom-preset')}" data-vc-preset>
-          <option value="">— pick one —</option>
-          ${CUSTOM_PRESETS.map((p, i) => `<option value="${i}">${escape(p.label)}</option>`).join('')}
-        </select>
-        <label for="${id('custom-base')}">Base URL</label>
-        <input id="${id('custom-base')}" data-vc="customBaseUrl" type="url" value="${escape(customBaseUrl)}" placeholder="https://api.example.com/v1 or full /chat/completions URL" />
-        <label for="${id('custom-key')}">API key</label>
-        <input id="${id('custom-key')}" data-vc="customApiKey" type="password" autocomplete="off" placeholder="${hasCustomKey ? '••• key set in .env (leave blank to keep)' : 'paste key'}" />
-        <label for="${id('custom-model')}">Model / deployment</label>
-        <input id="${id('custom-model')}" data-vc="customModel" value="${escape(customModel)}" placeholder="e.g. gpt-4o-mini" />
-        <label for="${id('custom-auth')}">Auth header</label>
-        <select id="${id('custom-auth')}" data-vc="customAuthStyle">
-          <option value="bearer"${customAuthStyle === 'bearer' ? ' selected' : ''}>Authorization: Bearer (OpenAI / Foundry / OpenRouter / most)</option>
-          <option value="api-key"${customAuthStyle === 'api-key' ? ' selected' : ''}>api-key header (Azure OpenAI)</option>
-        </select>
-      </div>
-      <p class="hint">
-        Tip: for Azure OpenAI, paste the full deployment URL (ending in <code>?api-version=…</code>) into Base URL and pick <strong>api-key</strong>.
-        For everything else, paste the base (e.g. <code>https://openrouter.ai/api/v1</code>) — <code>/chat/completions</code> is appended automatically.
-      </p>
-    </div>
-
-    <datalist id="ollama-models">
-      ${OLLAMA_MODEL_SUGGESTIONS.map((m) => `<option value="${escape(m)}">`).join('')}
-    </datalist>
-    <datalist id="openai-models">
-      ${OPENAI_MODEL_SUGGESTIONS.map((m) => `<option value="${escape(m)}">`).join('')}
-    </datalist>
-
-    <div class="toolbar" style="margin-top:0.75rem">
-      <button type="button" data-vc-action="save">Save vision config</button>
-      <button type="button" class="secondary" data-vc-action="test">Test connection</button>
-      <span class="hint" data-vc-status></span>
-    </div>
-    <div class="vision-banner" data-vc-banner hidden></div>
-  `;
-}
-
-async function mountVisionPanel(containerId) {
-  const root = $(containerId);
-  if (!root) return;
-  root.innerHTML = '<p class="hint">Loading…</p>';
-  let cfg;
-  try {
-    cfg = await api('/api/vision/config');
-  } catch (err) {
-    root.innerHTML = `<div class="warn-text">Failed to load vision config: ${escape(err.message)}</div>`;
-    return;
-  }
-  root.innerHTML = visionPanelHtml(cfg, containerId);
-
-  const providerSel = root.querySelector('[data-vc="provider"]');
-  const statusEl = root.querySelector('[data-vc-status]');
-
-  function syncSections() {
-    const p = providerSel.value;
-    root.querySelectorAll('.vision-section').forEach((sec) => {
-      sec.hidden = sec.dataset.section !== p;
-    });
-  }
-  providerSel.addEventListener('change', syncSections);
-  syncSections();
-
-  // Preset autofill for the custom provider
-  const presetSel = root.querySelector('[data-vc-preset]');
-  if (presetSel) {
-    presetSel.addEventListener('change', () => {
-      const idx = parseInt(presetSel.value, 10);
-      if (!Number.isFinite(idx)) return;
-      const preset = CUSTOM_PRESETS[idx];
-      if (!preset) return;
-      const setVal = (k, v) => {
-        const el = root.querySelector(`[data-vc="${k}"]`);
-        if (el) el.value = v;
-      };
-      setVal('customBaseUrl', preset.baseUrl);
-      setVal('customModel', preset.model);
-      setVal('customAuthStyle', preset.auth);
-    });
-  }
-
-  function readForm() {
-    const get = (k) => {
-      const el = root.querySelector(`[data-vc="${k}"]`);
-      return el ? el.value : '';
-    };
-    return {
-      provider: providerSel.value,
-      ollamaHost: get('ollamaHost'),
-      ollamaModel: get('ollamaModel'),
-      openaiModel: get('openaiModel'),
-      openaiApiKey: get('openaiApiKey'), // empty = unchanged on server
-      customBaseUrl: get('customBaseUrl'),
-      customModel: get('customModel'),
-      customAuthStyle: get('customAuthStyle') || 'bearer',
-      customApiKey: get('customApiKey'), // empty = unchanged on server
-    };
-  }
-
-  function setStatus(msg, tone) {
-    statusEl.textContent = msg || '';
-    if (tone) statusEl.dataset.tone = tone; else delete statusEl.dataset.tone;
-  }
-
-  const banner = root.querySelector('[data-vc-banner]');
-  let pullPollTimer = null;
-  let recommendedModelsCache = null;
-
-  async function loadRecommendedModels() {
-    if (recommendedModelsCache) return recommendedModelsCache;
-    try {
-      const data = await fetch('/api/vision/ollama-models').then((r) => r.json());
-      recommendedModelsCache = data.models || [];
-    } catch { recommendedModelsCache = []; }
-    return recommendedModelsCache;
-  }
-
-  function hideBanner() {
-    if (!banner) return;
-    banner.hidden = true;
-    banner.innerHTML = '';
-    if (pullPollTimer) { clearInterval(pullPollTimer); pullPollTimer = null; }
-  }
-
-  async function showMissingModelBanner(probe) {
-    if (!banner) return;
-    const models = await loadRecommendedModels();
-    const currentModel = probe.model || 'llama3.2-vision';
-    banner.hidden = false;
-    banner.innerHTML = `
-      <div class="vision-banner-card warn-card">
-        <div class="vision-banner-title">⚠ Vision model not installed</div>
-        <p>Ollama is running at <code>${escape(probe.host || '')}</code> but <code>${escape(currentModel)}</code> isn't pulled yet. Pick a model below and I'll pull it for you — or copy the command and run it yourself.</p>
-        <div class="vision-model-grid">
-          ${models.map((m) => `
-            <label class="vision-model-pick">
-              <input type="radio" name="vc-pull-model" value="${escape(m.name)}"${m.name === currentModel ? ' checked' : ''} />
-              <span class="vision-model-name"><code>${escape(m.name)}</code> <span class="hint">(${escape(m.size)})</span></span>
-              <span class="hint">${escape(m.note)}</span>
-            </label>
-          `).join('')}
-        </div>
-        <div class="toolbar" style="margin-top:0.5rem">
-          <button type="button" data-vc-action="pull">Pull selected model now</button>
-          <button type="button" class="secondary" data-vc-action="dismiss-banner">Dismiss</button>
-        </div>
-        <p class="hint">Or run in a terminal: <code data-vc-pull-cmd>ollama pull ${escape(currentModel)}</code></p>
-        <div class="vision-pull-progress" data-vc-pull-progress hidden></div>
-      </div>
-    `;
-    // Update the copy-paste command as the user changes the radio
-    banner.querySelectorAll('input[name="vc-pull-model"]').forEach((r) => {
-      r.addEventListener('change', () => {
-        const cmd = banner.querySelector('[data-vc-pull-cmd]');
-        if (cmd) cmd.textContent = `ollama pull ${r.value}`;
-      });
-    });
-    banner.querySelector('[data-vc-action="dismiss-banner"]').addEventListener('click', hideBanner);
-    banner.querySelector('[data-vc-action="pull"]').addEventListener('click', async () => {
-      const picked = banner.querySelector('input[name="vc-pull-model"]:checked');
-      if (!picked) return;
-      const model = picked.value;
-      const progress = banner.querySelector('[data-vc-pull-progress]');
-      progress.hidden = false;
-      progress.textContent = `Starting pull of ${model}…`;
-      try {
-        const res = await fetch('/api/vision/ollama-pull', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ model }),
-        });
-        const data = await res.json();
-        if (!res.ok) { progress.textContent = `Failed: ${data.error || res.status}`; return; }
-      } catch (err) {
-        progress.textContent = `Failed: ${err.message}`;
-        return;
-      }
-      // Poll progress
-      if (pullPollTimer) clearInterval(pullPollTimer);
-      pullPollTimer = setInterval(async () => {
-        try {
-          const s = await fetch(`/api/vision/ollama-pull/status?model=${encodeURIComponent(model)}`).then((r) => r.json());
-          if (!s.exists) { progress.textContent = 'Not started.'; return; }
-          const pct = (typeof s.percent === 'number') ? ` ${s.percent}%` : '';
-          const elapsed = ` (${s.elapsedSec}s)`;
-          progress.textContent = s.done
-            ? (s.error ? `Pull failed: ${s.error}` : `✓ ${model} installed${elapsed}`)
-            : `${s.status || 'pulling'}${pct}${elapsed}`;
-          if (s.done) {
-            clearInterval(pullPollTimer);
-            pullPollTimer = null;
-            // Re-probe to flip banner state and update the .env model field
-            const modelInput = root.querySelector('[data-vc="ollamaModel"]');
-            if (modelInput) modelInput.value = model;
-            // Save so VISION_PROVIDER=ollama and OLLAMA_VISION_MODEL=<model>
-            try {
-              await fetch('/api/vision/config', {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ ...readForm(), provider: 'ollama', ollamaModel: model }),
-              });
-            } catch {}
-            const probe = await fetch('/api/alt/vision-status').then((r) => r.json());
-            if (probe.ok && probe.modelInstalled) {
-              hideBanner();
-              setStatus(probe.message, 'ok');
-            } else {
-              await reflectProbe(probe);
-            }
-          }
-        } catch (err) {
-          progress.textContent = `Status error: ${err.message}`;
-        }
-      }, 1500);
-    });
-  }
-
-  async function reflectProbe(probe) {
-    setStatus(probe.message, probe.ok ? 'ok' : 'error');
-    // Refresh the alt card's status pill if it's mounted
-    const altStatus = $('alt-vision-status');
-    if (altStatus) {
-      altStatus.textContent = `Vision: ${probe.message}`;
-      altStatus.dataset.tone = probe.ok ? 'ok' : (probe.provider === 'none' ? 'muted' : 'error');
-    }
-    // Show the missing-model banner only for ollama-running-but-no-model
-    if (probe.provider === 'ollama' && probe.ok && probe.modelInstalled === false) {
-      await showMissingModelBanner(probe);
-    } else {
-      hideBanner();
-    }
-  }
-
-  root.querySelector('[data-vc-action="save"]').addEventListener('click', async () => {
-    setStatus('Saving…');
-    try {
-      const body = readForm();
-      const res = await fetch('/api/vision/config', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (!res.ok) { setStatus(`Save failed: ${data.error || res.status}`, 'error'); return; }
-      // Clear the password fields so the placeholder reflects the new state
-      const keyInput = root.querySelector('[data-vc="openaiApiKey"]');
-      if (keyInput) keyInput.value = '';
-      const customKeyInput = root.querySelector('[data-vc="customApiKey"]');
-      if (customKeyInput) customKeyInput.value = '';
-      setStatus(`Saved (provider: ${data.provider})`, 'ok');
-      try {
-        const probe = await fetch('/api/alt/vision-status').then((r) => r.json());
-        await reflectProbe(probe);
-      } catch {}
-    } catch (err) {
-      setStatus(`Save error: ${err.message}`, 'error');
-    }
-  });
-
-  root.querySelector('[data-vc-action="test"]').addEventListener('click', async () => {
-    setStatus('Testing…');
-    try {
-      // Save first so the test reflects current form values
-      const body = readForm();
-      const saveRes = await fetch('/api/vision/config', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!saveRes.ok) {
-        const data = await saveRes.json();
-        setStatus(`Save failed before test: ${data.error || saveRes.status}`, 'error');
-        return;
-      }
-      const probe = await fetch('/api/alt/vision-status').then((r) => r.json());
-      await reflectProbe(probe);
-    } catch (err) {
-      setStatus(`Test error: ${err.message}`, 'error');
-    }
-  });
-
-  // Auto-show the banner on initial mount if the saved provider is ollama and the model is missing
-  (async () => {
-    if (cfg.provider === 'ollama') {
-      try {
-        const probe = await fetch('/api/alt/vision-status').then((r) => r.json());
-        if (probe.provider === 'ollama' && probe.ok && probe.modelInstalled === false) {
-          await showMissingModelBanner(probe);
-        }
-      } catch {}
-    }
-  })();
-}
-
-// Mount on Setup view (always visible) and Configs view (lazy when details opens)
-mountVisionPanel('vision-config-panel');
-mountServicesDetect('services-detect');
-const configsVisionCard = document.getElementById('configs-vision-card');
-if (configsVisionCard) {
-  let mounted = false;
-  configsVisionCard.addEventListener('toggle', () => {
-    if (configsVisionCard.open && !mounted) {
-      mounted = true;
-      mountVisionPanel('configs-vision-panel');
-      mountServicesDetect('configs-services-detect');
-    }
-  });
-}
-
-// --- Local services auto-detect (Ollama, LM Studio, ...) ----------
-// Probes /api/services/detect and renders a banner above the vision panel.
-// "Use Ollama" button switches the vision panel to provider=ollama and
-// prefills host/model fields without saving — the user still hits "Save".
-async function mountServicesDetect(containerId) {
-  const root = document.getElementById(containerId);
-  if (!root) return;
-  const targetId = root.dataset.target || 'vision-config-panel';
-  root.innerHTML = '<p class="hint">Looking for local AI services on your machine…</p>';
-  let data;
-  try {
-    data = await api('/api/services/detect');
-  } catch (err) {
-    root.innerHTML = `<p class="hint warn-text">Couldn't probe local services: ${escape(err.message)}</p>`;
-    return;
-  }
-  const services = data.services || [];
-  const running = services.filter((s) => s.running);
-  if (!running.length) {
-    root.innerHTML = `
-      <p class="hint">
-        No local AI services detected. Install <a href="https://ollama.com" target="_blank" rel="noreferrer noopener">Ollama</a>
-        (or <a href="https://lmstudio.ai" target="_blank" rel="noreferrer noopener">LM Studio</a>) and click Re-scan.
-        Or pick OpenAI / a custom endpoint below.
-      </p>
-      <button type="button" class="secondary" data-action="rescan">Re-scan</button>
-    `;
-  } else {
-    const chips = running.map((s) => {
-      const count = (s.models || []).length;
-      const modelLabel = count ? `${count} model${count === 1 ? '' : 's'}` : 'no models pulled yet';
-      const action = s.id === 'ollama'
-        ? `<button type="button" data-action="use-ollama" data-host="${escape(s.host)}" data-model="${escape((s.models || [])[0] || '')}">Use Ollama</button>`
-        : '';
-      return `
-        <div class="service-chip">
-          <strong>✓ ${escape(s.name)}</strong>
-          <span class="hint">${escape(s.host)} — ${escape(modelLabel)}</span>
-          ${action}
-        </div>
-      `;
-    }).join('');
-    root.innerHTML = `
-      <div class="services-banner">
-        <p class="hint" style="margin:0 0 0.5rem">Detected on this machine:</p>
-        ${chips}
-        <button type="button" class="secondary" data-action="rescan" style="margin-top:0.5rem">Re-scan</button>
-      </div>
-    `;
-  }
-  root.querySelectorAll('button').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      if (btn.dataset.action === 'rescan') {
-        mountServicesDetect(containerId);
-        return;
-      }
-      if (btn.dataset.action === 'use-ollama') {
-        const target = document.getElementById(targetId);
-        if (!target) return;
-        const provSel = target.querySelector('[data-vc="provider"]');
-        const hostInp = target.querySelector('[data-vc="ollamaHost"]');
-        const modelInp = target.querySelector('[data-vc="ollamaModel"]');
-        if (provSel) {
-          provSel.value = 'ollama';
-          provSel.dispatchEvent(new Event('change'));
-        }
-        if (hostInp && btn.dataset.host) hostInp.value = btn.dataset.host;
-        if (modelInp && btn.dataset.model) modelInp.value = btn.dataset.model;
-        const status = target.querySelector('[data-vc-status]');
-        if (status) {
-          status.textContent = 'Ollama prefilled — click Save vision config to apply.';
-          status.dataset.tone = 'ok';
-        }
-        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    });
-  });
-}
+mountVisionIntegrations();

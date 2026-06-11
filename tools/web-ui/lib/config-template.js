@@ -199,7 +199,7 @@ export function renderConfigTemplate(opts) {
     domainLines,
     '',
     '### Product Team Members',
-    '<!-- Content by these people appears in "Team Member Mentions" section, not as numbered items. -->',
+    '<!-- Content by these verified employees/co-workers appears in "Team Member Mentions" section, not as numbered items. MVP/MCT/partner/community-speaker status is not employment. -->',
     '',
     teamLines,
     '',

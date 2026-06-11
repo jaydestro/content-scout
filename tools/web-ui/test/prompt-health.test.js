@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
 import { findMissingPrompts, findUnreferencedPrompts } from '../lib/prompt-health.js';
 
 const expected = [
@@ -46,4 +47,24 @@ test('findUnreferencedPrompts returns sorted output', () => {
     findUnreferencedPrompts(expected, disk),
     ['scout-alpha.prompt.md', 'scout-zeta.prompt.md'],
   );
+});
+
+test('content scout sentiment sidecar schema includes every web-ui bucket', async () => {
+  const raw = await fs.readFile(
+    new URL('../../../.github/agents/content-scout.agent.md', import.meta.url),
+    'utf8',
+  );
+  assert.match(raw, /"sentiment": "positive\|neutral\|negative\|mixed\|unknown\|null"/);
+  assert.match(raw, /"sentiment": \{"positive":0,"neutral":0,"negative":0,"mixed":0,"unknown":0\}/);
+});
+
+test('content scout sentiment rubric prevents neutral from absorbing off-topic rows', async () => {
+  const raw = await fs.readFile(
+    new URL('../../../.github/agents/content-scout.agent.md', import.meta.url),
+    'utf8',
+  );
+  assert.match(raw, /Decision order — MUST follow/);
+  assert.match(raw, /Do not keep them as neutral just because they mention the product/);
+  assert.match(raw, /Neutral is for on-topic posts with no verdict; it is not a safe fallback/);
+  assert.match(raw, /Bulk-stamping `sentiment: "neutral", sentiment_confidence: "low"`/);
 });

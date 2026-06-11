@@ -1,9 +1,9 @@
 # Content Scout — Browser Scan (Edge + Playwright over CDP)
 
-A logged-in, real-browser scanner for **X / Twitter**, **LinkedIn**, and
-**Reddit**. The scanner attaches to **your real Edge window over the Chrome
-DevTools Protocol** — it does **not** open its own browser or use a
-synthetic Playwright profile.
+A logged-in, real-browser scanner for **X / Twitter**, **LinkedIn**,
+**Reddit**, and **Google** (News + Web Search). The scanner attaches to
+**your real Edge window over the Chrome DevTools Protocol** — it does
+**not** open its own browser or use a synthetic Playwright profile.
 
 Why CDP attach? X (and increasingly LinkedIn) flags fresh Playwright
 profiles as bots and refuses to let you log in — even with stealth flags.
@@ -82,11 +82,11 @@ within the last 6 hours and merges it as Layer 0.
 `lib/query.mjs::buildSearchQuery(term, platform)` shapes each search-term
 from the config before sending it to the platform:
 
-| Config term | X / LinkedIn | Reddit |
-|---|---|---|
-| `Azure Cosmos DB` | `"Azure Cosmos DB"` (phrase match) | `"Azure Cosmos DB"` (phrase match) |
-| `CosmosDB` | `CosmosDB` | `CosmosDB` |
-| `#AzureCosmosDB` | `#AzureCosmosDB` (hashtag match) | `AzureCosmosDB` (Reddit ignores `#`) |
+| Config term | X / LinkedIn | Reddit | Google |
+|---|---|---|---|
+| `Azure Cosmos DB` | `"Azure Cosmos DB"` (phrase match) | `"Azure Cosmos DB"` (phrase match) | `"Azure Cosmos DB"` (phrase match) |
+| `CosmosDB` | `CosmosDB` | `CosmosDB` | `CosmosDB` |
+| `#AzureCosmosDB` | `#AzureCosmosDB` (hashtag match) | `AzureCosmosDB` (Reddit ignores `#`) | `AzureCosmosDB` (Google ignores `#`) |
 
 Multi-word terms always get phrase-quoted so platforms don't OR the
 tokens. Single tokens and `#hashtag` terms pass through. Reddit gets the
@@ -94,7 +94,7 @@ leading `#` stripped because Reddit's search treats `#` as punctuation.
 Each search term runs sequentially per platform; results are deduped by
 permalink across all terms before the sidecar is written.
 
-## CLI reference
+## Helper Command Reference
 
 | Command | Purpose |
 |---|---|
@@ -118,10 +118,10 @@ permalink across all terms before the sidecar is written.
 
 The Content Scout web UI surfaces browser-scan controls automatically:
 
-- **Run view** — a "🌐 Browser scan (Layer 0)" panel at the top with a browser dropdown, **Open browser & sign in** button, **Scan now** button, and live sidecar freshness per platform for the active subject.
+- **Run view** — a "Browser scan (Layer 0)" fieldset inside the /scout-scan form. One place for everything: sign-in status chips for X / LinkedIn / Reddit, a browser dropdown, **Open browser & sign in** and **Force-rescan active subject** buttons, and three preflight modes (**Auto** / **Force** / **Skip**) that fire automatically when you click Start run. The preflight always honors the date range you pick above, so a "this week" scan limits the browser scrape to the last 7 days.
 - **Dashboard** — a small "Browser scan" card showing whether the browser is currently running on the CDP port and how many subjects have sidecars on disk.
 
-No CLI required after the first launch.
+No command-line use is required after the first launch.
 
 ## Output schema
 
@@ -146,6 +146,32 @@ Each JSON sidecar is an array of items shaped like:
 ```
 
 LinkedIn items use `linkedin-browser`, Reddit items use `reddit-browser`.
+
+### Google (two passes per scan)
+
+The Google scanner runs **two passes** over the same logged-in browser
+context, and merges results into a single `*-google.json` sidecar with
+natural URL-dedup:
+
+1. **Google News** (`news.google.com/search?q=…+when:…`) — surfaces
+   editorial / press coverage. Items carry `platform: "google-news"`,
+   `source: "google-news-browser"`, `subSource: "google-news"`, and a
+   structured `post_date`.
+2. **Google Web Search** (`www.google.com/search?q=…&tbs=cdr:1,cd_min:…,cd_max:…`) —
+   surfaces blog posts, docs, repo READMEs, and anything else the
+   organic SERP indexes. Runs a **general** (non-`site:`-restricted) web
+   search of each configured search term. Items carry `platform:
+   "google-web"`, `source: "google-web-browser"`, `subSource:
+   "google-web"`. The SERP rarely exposes per-result dates, so
+   `post_date` is usually `null` — instead the pass pins Google's
+   **custom date range** (`tbs=cdr:1,cd_min:M/D/YYYY,cd_max:M/D/YYYY`)
+   to the exact scan window, so results are bounded to the range you
+   asked for rather than a coarse hour/day/week/month/year bucket. The
+   window is the rolling `--days` lookback by default, or the exact
+   `--since`/`--until` range when those flags are passed.
+
+A CAPTCHA in one pass only stops that pass; items already collected
+(from either pass) are still written to the sidecar.
 
 ## Rate-limit hygiene
 

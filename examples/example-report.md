@@ -122,38 +122,6 @@
 ## Sources That Could Not Be Reached
 - LinkedIn -- Rate-limited during scan window, will retry next scan.
 
-## Monthly Trends
-### Top Topics This Month
-1. **ai** -- 5 items (↑ +2 vs. last month)
-2. **performance** -- 5 items (→ same)
-3. **best-practices** -- 4 items (↑ +1)
-4. **cost-optimization** -- 3 items (↑ +1)
-5. **data-modeling** -- 3 items (↑ +1)
-
-### Month-over-Month Delta
-- Total items: 18 vs. 15 (+3, +20%)
-- New contributors: 2
-- Conversation volume: 4 vs. 5 (-1)
-- Topics trending up: `ai`, `vector-search`, `cost-optimization`, `data-modeling`
-- Topics trending down: `monitoring` (0 items, was 2)
-
-### Observations
-- Strong AI/vector search momentum this month, driven by the MongoDB vCore vector GA and multiple community RAG projects.
-- Cost optimization continues to be a popular topic -- serverless and hierarchical partitions are the primary angles.
-- Migration content from DynamoDB is a new signal, possibly driven by AWS pricing changes.
-
-## Content Gaps
-| Topic | Last Seen | Opportunity |
-|-------|-----------|-------------|
-| monitoring | 2026-02 | No monitoring content this month. RU dashboards and alert patterns would resonate. |
-| security | 2026-03 (1 item) | Only 1 compliance-focused talk. RBAC patterns and managed identity guides are underrepresented. |
-| migration | 2026-03 (1 item) | DynamoDB migration got traction. Capitalize with MongoDB/PostgreSQL migration content. |
-
-### Suggested Content Ideas
-- "Set up Azure Monitor alerts for Cosmos DB RU spikes and latency" (fills monitoring gap)
-- "Managed identity authentication with Azure Cosmos DB -- step by step" (fills security gap)
-- "Migrating from MongoDB to Azure Cosmos DB for MongoDB vCore" (builds on migration momentum)
-
 ## Notes
 - The YouTube API returned 3 relevant results from 47 total. The quality filter excluded 44 low-value or off-topic videos.
 - LinkedIn could not be scanned due to rate limiting. Content from LinkedIn may be underrepresented.

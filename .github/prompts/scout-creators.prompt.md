@@ -1,6 +1,5 @@
 ---
 mode: agent
-agent: content-scout
 description: "View creator influence trajectories, log outreach interventions, and track sentiment changes over time"
 ---
 

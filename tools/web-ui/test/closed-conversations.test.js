@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -11,6 +11,16 @@ import {
   isValidReason,
   ALLOWED_REASONS,
 } from '../lib/closed-conversations.js';
+import { stateFilePath, CLOSED_CONVERSATIONS_FILE } from '../../lib/paths.mjs';
+
+// The state lib centralizes writes on STATE_DIR (it ignores the per-call dir),
+// so tests in this file share one on-disk file. Reset it before each test so
+// one test's writes can't leak into another's assertions. The hermetic runner
+// (test/run.mjs) points STATE_DIR at a throwaway temp dir, so this never
+// touches real state.
+beforeEach(async () => {
+  await fs.rm(stateFilePath(CLOSED_CONVERSATIONS_FILE), { force: true });
+});
 
 async function tmpReportsDir() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cs-closed-'));

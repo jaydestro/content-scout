@@ -1,6 +1,5 @@
 ---
 mode: agent
-agent: content-scout
 description: Set up Content Scout for a new product — interactive configuration wizard
 ---
 
@@ -30,7 +29,7 @@ Accept a number (1/2/3), a name ("quick"/"standard"/"full"), or a natural descri
 
 If the user chooses quick setup, ask these three questions **one at a time** (wait for each answer before asking the next). Keep wording short and friendly — no long tables or paragraphs of setup text between questions.
 
-1. **Turn 1:** "What product, technology, or project are you tracking?" (e.g., "Azure Cosmos DB", "Python", "Ollama", "Copilot CLI")
+1. **Turn 1:** "What product, technology, or project are you tracking?" (e.g., "Azure Cosmos DB", "Python", "Ollama", "GitHub Copilot")
 2. **Turn 2:** "What's your role? Pick a number, or just describe what you do." Then show the role table from Group 1. Accept a number, a name, or a natural-language description.
 3. **Turn 3:** "Which networks should I scan? Say **all** for everything, or pick numbers from the list." Then show the network table from Group 4.
 4. Auto-generate everything else using Smart Suggestions (see below):
@@ -265,11 +264,32 @@ This is the moment where the user can say things like:
 
 If the user describes additional needs, turn on the relevant features and explain what was added. If they want changes, show the feature toggle table and let them flip individual settings. Any feature can be added or removed regardless of role.
 
+#### Operator Identity (you)
+
+After the role is locked in, ask: **"Who are you? I'll use this to filter out your own posts so you don't end up triaging yourself in Conversations & Mentions."**
+
+Collect:
+1. **Display name** (e.g., `Jay Gordon`) — required.
+2. **Per-platform handles** — ask each separately, accept "none" / "skip" per platform. Strip leading `@`, `u/`, `/in/`. Suggested platforms (in order):
+   - GitHub
+   - X / Twitter
+   - LinkedIn
+   - Bluesky
+   - Dev.to
+   - Medium
+   - Hacker News
+   - Reddit
+   - YouTube channel
+   - Stack Overflow
+   - Personal blog URL
+
+Write the answers into the generated config under the `### Operator Identity` heading (see template below). The operator's display name is automatically merged into the Product Team Members filter so their own posts never show up as community conversations — there is no need for the user to also add themselves to the Product Team Members list.
+
 ### Group 2 — Product Identity
 Ask these fields **one at a time**, waiting for each answer:
-1. What is the **full name** of the product, technology, project, or tool you want to track? (e.g., "Azure Cosmos DB", "Python", "Ollama", "GitHub Copilot CLI")
-2. What **type** is this? Pick a number: **1** product, **2** technology/language, **3** open-source project, **4** tool/CLI — this shapes report sections and search strategy.
-3. What is a **short slug** for file naming? (e.g., "cosmos-db", "python", "ollama", "copilot-cli") — offer a suggestion derived from the name; user confirms or edits.
+1. What is the **full name** of the product, technology, project, or tool you want to track? (e.g., "Azure Cosmos DB", "Python", "Ollama", "GitHub Copilot")
+2. What **type** is this? Pick a number: **1** product, **2** technology/language, **3** open-source project, **4** developer tool — this shapes report sections and search strategy.
+3. What is a **short slug** for file naming? (e.g., "cosmos-db", "python", "ollama", "github-copilot") — offer a suggestion derived from the name; user confirms or edits.
 4. What **text search terms** should we use? (Offer Smart Suggestions as one prompt; user says "yes" or edits.)
 5. What **hashtags** are used on social media? (Offer Smart Suggestions as one prompt; user says "yes" or edits.)
 
@@ -281,7 +301,7 @@ We need to exclude your team's own content so we only find community/external co
 3. **Official social handles** — ask each platform separately: LinkedIn? X/Twitter? Bluesky? *(say "none" per platform)*
 4. Any **GitHub orgs or repos** to exclude? (e.g., "Azure/azure-cosmos-dotnet-v3") *(say "none" to skip)*
 5. Any **other domains or authors** to exclude? *(say "none" to skip)*
-6. Any specific **product team members** whose content should be tracked separately in a "Team Member Mentions" section? Provide names and optionally handles/roles. *(say "none" to skip)*
+6. Any specific **verified product team members / co-workers** whose content should be tracked separately in a "Team Member Mentions" section and excluded from community triage? Provide names plus any platform handles you know (e.g., `James Codella (github: jcodella, x: jcodella, linkedin: jamescodella)`). Name-only entries are allowed, but handles are required for automatic no-triage matching. Do not include MVPs, MCTs, partners, or community speakers unless you have verified they work for the company. *(say "none" to skip)*
 
 ### Group 4 — Networks to Scan
 Present the full source list and ask: **"Select all, or pick the ones you want."**
@@ -325,10 +345,33 @@ For each custom source, collect: **name**, **URL or search pattern**, and **type
 
 - If **YouTube** was selected: "YouTube requires a free API key. Without it, YouTube is skipped and community videos won't appear in reports. Paste your YouTube Data API v3 key, or say **skip**. Quick link: https://console.cloud.google.com/apis/credentials — full walkthrough: `docs/API-KEYS.md#youtube-data-api-v3`."
 - If **Reddit** was selected: "Reddit needs no credentials by default — Content Scout uses a layered scanner (old.reddit.com RSS → HTML scrape → Brave Search API → manual import). You can optionally add Reddit OAuth2 creds for higher rate limits, but Reddit's 'Responsible Builder Policy' denies most new app registrations, so this is fine to skip. Paste a Reddit client ID + secret if you have them, or say **skip**. Walkthrough: `docs/API-KEYS.md#reddit`."
-- If **Reddit Layer 3 / LinkedIn / X free coverage (Brave Search API)** is wanted: "Optional but recommended: a single Brave Search API key gives you free public-web discovery for **three platforms at once** — Reddit Layer 3 (catches threads in subreddits you didn't list), LinkedIn Layer 1 (the primary free path — LinkedIn has no public content API), and X/Twitter Layer 2 (the primary free fallback — avoids X's $200/mo Basic plan). Free tier = 2,000 queries/month at 1 query/second, no credit card required. Sign up at https://brave.com/search/api/ → Free AI plan, then create a token at https://api.search.brave.com/app/keys. Paste your `BRAVE_SEARCH_API_KEY`, or say **skip**. Walkthrough: `docs/API-KEYS.md#brave-search-api`. (Google PSE is supported as a legacy fallback for pre-2026 GCP projects only — Google closed Custom Search to new customers in early 2026.)"
+- If **Reddit Layer 3 / LinkedIn / X free coverage (Brave Search API)** is wanted: "Optional but recommended: a single Brave Search API key gives you free public-web discovery for **three platforms at once** — Reddit Layer 3 (catches threads in subreddits you didn't list), LinkedIn Layer 1 (the primary free path — LinkedIn has no public content API), and X/Twitter Layer 2 (the primary free fallback — avoids X's $200/mo Basic plan). Sign up at https://brave.com/search/api/ and create a token at https://api.search.brave.com/app/keys. **Then ask which plan they're on:**
+  - **Free AI plan (default for new sign-ups in 2026):** $0/month with **$5 in free credits auto-applied every month** at $5.00 per 1,000 requests = **~1,000 free requests/month**, **50 requests/second** capacity. No credit card required. A typical daily scan uses ~30–60 requests, so the free credits comfortably cover daily scanning.
+  - **Paid plan:** pay-as-you-go beyond the $5 credit, or a higher subscription tier. Same key — Content Scout doesn't need to know the plan, but if the user is on a paid tier they can scan more aggressively without worrying about credits.
+  After confirming the plan, paste your `BRAVE_SEARCH_API_KEY`, or say **skip**. Walkthrough: `docs/API-KEYS.md#brave-search-api`. (Google PSE is supported as a legacy fallback for pre-2026 GCP projects only — Google closed Custom Search to new customers in early 2026.)"
 - If **Bluesky** was selected: "Bluesky requires a free app password for authenticated search. Without it, Bluesky is skipped and mentions/hashtag posts won't be tracked. Paste your Bluesky handle and app password, or say **skip**. Quick link: https://bsky.app/settings/app-passwords — full walkthrough: `docs/API-KEYS.md#bluesky`."
 - If **X/Twitter** was selected: "X has two free paths and one paid path. **Free paths (recommended):** (a) the Brave Search API prompt above covers X public tweets; (b) you can also add `https://rsshub.app/twitter/user/<handle>` URLs under `## Custom RSS Feeds` in your config to track specific high-signal accounts. **Paid path:** if you have an X Bearer Token from the $200/mo Basic plan, paste it for authenticated API access. Otherwise say **skip** — the free Brave/RSSHub layers will handle it. Full walkthrough: `docs/API-KEYS.md#xtwitter`."
 - If **GitHub** community-repo scanning is enabled (always on by default): "GitHub works without a key, but unauthenticated requests are capped at 60/hour vs 5,000/hour authenticated. Want to add a free GitHub personal access token for higher rate limits? Paste it or say **skip**. Quick link: https://github.com/settings/tokens — full walkthrough (no scopes needed): `docs/API-KEYS.md#github-token`."
+
+#### ★ Sign-in scan for X / LinkedIn / Reddit (strongly recommended)
+
+After handling keys, if any of X, LinkedIn, or Reddit are in the selected sources, **do not treat this as a footnote** — call it out clearly. This is the single biggest quality boost the user can give Content Scout. Tell them:
+
+> "**Important optional step — this is the biggest quality boost available.**
+>
+> The keys above give Content Scout decent coverage of **public** posts on X, LinkedIn, and Reddit. But if you also want it to see what *you'd* see when you're **signed in** to those sites — replies, ranked feed, members-only subreddits, the stuff public search just doesn't show — there's a quick one-time setup:
+>
+> 1. Content Scout opens a browser window for you.
+> 2. You sign in once to X / LinkedIn / Reddit (whichever you care about).
+> 3. Leave that browser running.
+>
+> During scans, Content Scout quietly reads results from your already-signed-in tabs. **It never touches passwords or DMs.** Sessions stay on your machine.
+>
+> Skip and scans still work — but they'll miss a lot. You can turn this on later from the **Run** view (look for the highlighted *Sign-in scan* block).
+>
+> Want to set it up now? (**yes** / skip)"
+
+If the user says **yes**, run `node tools/browser-scan/launch-edge.mjs` in the terminal and tell them: "A browser window will open with sign-in tabs for X, LinkedIn, and Reddit. Sign in to whichever ones you care about, then leave the browser open. That's it — every future `/scout-scan` will use it automatically." If they say **skip**, acknowledge it can always be turned on later from the Run view's highlighted Sign-in scan block.
 
 **Saving keys:** When the user provides keys, save them to `.env` at the workspace root. If `.env` doesn't exist, create it from `.env.example`. Never store keys in the config file.
 
@@ -573,8 +616,12 @@ description: "Content Scout configuration for {Product Name}"
 ### Excluded Domains/Authors
 - {domain or author or "none"}
 
+### Operator Identity
+<!-- This is YOU — the person running Content Scout. The display name here is auto-merged into the team-member filter so your own posts are excluded from Conversations & Mentions. Handles in parentheses follow the same alias syntax as Product Team Members. Omit the section only if the user explicitly declined to identify themselves. -->
+- {your display name} ({platform: handle, platform: handle, ...})
+
 ### Product Team Members
-<!-- Content by these people appears in "Team Member Mentions" section, not as numbered items. Omit section if "none". -->
+<!-- Content by these verified employees/co-workers appears in "Team Member Mentions" section, not as numbered community items. Handles in parentheses can be imported as no-triage accounts with `node tools/conversations-cli.mjs no-triage-team {slug}` or the Conversations web UI. MVP/MCT/partner/community-speaker status is not employment; put those people in Known Author Watchlist or Influencers instead. Omit section if "none". You do NOT need to list yourself here — the Operator Identity above is included automatically. -->
 - {name} — {role or context}
 
 ## Networks
@@ -734,7 +781,5 @@ _Keys are stored in `.env` — see `.env.example` for setup._
    - `/scout-scan` — Run a content scan (scans all products, or specify one: `/scout-scan cosmos-db`)
    - `/scout-post` — Generate social posts from a URL
    - `/scout-calendar` — Generate a posting calendar
-   - `/scout-gaps` — Analyze content gaps
-   - `/scout-trends` — Compare trends across months
 5. If multiple products were configured, explain: "You can scan all products at once with `/scout-scan`, or target one with `/scout-scan {slug}`. The same applies to other commands."
 6. If any API keys were skipped during Group 4, remind the user which sources are disabled until keys are added to `.env`.

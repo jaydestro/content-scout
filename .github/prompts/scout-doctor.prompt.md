@@ -7,12 +7,15 @@ Ignore VS Code frontmatter (`tools:`, `${{input:...}}`) — that's editor-specif
 ## Inputs
 
 - (optional) Product slug. If omitted, run all checks for every config file under `.github/prompts/scout-config-*.prompt.md`.
+- (optional) Sub-flows — `scout-doctor` is the single entry point for two related interactive setups:
+  - **Add or fix API credentials** (Reddit, Brave, Bluesky, X, YouTube, GitHub, etc.). If the user asks for that, or if step 3 below finds missing/invalid keys and the user wants to fix them, follow `.github/prompts/scout-keys.prompt.md` end-to-end.
+  - **Configure the vision provider** used by `/scout-post --alt` (ollama / openai / custom / none). If the user asks for that, follow `.github/prompts/scout-vision.prompt.md` end-to-end.
 
 ## Steps
 
 1. **Workspace layout check** — verify these exist (✅/❌ each):
    - `.github/agents/content-scout.agent.md`
-   - `.github/prompts/scout-onboard.prompt.md`, `scout-scan.prompt.md`, `scout-post.prompt.md`, `scout-calendar.prompt.md`, `scout-gaps.prompt.md`, `scout-trends.prompt.md`, `scout-creators.prompt.md`, `scout-doctor.prompt.md`, `scout-replay.prompt.md`
+   - `.github/prompts/scout-onboard.prompt.md`, `scout-scan.prompt.md`, `scout-post.prompt.md`, `scout-calendar.prompt.md`, `scout-creators.prompt.md`, `scout-doctor.prompt.md`
    - At least one `.github/prompts/scout-config-*.prompt.md` (other than `scout-config-example.prompt.md`)
    - `reports/` and `social-posts/` directories
    - `reports/.seen-links.json` (created if missing — that's fine, just note it)

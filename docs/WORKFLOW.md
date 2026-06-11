@@ -15,7 +15,7 @@ Onboard (once) → Scan (monthly) → Post (ongoing) → Analyze (monthly)
 1. **Onboard** — configure the agent for your product, technology, project, or tool and role
 2. **Scan** — discover and catalog community content
 3. **Post** — generate social media posts from discovered content
-4. **Analyze** — identify gaps, track trends, plan content strategy
+4. **Schedule** — plan a posting calendar and content strategy
 
 ---
 
@@ -28,7 +28,7 @@ Run once per topic. The onboarding wizard offers two modes:
 
 **Multiple topics:** The first question asks whether you're tracking one topic or several. If you choose multiple, onboarding collects shared settings (role, brand, networks) once, then loops topic-specific details (search terms, exclusions, topic tags) for each topic. Each topic gets its own config file. Run `/scout-onboard` again later to add more topics without re-entering shared settings.
 
-**Topic types:** Content Scout supports products (Azure Cosmos DB), technologies (Python), open-source projects (Ollama), and tools (Copilot CLI). The topic type shapes report sections and search strategy automatically.
+**Topic types:** Content Scout supports products (Azure Cosmos DB), technologies (Python), open-source projects (Ollama), and developer tools (GitHub Copilot). The topic type shapes report sections and search strategy automatically.
 
 ### What It Asks
 
@@ -134,7 +134,6 @@ Repositories have additional requirements:
 | Social posts | `social-posts/{YYYY-MM}-{slug}-social-posts.md` | 3 LinkedIn + 3 X options per item, code-fenced for copy (only if social posts enabled) |
 | Dedup tracker | `reports/.seen-links.json` | Updated with all URLs from this scan (shared across products) |
 | Open CFPs | Included in report | Open calls for papers sorted by deadline (if Conference CFP tracking is on) |
-| Trends | Appended to report | Month-over-month deltas, content gaps (auto-generated at report end) |
 
 When only one product is configured, the slug is optional in filenames for backward compatibility.
 
@@ -230,39 +229,6 @@ Saved to `social-posts/{YYYY-MM}-{slug}-posting-calendar.md` with a day-by-day s
 
 ---
 
-## Step 5: Gap Analysis (`/scout-gaps`)
-
-Compares your canonical topic tags against what actually appeared in the report.
-
-### What It Shows
-
-- **Zero-coverage topics** — tags with no content this month
-- **Declining topics** — tags that had coverage last month but dropped
-- **Content creation ideas** — suggested topics to fill gaps
-- **Coverage distribution** — which topics are over/under-represented
-
-Use this to inform your content strategy: if "migration" has zero community coverage, that's an opportunity for an official tutorial or a community workshop.
-
----
-
-## Step 6: Trends Analysis (`/scout-trends`)
-
-Compares the current month against up to 3 prior months.
-
-### What It Shows
-
-- **Trajectory** — item count, contributor count, conversation volume, sentiment direction
-- **Rising topics** — topics gaining momentum
-- **Declining topics** — topics losing community interest
-- **Repeat vs. new contributors** — is the same group writing, or is the community growing?
-- **Role-specific insight** — actionable recommendation based on your role
-
-### Output
-
-Saved to `reports/{YYYY-MM}-{slug}-trends.md`.
-
----
-
 ## Monthly Workflow (Recommended)
 
 Here's how the pieces fit together for a typical monthly cycle:
@@ -288,13 +254,6 @@ Generate posts for the highest-value items. Review and edit the generated text.
 /scout-calendar
 ```
 Spread the posts across the month. Adjust timing for any known events or holidays.
-
-### End of Month: Analyze
-```
-/scout-gaps
-/scout-trends
-```
-Identify content gaps for next month's strategy. Review trends to understand where the community is heading.
 
 ### Ongoing
 - Run `/scout-post` anytime you find content worth amplifying

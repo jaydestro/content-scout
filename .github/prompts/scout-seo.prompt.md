@@ -1,6 +1,6 @@
 ---
 description: SEO audit and recommendations for one or more URLs
-mode: content-scout
+mode: agent
 ---
 
 # scout-seo

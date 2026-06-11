@@ -38,6 +38,19 @@
         }
       });
     });
+    document.addEventListener('click', (e) => {
+      const reportBtn = e.target.closest?.('[data-open-report]');
+      if (reportBtn) {
+        e.preventDefault();
+        openReportInReportsView(reportBtn.dataset.openReport, reportBtn.dataset.reportTab || 'content');
+        return;
+      }
+      const tabBtn = e.target.closest?.('[data-open-report-tab]');
+      if (tabBtn) {
+        e.preventDefault();
+        openReportInReportsView('', tabBtn.dataset.openReportTab || 'content');
+      }
+    });
   }
 
   // --- Stats + subjects + stack ---
@@ -50,25 +63,108 @@
   async function loadAll() {
     let configs = { configs: [] }, reports = { reports: [] };
     let activity = null;
-    try {
-      [configs, reports, activity] = await Promise.all([
-        fetchJSON('/api/configs'),
-        fetchJSON('/api/reports'),
-        fetchJSON('/api/activity'),
-      ]);
-    } catch { /* keep defaults */ }
+    // Settle each independently: /api/activity triggers a server-side index
+    // build that is slow on a cold first load, and a single Promise.all
+    // reject used to blank the stats, subjects, and latest-report cards too —
+    // even though /api/configs and /api/reports had already resolved. With
+    // allSettled each card renders from whatever data it has.
+    const [cfgRes, repRes, actRes] = await Promise.allSettled([
+      fetchJSON('/api/configs'),
+      fetchJSON('/api/reports'),
+      fetchJSON('/api/activity'),
+    ]);
+    if (cfgRes.status === 'fulfilled') configs = cfgRes.value;
+    if (repRes.status === 'fulfilled') reports = repRes.value;
+    if (actRes.status === 'fulfilled') activity = actRes.value;
 
     const social = (reports.social || []);
-    const subjectCount = (configs.configs || []).length;
+    const configList = configs.configs || [];
+    const reportList = reports.reports || [];
+    const subjectCount = configList.length;
     renderStats(activity, subjectCount);
     renderActivity(activity);
-    renderSubjects({ configs: configs.configs || [], reports: reports.reports || [] });
-    renderSuggestions({ configs: configs.configs || [], reports: reports.reports || [], social });
-    loadActionItems();
+    renderSubjects({ configs: configList, reports: reportList });
+    renderSuggestions({ configs: configList, reports: reportList, social });
+    renderLatestReport(reportList);
+    loadCfpEvents(configList);
     // Social activity / sentiment / creators / source health are owned by
     // intel.js. Do not add loaders for #dash-social-activity, #dash-sentiment,
     // #dash-creators, or #dash-source-health here — two writers on the same
     // node will race and can leave "Loading…" stuck.
+  }
+
+  function openReportInReportsView(name, tab) {
+    const navBtn = document.querySelector('nav button[data-view="reports"]');
+    if (navBtn) navBtn.click();
+    setTimeout(() => {
+      const tabBtn = document.querySelector(`#reports-tabs button[data-tab="${tab}"]`);
+      if (tabBtn) tabBtn.click();
+      if (name) {
+        setTimeout(() => {
+          const row = document.querySelector(`#reports-list li[data-name="${CSS.escape(name)}"]`);
+          if (row) row.click();
+        }, 120);
+      }
+    }, 120);
+  }
+
+  function sortedByMtime(items) {
+    return [...(items || [])].sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''));
+  }
+
+  function renderLatestReport(reports) {
+    const body = $('dash-latest-report');
+    const meta = $('dash-latest-report-meta');
+    if (!body) return;
+    const latest = sortedByMtime(reports).find((r) => r.meta?.kind === 'content' || /-content\.md$/i.test(r.name));
+    if (!latest) {
+      body.innerHTML = '<p class="hint">No full reports yet. Run a scan to create the first one.</p>';
+      if (meta) meta.textContent = '';
+      return;
+    }
+    const m = latest.meta || {};
+    if (meta) meta.textContent = m.dateRange || relativeDay(latest.mtime);
+    body.innerHTML = `
+      <p><strong>${esc(m.title || latest.name)}</strong></p>
+      ${m.subjectLabel ? `<p class="hint">${esc(m.subjectLabel)}</p>` : ''}
+      ${m.summary ? `<p>${esc(m.summary)}</p>` : ''}
+      <div class="toolbar" style="margin-top:0.6rem">
+        <button type="button" data-open-report="${esc(latest.name)}" data-report-tab="content">Open full report</button>
+        <button type="button" data-goto="run" data-run-cmd="scout-scan">Run new scan</button>
+      </div>
+    `;
+  }
+
+  async function loadCfpEvents(configs) {
+    const body = $('dash-cfp-events');
+    const meta = $('dash-cfp-meta');
+    if (!body) return;
+    const slug = configs[0]?.slug || (window.activeRoleSlug && window.activeRoleSlug()) || '';
+    if (!slug) {
+      body.innerHTML = '<p class="hint">Add a subject to track CFPs and events.</p>';
+      if (meta) meta.textContent = '';
+      return;
+    }
+    try {
+      const data = await fetchJSON(`/api/cfp-conferences?slug=${encodeURIComponent(slug)}`);
+      const cfps = (data.cfps || []).slice(0, 3);
+      const conferences = (data.conferences || []).slice(0, 3);
+      const rows = [];
+      for (const c of cfps) {
+        const url = c.cfp || c.site || '';
+        rows.push(`<li><strong>${esc(c.name || 'CFP')}</strong>${c.dateLoc ? ` <span class="hint">${esc(c.dateLoc)}</span>` : ''}${url ? ` <a href="${esc(url)}" target="_blank" rel="noopener">Submit</a>` : ''}</li>`);
+      }
+      for (const c of conferences) {
+        rows.push(`<li><strong>${esc(c.name || 'Event')}</strong>${c.dates ? ` <span class="hint">${esc(c.dates)}</span>` : ''}${c.location ? ` <span class="hint">${esc(c.location)}</span>` : ''}</li>`);
+      }
+      if (meta) meta.textContent = `${cfps.length} CFP${cfps.length === 1 ? '' : 's'} · ${conferences.length} event${conferences.length === 1 ? '' : 's'}`;
+      body.innerHTML = rows.length
+        ? `<ul class="dash-compact-list">${rows.join('')}</ul><div class="toolbar" style="margin-top:0.6rem"><button type="button" data-open-report-tab="cfp">Open CFPs &amp; Events</button></div>`
+        : `<p class="hint">No current CFPs or events found for <code>${esc(slug)}</code>.</p><div class="toolbar" style="margin-top:0.6rem"><button type="button" data-open-report-tab="cfp">Open CFPs &amp; Events</button></div>`;
+    } catch (err) {
+      body.innerHTML = `<p class="hint">Couldn\u2019t load CFPs/events: ${esc(err.message || err)}</p>`;
+      if (meta) meta.textContent = '';
+    }
   }
 
   function renderStats(activity, subjectCount) {
@@ -147,7 +243,12 @@
     if (!ul) return;
     const items = (activity && activity.activity) || [];
     if (!items.length) {
-      ul.innerHTML = '<li class="hint">No activity yet — run a scan to get started.</li>';
+      ul.innerHTML = `<li><div class="empty-state" style="margin:0.5rem 0">
+        <div class="empty-icon" aria-hidden="true">✨</div>
+        <p class="empty-title">No activity yet</p>
+        <p class="empty-body">Run a scan to surface reports, social posts, and creator signals here.</p>
+        <div class="empty-actions"><button type="button" class="btn-primary" data-goto="run" data-run-cmd="scout-scan">Run a scan</button></div>
+      </div></li>`;
       if (meta) meta.textContent = '';
       return;
     }
@@ -168,7 +269,6 @@
       'social-other': { icon: '✉️', cls: 'kind-social' },
       'calendar':     { icon: '🗓', cls: 'kind-calendar' },
       'thumbnails':   { icon: '🖼', cls: 'kind-thumbs' },
-      'trends':       { icon: '📈', cls: 'kind-trends' },
       'alt':          { icon: '♿', cls: 'kind-alt' },
       'run':          { icon: '▶', cls: 'kind-run' },
     };
@@ -202,7 +302,12 @@
     const ul = $('dash-subjects');
     if (!ul) return;
     if (!configs.length) {
-      ul.innerHTML = '<li class="hint">No subjects yet — open <a href="#" data-goto="setup">Setup</a> to add one.</li>';
+      ul.innerHTML = `<li><div class="empty-state" style="margin:0.5rem 0">
+        <div class="empty-icon" aria-hidden="true">🎯</div>
+        <p class="empty-title">No subjects yet</p>
+        <p class="empty-body">Add a product, technology, or project to start tracking.</p>
+        <div class="empty-actions"><button type="button" class="btn-primary" data-goto="setup">Open Setup</button></div>
+      </div></li>`;
       return;
     }
     // For each config, find the most recent report whose name contains the slug.
@@ -300,10 +405,21 @@
       </li>
     `).join('');
 
+    // The Run (Scan) view only drives /scout-scan; its <select> has no
+    // option for other commands, so setting sel.value = 'scout-calendar'
+    // silently fails and leaves it on scan. Each non-scan command lives in
+    // its owning view — launch it via the wired [data-launch-cmd] modal
+    // button when one exists, else just navigate to that view.
+    const cmdView = {
+      'scout-post': 'social',
+      'scout-calendar': 'social',
+      'scout-seo': 'tools',
+      'scout-creators': 'conversations',
+    };
     ul.querySelectorAll('.suggestion-act').forEach((btn) => {
       btn.addEventListener('click', () => {
         const t = tips[Number(btn.dataset.i)];
-        if (t.runCmd) {
+        if (t.runCmd === 'scout-scan') {
           const sel = $('run-command');
           if (sel) { sel.value = t.runCmd; sel.dispatchEvent(new Event('change', { bubbles: true })); }
           if (t.slug) {
@@ -313,6 +429,12 @@
             if (card) { card.checked = true; card.dispatchEvent(new Event('change', { bubbles: true })); }
           }
           const navBtn = document.querySelector('nav button[data-view="run"]');
+          if (navBtn) navBtn.click();
+        } else if (t.runCmd) {
+          const launchBtn = document.querySelector(`[data-launch-cmd="${t.runCmd}"]`);
+          if (launchBtn) { launchBtn.click(); return; }
+          const view = cmdView[t.runCmd];
+          const navBtn = view && document.querySelector(`nav button[data-view="${view}"]`);
           if (navBtn) navBtn.click();
         } else if (t.nav) {
           const navBtn = document.querySelector(`nav button[data-view="${t.nav}"]`);
@@ -340,6 +462,24 @@
         '<p class="hint">No reports yet \u2014 run a scan to surface action items.</p>';
       if (meta) meta.textContent = '';
       return;
+    }
+    // Drop syntactically-bad URLs up front (cheap, no network). Liveness is
+    // probed in the background AFTER render via intel.js's data-check-url
+    // pruning — pre-validating here used to fire up to 80 /api/check-url
+    // calls that saturated the browser's 6-per-host HTTP/1.1 pool and
+    // starved /api/conversations until its 8s timeout fired.
+    const check = window.csUrlCheck;
+    if (check && typeof check.isValidPostUrl === 'function') {
+      const sanitize = (u) => (check.isValidPostUrl(u) ? u : '');
+      for (const g of groups) {
+        for (const it of g.topItems || []) it.url = sanitize(it.url);
+        for (const c of g.cfps || []) {
+          if (typeof c === 'string') continue;
+          c.site = sanitize(c.site);
+          c.cfp = sanitize(c.cfp);
+          c.links = (c.links || []).map((ln) => ({ ...ln, url: sanitize(ln.url) })).filter((ln) => ln.url);
+        }
+      }
     }
     if (meta) {
       const total = groups.reduce(

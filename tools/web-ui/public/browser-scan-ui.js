@@ -1,12 +1,12 @@
 // browser-scan-ui.js
-// Surfaces the tools/browser-scan/ tool inside the web UI:
-//   * Run view: "Browser scan (Layer 0)" panel above the existing form,
-//     visible whenever the selected command is scout-scan. Lets the user
-//     open the Edge/Chrome window with CDP enabled, refresh sidecars for
-//     the active subject(s), and see when each platform last got fresh
-//     data.
-//   * Dashboard: a small "Browser scan" status card showing whether
-//     Edge/Chrome is up on the CDP port.
+// Surfaces the tools/browser-scan/ tool inside the web UI.
+//
+// One canonical home in the Run view: the "Browser scan (Layer 0)"
+// fieldset rendered by index.html inside the /scout-scan form. We
+// progressively enhance it with runtime state (CDP connection pill,
+// sign-in chips, force-rescan button, sidecar freshness) so the user
+// sees ONE place for everything Layer-0 related when they pick
+// /scout-scan. No floating cards, no duplicate launch surfaces.
 //
 // All additive — does not touch app.js or dashboard-enhancer.js.
 
@@ -32,28 +32,15 @@
   let statusCache = null;
   let statusLastFetched = 0;
   let polling = null;
-  let authCache = null; // { ok, port, checkedAt, platforms: { x|linkedin|reddit: { state, ... } } }
+  let authCache = null; // { ok, port, checkedAt, platforms: { x|linkedin|reddit|google: { state, ... } } }
+  let wired = false;   // ensures we only attach event listeners once
 
-  // Persisted UI prefs (panel collapsed / hidden) ----------------------
-  const LS_HIDDEN = 'browser-scan-panel-hidden';
-  const LS_COLLAPSED = 'browser-scan-panel-collapsed';
-  const isHidden = () => { try { return localStorage.getItem(LS_HIDDEN) === '1'; } catch { return false; } };
-  const setHidden = (v) => { try { localStorage.setItem(LS_HIDDEN, v ? '1' : '0'); } catch { /* ignore */ } };
-  const isCollapsed = () => {
-    try {
-      const v = localStorage.getItem(LS_COLLAPSED);
-      // Default: collapsed (compact view). Users opt into the expanded
-      // configurator instead of being shown it by default.
-      return v === null ? true : v === '1';
-    } catch { return true; }
-  };
-  const setCollapsed = (v) => { try { localStorage.setItem(LS_COLLAPSED, v ? '1' : '0'); } catch { /* ignore */ } };
-
-  const PLATFORM_LABEL = { x: 'X', linkedin: 'LinkedIn', reddit: 'Reddit' };
+  const PLATFORM_LABEL = { x: 'X', linkedin: 'LinkedIn', reddit: 'Reddit', google: 'Google News' };
   const PLATFORM_LOGIN_URL = {
     x: 'https://x.com/login',
     linkedin: 'https://www.linkedin.com/login',
     reddit: 'https://www.reddit.com/login',
+    google: 'https://news.google.com/',
   };
 
   async function fetchInfo() {
@@ -79,145 +66,60 @@
     return statusCache;
   }
 
-  // ===== Run view panel =============================================
+  // ===== Run view fieldset =========================================
+  // The fieldset is declared in index.html (id="run-browser-scan-wrap").
+  // This file wires up its runtime children: chips, buttons, status.
 
-  // When the user dismisses the panel, drop a tiny "Show browser scan
-  // controls" affordance above the run form so they can bring it back.
-  function ensureShowControlsLink() {
-    if ($('bs-show-link')) return;
-    const view = $('view-run');
-    if (!view) return;
-    const form = view.querySelector('.run-form');
-    if (!form) return;
-    const wrap = document.createElement('div');
-    wrap.id = 'bs-show-link';
-    wrap.className = 'hint';
-    wrap.style.marginBottom = '0.75rem';
-    wrap.innerHTML =
-      `🌐 Browser scan controls hidden. <button type="button" class="link-btn" id="bs-show-link-btn">Show controls</button>`;
-    form.parentNode.insertBefore(wrap, form);
-    wrap.querySelector('#bs-show-link-btn').addEventListener('click', () => {
-      setHidden(false);
-      wrap.remove();
-      const panel = ensureRunPanel();
-      if (panel) panel.hidden = false;
-    });
+  function getFieldset() {
+    return $('run-browser-scan-wrap');
   }
 
-  function removeShowControlsLink() {
-    $('bs-show-link')?.remove();
-  }
+  // Show/hide is owned by app.js (it toggles `hidden` when the user
+  // picks /scout-scan vs another command).
+  async function wireFieldset() {
+    if (wired) return;
+    const wrap = getFieldset();
+    if (!wrap) return;
+    wired = true;
 
-  function ensureRunPanel() {
-    if ($('browser-scan-panel')) return $('browser-scan-panel');
-    const view = $('view-run');
-    if (!view) return null;
-    const heading = view.querySelector('h2');
-    const form = view.querySelector('.run-form');
-    const panel = document.createElement('div');
-    panel.id = 'browser-scan-panel';
-    panel.className = 'card';
-    panel.style.marginBottom = '1rem';
-    panel.innerHTML = `
-      <div class="bs-head" style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
-        <button type="button" id="bs-collapse-btn" class="link-btn" aria-expanded="false"
-          title="Show / hide configuration" style="font-size:1.1rem;line-height:1;">▸</button>
-        <h3 style="margin:0;flex:1;">🌐 Browser scan <span class="hint" style="font-weight:normal;">(Layer 0 — X / LinkedIn / Reddit)</span></h3>
-        <span id="bs-status-pill" class="hint" aria-live="polite">checking…</span>
-        <button type="button" id="bs-dismiss-btn" class="link-btn" aria-label="Hide browser scan controls"
-          title="Hide this panel (use the Skip option in the form to actually skip the preflight)"
-          style="font-size:1.1rem;line-height:1;">×</button>
-      </div>
-      <div id="bs-auth-row" class="bs-auth-row" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;align-items:center;">
-        <span class="hint" style="margin-right:0.25rem;">Sign-in:</span>
-        <span class="bs-chip" data-platform="x">X <span class="bs-chip-dot">⚪</span></span>
-        <span class="bs-chip" data-platform="linkedin">LinkedIn <span class="bs-chip-dot">⚪</span></span>
-        <span class="bs-chip" data-platform="reddit">Reddit <span class="bs-chip-dot">⚪</span></span>
-        <button type="button" id="bs-auth-check-btn" class="link-btn" title="Verify sign-in by attaching to the browser (slow, ~10s)">Check sign-in</button>
-        <span id="bs-auth-time" class="hint"></span>
-      </div>
-      <div id="bs-config" hidden>
-        <p class="hint" style="margin-top:0.5rem;">
-          Drives your real browser via the Chrome DevTools Protocol so X / LinkedIn / Reddit return
-          logged-in results. <strong>Launch the browser and sign in once</strong> — every subsequent
-          /scout-scan auto-refreshes sidecars older than 6h before the agent kicks in.
-          Use the "Browser scan (Layer 0)" fieldset in the run form to force or skip the preflight.
-          <a href="/docs/SOURCES.md" target="_blank" rel="noopener">Why?</a>
-        </p>
-        <div class="toolbar" style="margin-top:0.5rem;flex-wrap:wrap;gap:0.5rem;align-items:center;">
-          <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.9rem;">
-            Browser
-            <select id="bs-browser-select" style="min-width:180px;"></select>
-          </label>
-          <button type="button" id="bs-launch-btn">Open browser &amp; sign in</button>
-          <button type="button" id="bs-scan-btn" class="secondary">Force-rescan active subject</button>
-          <button type="button" id="bs-refresh-btn" class="link-btn" title="Refresh CDP + sidecar status">↻</button>
-        </div>
-        <div id="bs-sidecars" class="hint" style="margin-top:0.5rem;"></div>
-      </div>
-      <div id="bs-message" class="hint" style="margin-top:0.5rem;" aria-live="polite"></div>
-    `;
-    if (form && form.parentNode === view) {
-      view.insertBefore(panel, form);
-    } else {
-      heading?.insertAdjacentElement('afterend', panel);
-    }
-    // Apply persisted prefs.
-    panel.hidden = isHidden();
-    applyCollapsed(panel, isCollapsed());
-    if (isHidden()) ensureShowControlsLink();
-    wireRunPanel(panel);
-    return panel;
-  }
-
-  function applyCollapsed(panel, collapsed) {
-    const cfg = panel.querySelector('#bs-config');
-    const btn = panel.querySelector('#bs-collapse-btn');
-    if (cfg) cfg.hidden = collapsed;
-    if (btn) {
-      btn.textContent = collapsed ? '▸' : '▾';
-      btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-    }
-  }
-
-  async function wireRunPanel(panel) {
     const info = await fetchInfo();
+    const launchBtn = $('bs-launch-btn');
+    const scanBtn = $('bs-scan-btn');
+    const refreshBtn = $('bs-refresh-btn');
+    const authBtn = $('bs-auth-check-btn');
+    const msg = $('bs-message');
+    const sel = $('bs-browser-select');
+
     if (!info?.installed) {
-      panel.querySelector('#bs-message').innerHTML =
-        `<span class="warn-text">browser-scan tool not installed in this checkout — Layer 0 disabled.</span>`;
-      panel.querySelector('#bs-launch-btn').disabled = true;
-      panel.querySelector('#bs-scan-btn').disabled = true;
-      panel.querySelector('#bs-auth-check-btn').disabled = true;
+      if (msg) {
+        msg.innerHTML =
+          `<span class="warn-text">tools/browser-scan/ is not installed in this checkout — Layer 0 is disabled.</span>`;
+      }
+      [launchBtn, scanBtn, refreshBtn, authBtn].forEach((b) => { if (b) b.disabled = true; });
       return;
     }
-    // Populate browser dropdown — chromium-family only, marked installed/missing.
-    const sel = panel.querySelector('#bs-browser-select');
-    const opts = [`<option value="">Auto-detect (default browser)</option>`];
-    for (const b of info.browsers || []) {
-      if (b.kind !== 'chromium') continue;
-      opts.push(
-        `<option value="${esc(b.name)}" ${b.installed ? '' : 'disabled'}>${esc(b.name)}${b.installed ? '' : ' (not installed)'}</option>`,
-      );
-    }
-    sel.innerHTML = opts.join('');
 
-    panel.querySelector('#bs-launch-btn').addEventListener('click', () => onLaunchClick(panel));
-    panel.querySelector('#bs-scan-btn').addEventListener('click', () => onScanClick(panel));
-    panel.querySelector('#bs-refresh-btn').addEventListener('click', () => refreshPanel(panel, true));
-    panel.querySelector('#bs-auth-check-btn').addEventListener('click', () => onAuthCheckClick(panel));
-    panel.querySelector('#bs-collapse-btn').addEventListener('click', () => {
-      const next = !isCollapsed();
-      setCollapsed(next);
-      applyCollapsed(panel, next);
-    });
-    panel.querySelector('#bs-dismiss-btn').addEventListener('click', () => {
-      setHidden(true);
-      panel.hidden = true;
-      ensureShowControlsLink();
-    });
-    // Click a chip → if signed-out, open that platform's login URL in
-    // the controlled browser (if up) or in a new tab.
-    panel.querySelectorAll('.bs-chip').forEach((chip) => {
+    // Populate browser dropdown — Chromium-family only.
+    if (sel) {
+      const opts = [`<option value="">Auto-detect (default browser)</option>`];
+      for (const b of info.browsers || []) {
+        if (b.kind !== 'chromium') continue;
+        opts.push(
+          `<option value="${esc(b.name)}" ${b.installed ? '' : 'disabled'}>${esc(b.name)}${b.installed ? '' : ' (not installed)'}</option>`,
+        );
+      }
+      sel.innerHTML = opts.join('');
+    }
+
+    launchBtn?.addEventListener('click', () => onLaunchClick());
+    scanBtn?.addEventListener('click', () => onScanClick());
+    refreshBtn?.addEventListener('click', () => refreshState(true));
+    authBtn?.addEventListener('click', () => runAuthCheck());
+
+    // Click a chip → open that platform's login URL in a new tab so
+    // the user can sign in (or finish verification) in the controlled
+    // browser.
+    document.querySelectorAll('#run-browser-scan-wrap .bs-chip').forEach((chip) => {
       chip.addEventListener('click', () => {
         const p = chip.dataset.platform;
         const url = PLATFORM_LOGIN_URL[p];
@@ -225,105 +127,163 @@
       });
     });
 
-    // Initial paint + start polling while the run view is visible.
-    refreshPanel(panel);
+    // Initial paint + polling loop (only while the run view is visible).
+    refreshState();
     if (!polling) {
       polling = setInterval(() => {
-        if (!document.getElementById('view-run')?.classList.contains('active')) return;
-        refreshPanel(panel);
+        if (!$('view-run')?.classList.contains('active')) return;
+        if (!getFieldset() || getFieldset().hidden) return;
+        refreshState();
       }, 8000);
     }
   }
 
-  function paintAuthChips(panel) {
-    const row = panel.querySelector('#bs-auth-row');
-    const timeEl = panel.querySelector('#bs-auth-time');
-    if (!row) return;
+  function paintAuthChips() {
+    const wrap = getFieldset();
+    if (!wrap) return;
+    const timeEl = $('bs-auth-time');
     const platforms = authCache?.platforms || {};
-    for (const p of ['x', 'linkedin', 'reddit']) {
-      const chip = row.querySelector(`.bs-chip[data-platform="${p}"]`);
+    for (const p of ['x', 'linkedin', 'reddit', 'google']) {
+      const chip = wrap.querySelector(`.bs-chip[data-platform="${p}"]`);
       if (!chip) continue;
-      const st = platforms[p]?.state;
       const dot = chip.querySelector('.bs-chip-dot');
-      let glyph = '⚪'; let color = 'var(--muted)'; let title = 'Not checked yet — click "Check sign-in".';
-      if (st === 'signed-in') { glyph = '🟢'; color = 'var(--ok,#2ea043)'; title = `Signed in (${platforms[p]?.finalUrl || ''}).`; }
-      else if (st === 'signed-out') { glyph = '🔴'; color = 'var(--danger,#cf222e)'; title = `Not signed in. Click the chip to open ${PLATFORM_LABEL[p]} login.`; }
-      else if (st === 'error') { glyph = '⚠️'; color = 'var(--warn,#bf8700)'; title = `Check failed: ${platforms[p]?.raw || 'unknown error'}.`; }
-      else if (st === 'unclear') { glyph = '❔'; color = 'var(--muted)'; title = `Unclear: ${platforms[p]?.finalUrl || ''}.`; }
+      if (!dot) continue;
+      const st = platforms[p]?.state;
+      let glyph = '⚪'; let color = 'var(--muted)';
+      let title = 'Not checked yet — click "Check sign-in".';
+      if (st === 'signed-in') {
+        glyph = '🟢'; color = 'var(--ok,#2ea043)';
+        title = `Signed in (${platforms[p]?.finalUrl || ''}).`;
+      } else if (st === 'needs-verification') {
+        glyph = '🟡'; color = 'var(--warn,#bf8700)';
+        title = `${PLATFORM_LABEL[p]} session is valid, but the site is asking for device / 2FA verification. Click the chip, complete the prompt in the controlled browser, then re-check. (Landing URL: ${platforms[p]?.finalUrl || ''})`;
+      } else if (st === 'signed-out') {
+        glyph = '🔴'; color = 'var(--danger,#cf222e)';
+        title = `Not signed in. Click the chip to open ${PLATFORM_LABEL[p]} login.`;
+      } else if (st === 'error') {
+        glyph = '⚠️'; color = 'var(--warn,#bf8700)';
+        title = `Check failed: ${platforms[p]?.raw || 'unknown error'}.`;
+      } else if (st === 'unclear') {
+        glyph = '❔'; color = 'var(--muted)';
+        title = `Unclear: ${platforms[p]?.finalUrl || ''}.`;
+      }
       dot.textContent = glyph;
       chip.style.color = color;
       chip.title = title;
     }
-    if (authCache?.checkedAt) {
-      const mins = Math.floor((Date.now() - new Date(authCache.checkedAt).getTime()) / 60000);
-      timeEl.textContent = mins < 1 ? '· checked just now' : `· checked ${mins}m ago`;
-    } else {
-      timeEl.textContent = '';
+    if (timeEl) {
+      if (authCache?.checkedAt) {
+        const mins = Math.floor((Date.now() - new Date(authCache.checkedAt).getTime()) / 60000);
+        timeEl.textContent = mins < 1 ? '· checked just now' : `· checked ${mins}m ago`;
+      } else {
+        timeEl.textContent = '';
+      }
     }
   }
 
   let lastCdpUp = null;
 
-  async function refreshPanel(panel, force = false) {
+  async function refreshState(force = false) {
+    const wrap = getFieldset();
+    if (!wrap) return;
     const status = await fetchStatus(force);
-    const pill = panel.querySelector('#bs-status-pill');
-    const sidecarEl = panel.querySelector('#bs-sidecars');
+    const pill = $('bs-status-pill');
+    const sidecarEl = $('bs-sidecars');
     const cdpUp = !!status?.cdp?.up;
-    if (cdpUp) {
-      pill.textContent = `🟢 connected — ${status.cdp.browser || 'browser'}`;
-      pill.style.color = 'var(--ok, #2ea043)';
-    } else {
-      pill.textContent = '⚪ no browser running on CDP port';
-      pill.style.color = 'var(--muted)';
+    if (pill) {
+      if (cdpUp) {
+        pill.textContent = `🟢 connected — ${status.cdp.browser || 'browser'}`;
+        pill.style.color = 'var(--ok, #2ea043)';
+      } else {
+        pill.textContent = '⚪ no browser on CDP port';
+        pill.style.color = 'var(--muted)';
+      }
     }
-    // First time CDP comes up (or first poll w/ CDP already up and no
-    // cache yet), kick off one auth check so the chips light up.
-    if (cdpUp && lastCdpUp !== true && !authCache) {
-      runAuthCheck(panel).catch(() => {});
-    }
-    // If CDP went down, blank the chips (sign-in state is stale).
-    if (!cdpUp && lastCdpUp === true) {
-      authCache = null;
-    }
+    // Do NOT auto-fire an auth check here. `runAuthCheck()` spawns
+    // Playwright via /api/browser-scan/auth-check, which opens fresh
+    // tabs in the user's controlled browser for X / LinkedIn / Reddit /
+    // Google News. Firing it on every page load (whenever the CDP port
+    // happens to be up) made the browser sprout 4 tabs every time the
+    // web UI was opened — even if the user hadn't asked to scan
+    // anything yet. The chips stay ⚪ ("not checked") until the user
+    // clicks "Check sign-in" explicitly.
+    if (!cdpUp && lastCdpUp === true) authCache = null;
     lastCdpUp = cdpUp;
-    paintAuthChips(panel);
+    paintAuthChips();
     // Per-active-subject sidecar freshness.
     const slug = activeSubjectSlug();
     const platforms = status?.sidecarsBySlug?.[slug];
-    if (slug && platforms) {
-      sidecarEl.innerHTML = `Sidecars for <code>${esc(slug)}</code>: ` +
-        ['x', 'linkedin', 'reddit']
-          .map((p) => {
-            const sc = platforms[p];
-            if (!sc) return `<strong>${p}</strong>: <span style="color:var(--muted)">none</span>`;
-            return `<strong>${p}</strong>: ${esc(relativeMin(sc.mtime))}`;
-          })
-          .join(' · ');
-    } else if (slug) {
-      sidecarEl.innerHTML = `No browser-scan sidecars yet for <code>${esc(slug)}</code>. Click "Scan now" after opening the browser.`;
-    } else {
-      sidecarEl.textContent = 'Pick a subject below to see its sidecar status.';
+    if (sidecarEl) {
+      if (slug && platforms) {
+        sidecarEl.innerHTML = `Sidecars for <code>${esc(slug)}</code>: ` +
+          ['x', 'linkedin', 'reddit', 'google']
+            .map((p) => {
+              const sc = platforms[p];
+              if (!sc) return `<strong>${p}</strong>: <span style="color:var(--muted)">none</span>`;
+              return `<strong>${p}</strong>: ${esc(relativeMin(sc.mtime))}`;
+            })
+            .join(' · ');
+      } else if (slug) {
+        sidecarEl.innerHTML = `No browser-scan sidecars yet for <code>${esc(slug)}</code>. Click "Force-rescan active subject" after signing in.`;
+      } else {
+        sidecarEl.textContent = 'Pick a subject below to see its sidecar freshness.';
+      }
     }
   }
 
-  // Pull the slug the user has selected in the run view's subject picker.
-  // Falls back to the first available config if "All subjects" is checked.
+  // Pull the slug the user has selected in the subject picker. Falls
+  // back to the first available config if "All subjects" is checked.
   function activeSubjectSlug() {
     const checks = [...document.querySelectorAll('#run-subject-list input[type="checkbox"]:checked')]
       .map((el) => el.value)
       .filter(Boolean);
     if (checks.length === 1) return checks[0];
-    // Hidden run-slug input is the source of truth app.js maintains.
     const hidden = $('run-slug');
     if (hidden && hidden.value && !hidden.value.includes(',')) return hidden.value;
-    // Fallback: first config in the picker.
     const firstCard = document.querySelector('#run-subject-list input[type="checkbox"][value]:not([value=""])');
     return firstCard?.value || '';
   }
 
-  async function runAuthCheck(panel) {
-    const btn = panel.querySelector('#bs-auth-check-btn');
-    const msg = panel.querySelector('#bs-message');
+  // Read the date-range preset from the form and convert it to a
+  // whole-number "days" lookback. The browser-scan CLI accepts --days N.
+  // Default: 30 days. Custom ranges → max(1, days between from and to).
+  function activeRangeDays() {
+    const presetEl = $('run-range-preset');
+    if (!presetEl) return 30;
+    const choice = presetEl.value || 'default';
+    if (choice === 'default') return 30;
+    if (choice === 'today') return 1;
+    if (choice === 'this-week') {
+      const now = new Date();
+      const day = now.getDay();
+      const elapsed = (day === 0 ? 6 : day - 1);
+      return Math.max(1, elapsed + 1);
+    }
+    if (choice === 'this-month') {
+      return new Date().getDate();
+    }
+    if (choice === 'last-month') {
+      const now = new Date();
+      const last = new Date(now.getFullYear(), now.getMonth(), 0);
+      return last.getDate() + now.getDate();
+    }
+    if (choice === 'custom') {
+      const from = $('run-range-from')?.value;
+      const to = $('run-range-to')?.value;
+      const now = new Date();
+      const f = from ? new Date(from) : null;
+      const t = to ? new Date(to) : now;
+      if (!f && !t) return 30;
+      const start = f || new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const days = Math.ceil((now.getTime() - start.getTime()) / (24 * 60 * 60 * 1000));
+      return Math.max(1, days);
+    }
+    return 30;
+  }
+
+  async function runAuthCheck() {
+    const btn = $('bs-auth-check-btn');
+    const msg = $('bs-message');
     if (btn?.dataset.busy === '1') return;
     if (btn) { btn.dataset.busy = '1'; btn.disabled = true; btn.textContent = 'Checking…'; }
     try {
@@ -334,11 +294,10 @@
       });
       const data = await r.json();
       if (r.status === 409) {
-        // CDP down — leave chips blank, surface a hint.
         authCache = null;
         if (msg) msg.innerHTML =
-          `<span class="warn-text">Browser isn't running on the CDP port — click "Open browser & sign in" first.</span>`;
-        paintAuthChips(panel);
+          `<span class="warn-text">Browser isn't running on the CDP port — click "Open browser &amp; sign in" first.</span>`;
+        paintAuthChips();
         return;
       }
       if (!r.ok || !data.ok) {
@@ -347,16 +306,21 @@
         return;
       }
       authCache = data;
-      paintAuthChips(panel);
-      // Friendly message only when something is missing.
-      const missing = Object.entries(data.platforms || {})
-        .filter(([, v]) => v.state !== 'signed-in')
-        .map(([k]) => PLATFORM_LABEL[k] || k);
+      paintAuthChips();
+      const entries = Object.entries(data.platforms || {});
+      const signedOut = entries.filter(([, v]) => v.state === 'signed-out').map(([k]) => PLATFORM_LABEL[k] || k);
+      const needsVerify = entries.filter(([, v]) => v.state === 'needs-verification').map(([k]) => PLATFORM_LABEL[k] || k);
+      const other = entries.filter(([, v]) => !['signed-in', 'signed-out', 'needs-verification'].includes(v.state)).map(([k]) => PLATFORM_LABEL[k] || k);
       if (msg) {
-        if (missing.length === 0) {
-          msg.innerHTML = `<span style="color:var(--ok,#2ea043);">Signed in to X, LinkedIn, and Reddit. Layer 0 ready.</span>`;
+        if (!signedOut.length && !needsVerify.length && !other.length) {
+          msg.innerHTML = `<span style="color:var(--ok,#2ea043);">Signed in to X, LinkedIn, Reddit, and Google News. Layer 0 ready.</span>`;
         } else {
-          msg.innerHTML = `Sign in to ${esc(missing.join(', '))} in the controlled browser, then click "Check sign-in" again.`;
+          const parts = [];
+          if (signedOut.length) parts.push(`Sign in to ${esc(signedOut.join(', '))} in the controlled browser.`);
+          if (needsVerify.length) parts.push(`Complete the device/2FA prompt for ${esc(needsVerify.join(', '))} — you're signed in, the site just wants verification.`);
+          if (other.length) parts.push(`Couldn't determine ${esc(other.join(', '))} state — hover the chip for details.`);
+          parts.push(`Then click "Check sign-in" again.`);
+          msg.innerHTML = parts.join(' ');
         }
       }
     } catch (err) {
@@ -366,14 +330,12 @@
     }
   }
 
-  function onAuthCheckClick(panel) { return runAuthCheck(panel); }
-
-  async function onLaunchClick(panel) {
-    const btn = panel.querySelector('#bs-launch-btn');
-    const msg = panel.querySelector('#bs-message');
-    const browser = panel.querySelector('#bs-browser-select').value || undefined;
-    btn.disabled = true;
-    msg.textContent = 'Opening browser…';
+  async function onLaunchClick() {
+    const btn = $('bs-launch-btn');
+    const msg = $('bs-message');
+    const browser = $('bs-browser-select')?.value || undefined;
+    if (btn) btn.disabled = true;
+    if (msg) msg.textContent = 'Opening browser…';
     try {
       const r = await fetch('/api/browser-scan/launch', {
         method: 'POST',
@@ -382,118 +344,86 @@
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || `${r.status}`);
-      if (data.alreadyRunning) {
-        msg.textContent = `Browser already running on CDP port (${data.browser || 'detected'}). Sign in if any tab still shows the login page.`;
-      } else {
-        msg.innerHTML = `Browser launched (pid ${data.pid}). Sign in to X, LinkedIn, and Reddit in the new window, then leave it open.`;
+      if (msg) {
+        if (data.alreadyRunning) {
+          msg.textContent = `Browser already running on CDP port (${data.browser || 'detected'}). Sign in if any tab still shows the login page.`;
+        } else {
+          msg.innerHTML = `Browser launched (pid ${data.pid}). Sign in to X, LinkedIn, and Reddit in the new window, then leave it open. (Google News works without sign-in.)`;
+        }
       }
-      // Poll status faster for the next 30s so the pill flips to green
-      // when the CDP port comes up.
       let tries = 0;
       const fast = setInterval(async () => {
         tries++;
-        await refreshPanel(panel, true);
+        await refreshState(true);
         if (statusCache?.cdp?.up || tries > 15) clearInterval(fast);
       }, 2000);
     } catch (err) {
-      msg.innerHTML = `<span class="warn-text">${esc(err.message)}</span>`;
+      if (msg) msg.innerHTML = `<span class="warn-text">${esc(err.message)}</span>`;
     } finally {
-      btn.disabled = false;
+      if (btn) btn.disabled = false;
     }
   }
 
-  async function onScanClick(panel) {
+  async function onScanClick() {
     const slug = activeSubjectSlug();
-    const btn = panel.querySelector('#bs-scan-btn');
-    const msg = panel.querySelector('#bs-message');
+    const btn = $('bs-scan-btn');
+    const msg = $('bs-message');
     if (!slug) {
-      msg.innerHTML = `<span class="warn-text">Pick exactly one subject in the form below first.</span>`;
+      if (msg) msg.innerHTML = `<span class="warn-text">Pick exactly one subject in the form below first.</span>`;
       return;
     }
-    btn.disabled = true;
-    msg.textContent = `Starting browser-scan for ${slug}…`;
+    if (btn) btn.disabled = true;
+    if (msg) msg.textContent = `Starting browser-scan for ${slug}…`;
     try {
       const r = await fetch('/api/browser-scan/scan', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ slug }),
+        body: JSON.stringify({ slug, days: activeRangeDays() }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || `${r.status}`);
-      msg.innerHTML = `Browser-scan running. Watch progress in the <button type="button" data-open-runs class="link-btn">Operations drawer</button> on the right.`;
-      msg.querySelector('[data-open-runs]')?.addEventListener('click', () => {
-        window.runsQueue?.open?.();
-      });
-      // Refresh status more often while the scan is running.
+      if (msg) {
+        msg.innerHTML = `Browser-scan running (last ${activeRangeDays()} days). When it finishes it auto-ingests into a report. Watch progress in the <button type="button" data-open-runs class="link-btn">Operations drawer</button>.`;
+        msg.querySelector('[data-open-runs]')?.addEventListener('click', () => {
+          window.runsQueue?.open?.();
+        });
+      }
       let tries = 0;
       const fast = setInterval(async () => {
         tries++;
-        await refreshPanel(panel, true);
+        await refreshState(true);
         if (tries > 30) clearInterval(fast);
       }, 4000);
     } catch (err) {
-      msg.innerHTML = `<span class="warn-text">${esc(err.message)}</span>`;
+      if (msg) msg.innerHTML = `<span class="warn-text">${esc(err.message)}</span>`;
     } finally {
-      btn.disabled = false;
+      if (btn) btn.disabled = false;
     }
-  }
-
-  // ===== Dashboard mini-card ========================================
-
-  function ensureDashCard() {
-    if ($('bs-dash-card')) return;
-    const intel = $('dash-intel-cards');
-    if (!intel) return;
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.id = 'bs-dash-card';
-    card.innerHTML = `
-      <h3>Browser scan</h3>
-      <div id="bs-dash-body" class="hint">Loading…</div>
-    `;
-    intel.appendChild(card);
-  }
-
-  async function paintDashCard() {
-    ensureDashCard();
-    const body = $('bs-dash-body');
-    if (!body) return;
-    const [info, status] = await Promise.all([fetchInfo(), fetchStatus(true)]);
-    if (!info?.installed) {
-      body.innerHTML = `<span class="warn-text">tools/browser-scan/ not installed.</span>`;
-      return;
-    }
-    const recommended = info.recommended ? `${info.recommended.name}${info.recommended.notice ? ' (fallback)' : ''}` : '—';
-    const cdpLine = status?.cdp?.up
-      ? `<div>🟢 <strong>${esc(status.cdp.browser || 'browser')}</strong> running on CDP port ${status.port}</div>`
-      : `<div>⚪ No browser on CDP port. <a href="#run">Open Run view → Browser scan</a> to launch.</div>`;
-    const slugCount = Object.keys(status?.sidecarsBySlug || {}).length;
-    const sidecarLine = slugCount
-      ? `<div>Sidecars for ${slugCount} subject${slugCount === 1 ? '' : 's'} on disk.</div>`
-      : `<div>No sidecars yet for any subject.</div>`;
-    body.innerHTML = `
-      ${cdpLine}
-      <div style="margin-top:0.25rem;">Default: <code>${esc(recommended)}</code></div>
-      ${sidecarLine}
-    `;
   }
 
   // ===== Boot ========================================================
 
   function boot() {
-    // Run view panel: build/refresh whenever the run view becomes active.
+    // Run view: wire the fieldset whenever the run view becomes active.
     const runNav = document.querySelector('nav button[data-view="run"]');
-    runNav?.addEventListener('click', () => setTimeout(ensureRunPanel, 50));
-    // Also build immediately if the page loads on #run.
+    runNav?.addEventListener('click', () => setTimeout(wireFieldset, 50));
     if (location.hash === '#run' || $('view-run')?.classList.contains('active')) {
-      ensureRunPanel();
+      wireFieldset();
     }
-    // Dashboard mini-card: build/refresh whenever the dashboard becomes active.
-    const dashNav = document.querySelector('nav button[data-view="dashboard"]');
-    dashNav?.addEventListener('click', () => setTimeout(paintDashCard, 100));
-    if (location.hash === '' || location.hash === '#dashboard' || $('view-dashboard')?.classList.contains('active')) {
-      setTimeout(paintDashCard, 200);
-    }
+    // Wire it now too in case the form is rendered on load even when
+    // the view isn't active yet (handles cold loads on #dashboard).
+    wireFieldset();
+
+    // Re-paint sidecar status when the user changes the subject picker
+    // — the fieldset shows freshness for the active subject.
+    document.addEventListener('change', (e) => {
+      const t = e.target;
+      if (t && (t.id === 'run-subject-all' || t.name === 'run-slug-choice')) {
+        if (!getFieldset() || getFieldset().hidden) return;
+        refreshState();
+      }
+    });
+
   }
 
   if (document.readyState === 'loading') {

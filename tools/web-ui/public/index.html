@@ -23,6 +23,14 @@
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="theme-modern.css" />
     <link rel="stylesheet" href="theme-polish.css" />
+    <!-- Additive polish layer: skeletons, focus rings, responsive fixes, motion. -->
+    <link rel="stylesheet" href="theme-refresh.css" />
+    <!-- Presentation-grade polish (loaded last, wins specificity ties). -->
+    <link rel="stylesheet" href="theme-presentation.css" />
+    <!-- Density & organization pass: dashboard tabs, nav grouping, responsive. -->
+    <link rel="stylesheet" href="theme-compact.css" />
+    <!-- Production-grade visual layer (loads LAST). See docs/DESIGN-SYSTEM.md. -->
+    <link rel="stylesheet" href="theme-production.css" />
     <script>
       // Apply saved theme before first paint to avoid FOUC.
       (function () {
@@ -61,13 +69,17 @@
             <svg class="icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
             <span class="nav-label">Configs</span>
           </button>
-          <button data-view="run" type="button" aria-label="Run" title="Run">
+          <button data-view="run" type="button" aria-label="Scan" title="Scan">
             <svg class="icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            <span class="nav-label">Run</span>
+            <span class="nav-label">Scan</span>
           </button>
           <button data-view="reports" type="button" aria-label="Reports" title="Reports">
             <svg class="icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
             <span class="nav-label">Reports</span>
+          </button>
+          <button data-view="tools" type="button" aria-label="Tools" title="Tools">
+            <svg class="icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+            <span class="nav-label">Tools</span>
           </button>
           <button data-view="social" type="button" aria-label="Social posts" title="Social posts">
             <svg class="icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
@@ -139,9 +151,7 @@
                 <summary class="hint">Prefer the guided chat wizard?</summary>
                 <div class="embedded-cli-body">
                   <p class="hint">
-                    Chat with the agent right here, or
-                    <button id="setup-run-onboard" class="linklike" type="button">open /scout-onboard in the Run view</button>
-                    — or paste <code>/scout-onboard</code> into your editor's chat panel.
+                    Chat with the agent right here, or paste <code>/scout-onboard</code> into your editor's chat panel.
                   </p>
                   <div class="cli-toolbar">
                     <button id="onboard-cli-start" type="button">Start /scout-onboard</button>
@@ -256,8 +266,8 @@
                   <span>Topic tags <span class="hint">(comma-separated)</span></span>
                   <input data-field="topicTags" id="cfg-topic-tags" type="text" placeholder="e.g., partitioning, sdk-dotnet, query-perf" />
                   <p class="hint">
-                    Canonical labels applied to every report item (1–4 per item). Used by <code>scout gaps</code>
-                    and <code>scout trends</code> to find uncovered feature areas and track month-over-month shifts.
+                    Canonical labels applied to every report item (1–4 per item) to
+                    organize and group discovered content.
                   </p>
                   <div class="tag-suggest-row">
                     <button type="button" id="cfg-topic-suggest" class="secondary">✨ Suggest tags</button>
@@ -287,12 +297,11 @@
                   <label class="field-inline"><input type="checkbox" class="cfg-network" value="youtube" /><span>YouTube (requires key)</span></label>
                 </div>
                 <p class="hint" style="margin-top:0.75rem;background:var(--bg-soft, rgba(255,255,255,0.04));padding:0.6rem 0.75rem;border-radius:6px;border-left:3px solid var(--accent, #2ea043);">
-                  <strong>How X / LinkedIn / Reddit are scanned:</strong> the agent uses a layered cascade per platform.
-                  <strong>Layer&nbsp;0 (recommended)</strong> = logged-in browser scan via the
-                  <code>tools/browser-scan/</code> tool, opt-in. Falls back through Brave Search, RSSHub, and the public-API
-                  layers when no fresh sidecar exists. You don't have to choose a method here — just check the network and
-                  the agent will use whatever Layer it can. To enable Layer&nbsp;0, open the
-                  <a href="#run">Run view</a> and click <strong>"Open browser &amp; sign in"</strong> at the top once.
+                  <strong>How X / LinkedIn / Reddit get scanned:</strong> Content Scout tries the best method available, then falls back if it can't.
+                  The <em>best</em> method is the <strong>sign-in scan</strong> — it quietly reads results from a browser you've already signed in to, so you get the same posts you'd see while logged in (replies, ranked feed, members-only subreddits). It never touches passwords or DMs.
+                  If that's not set up, it falls back to <strong>public search</strong> (via your Brave Search key) and then to RSS feeds.
+                  Just check the network here — you don't pick the method. To turn on the sign-in scan, open the
+                  <a href="#run">Run view</a> and click <strong>“Open browser & sign in”</strong> once.
                 </p>
               </fieldset>
               <fieldset class="cfg-group">
@@ -562,6 +571,15 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             <button id="wiz-next" type="button">Next →</button>
           </div>
         </div>
+
+        <div class="card setup-tools">
+          <h3>Setup tools</h3>
+          <p class="hint">Once the wizard's done, use these to verify and revisit setup.</p>
+          <div class="view-toolbar" role="toolbar" aria-label="Setup tools">
+            <button type="button" data-launch-cmd="scout-doctor" data-launch-title="Health check" data-launch-desc="Validate config, .env keys, source reachability, and state integrity.">Run health check</button>
+            <button type="button" data-launch-cmd="scout-onboard" data-launch-title="Onboarding wizard" data-launch-desc="The onboarding wizard is interactive — run it in your AI chat (Copilot Chat or Claude Code) by typing /scout-onboard." data-launch-chat-only="true">Re-run onboarding (in chat)</button>
+          </div>
+        </div>
       </section>
       <!-- Dashboard -->
       <section id="view-dashboard" class="view">
@@ -590,14 +608,24 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
           <h3 class="dash-section-head">At a glance</h3>
           <div class="dash-stats" id="dash-stats">
             <div class="stat"><div class="stat-num" id="stat-subjects"><span class="skeleton" style="width:1.5em;display:inline-block"></span></div><div class="stat-label">Subjects tracked</div></div>
-            <div class="stat"><div class="stat-num" id="stat-reports"><span class="skeleton" style="width:1.5em;display:inline-block"></span></div><div class="stat-label">Scan reports</div></div>
+            <div class="stat"><div class="stat-num" id="stat-reports"><span class="skeleton" style="width:1.5em;display:inline-block"></span></div><div class="stat-label">Full reports</div></div>
             <div class="stat"><div class="stat-num" id="stat-social"><span class="skeleton" style="width:1.5em;display:inline-block"></span></div><div class="stat-label">Social posts</div></div>
             <div class="stat"><div class="stat-num" id="stat-last-scan"><span class="skeleton" style="width:3em;display:inline-block"></span></div><div class="stat-label">Last scan</div></div>
           </div>
 
-          <!-- 3. Needs your attention: actionable items at the top of the fold -->
-          <h3 class="dash-section-head">Needs your attention</h3>
+          <!-- 3. From your latest scan: the headline results -->
+          <h3 class="dash-section-head">From your latest scan</h3>
 
+          <div class="card" id="dash-latest-report-card">
+            <div class="dash-card-head">
+              <h3>Latest full report</h3>
+              <span class="hint" id="dash-latest-report-meta"></span>
+            </div>
+            <div id="dash-latest-report"><span class="skeleton" style="width:70%"></span><span class="skeleton" style="width:45%"></span></div>
+          </div>
+
+          <!-- 4. Community signals from the last 30 days of scans -->
+          <h3 class="dash-section-head">Community signals</h3>
           <div class="card dash-social-activity" id="dash-social-activity-card">
             <div class="dash-social-activity-head">
               <h3>Social activity — last 30 days</h3>
@@ -606,30 +634,6 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             <div class="dash-social-summary" id="dash-social-summary"></div>
             <div id="dash-social-activity"><span class="skeleton" style="width:65%"></span><span class="skeleton" style="width:45%"></span></div>
           </div>
-
-          <div class="card">
-            <h3>Suggestions</h3>
-            <ul id="dash-suggestions"><li><span class="skeleton" style="width:75%"></span><span class="skeleton" style="width:50%"></span></li></ul>
-          </div>
-
-          <!-- 4. What's been happening: subjects + activity log -->
-          <h3 class="dash-section-head">Recent activity</h3>
-          <div class="cards dash-row-2">
-            <div class="card">
-              <h3>Subjects &amp; last scan</h3>
-              <ul id="dash-subjects"><li><span class="skeleton" style="width:60%"></span><span class="skeleton" style="width:40%"></span></li></ul>
-            </div>
-            <div class="card dash-activity-card">
-              <div class="dash-card-head">
-                <h3>Latest artifacts</h3>
-                <span class="hint" id="dash-activity-meta"></span>
-              </div>
-              <ul id="dash-activity" class="dash-activity"><li><span class="skeleton" style="width:80%"></span><span class="skeleton" style="width:55%"></span><span class="skeleton" style="width:65%"></span></li></ul>
-            </div>
-          </div>
-
-          <!-- 5. Intel: deeper signals from the latest scan -->
-          <h3 class="dash-section-head">Intel</h3>
           <div class="cards" id="dash-intel-cards">
             <div class="card">
               <h3>Sentiment pulse</h3>
@@ -642,6 +646,35 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             <div class="card">
               <h3>Source health</h3>
               <div id="dash-source-health"><span class="skeleton" style="width:55%"></span><span class="skeleton" style="width:65%"></span></div>
+            </div>
+          </div>
+
+          <!-- 5. Events & next steps -->
+          <h3 class="dash-section-head">Events &amp; next steps</h3>
+          <div class="cards dash-row-2">
+            <div class="card" id="dash-cfp-card">
+              <div class="dash-card-head">
+                <h3>CFPs &amp; events</h3>
+                <span class="hint" id="dash-cfp-meta"></span>
+              </div>
+              <div id="dash-cfp-events"><span class="skeleton" style="width:75%"></span><span class="skeleton" style="width:52%"></span></div>
+            </div>
+            <div class="card">
+              <h3>Suggestions</h3>
+              <ul id="dash-suggestions"><li><span class="skeleton" style="width:75%"></span><span class="skeleton" style="width:50%"></span></li></ul>
+            </div>
+          </div>
+          <div class="cards dash-row-2">
+            <div class="card">
+              <h3>Subjects &amp; last scan</h3>
+              <ul id="dash-subjects"><li><span class="skeleton" style="width:60%"></span><span class="skeleton" style="width:40%"></span></li></ul>
+            </div>
+            <div class="card dash-activity-card">
+              <div class="dash-card-head">
+                <h3>Latest artifacts</h3>
+                <span class="hint" id="dash-activity-meta"></span>
+              </div>
+              <ul id="dash-activity" class="dash-activity"><li><span class="skeleton" style="width:80%"></span><span class="skeleton" style="width:55%"></span><span class="skeleton" style="width:65%"></span></li></ul>
             </div>
           </div>
 
@@ -682,31 +715,72 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             </div>
 
             <div id="config-form-panel" class="cfg-form-panel">
-              <p class="hint">Edit common fields here. For sections not shown (role flags, brand assets, conferences, etc.), switch to <strong>Raw markdown</strong>.</p>
+              <p class="hint">Edit any field below — changes write back to the config markdown when you click <strong>Save</strong>. Sections with tables or rich formatting (brand assets, watchlist, social platforms, conferences) still live in <strong>Raw markdown</strong>.</p>
 
-              <div class="cfg-field">
-                <label for="cfg-form-search-terms"><strong>Search Terms</strong> <span class="hint">(one per line, quoted phrases OK)</span></label>
-                <textarea id="cfg-form-search-terms" rows="4" spellcheck="false" placeholder='"Azure Cosmos DB"&#10;"Cosmos DB"'></textarea>
-              </div>
+              <details class="cfg-group" open>
+                <summary>Identity &amp; search</summary>
+                <div class="cfg-field">
+                  <label for="cfg-form-name"><strong>Name</strong> <span class="hint">(display name of the product/subject)</span></label>
+                  <input id="cfg-form-name" type="text" spellcheck="false" placeholder="Azure Cosmos DB" />
+                </div>
+                <div class="cfg-field">
+                  <label for="cfg-form-slug"><strong>Slug</strong> <span class="hint">(file identifier — read-only)</span></label>
+                  <input id="cfg-form-slug" type="text" disabled />
+                </div>
+                <div class="cfg-field">
+                  <label for="cfg-form-type"><strong>Type</strong> <span class="hint">(product, framework, oss-tool, saas…)</span></label>
+                  <input id="cfg-form-type" type="text" spellcheck="false" placeholder="product" />
+                </div>
+                <div class="cfg-field">
+                  <label for="cfg-form-search-terms"><strong>Search Terms</strong> <span class="hint">(one per line, quoted phrases OK)</span></label>
+                  <textarea id="cfg-form-search-terms" rows="4" spellcheck="false" placeholder='"Azure Cosmos DB"&#10;"Cosmos DB"'></textarea>
+                </div>
+                <div class="cfg-field">
+                  <label for="cfg-form-search-hashtags"><strong>Search Hashtags</strong> <span class="hint">(one per line, include the # sign)</span></label>
+                  <textarea id="cfg-form-search-hashtags" rows="3" spellcheck="false" placeholder="#AzureCosmosDB&#10;#CosmosDB"></textarea>
+                </div>
+              </details>
 
-              <div class="cfg-field">
-                <label for="cfg-form-search-hashtags"><strong>Search Hashtags</strong> <span class="hint">(one per line, include the # sign)</span></label>
-                <textarea id="cfg-form-search-hashtags" rows="3" spellcheck="false" placeholder="#AzureCosmosDB&#10;#CosmosDB"></textarea>
-              </div>
+              <details class="cfg-group">
+                <summary>Role &amp; behavior <span class="hint">(report focus + feature toggles)</span></summary>
+                <div id="cfg-form-role-flags" class="cfg-kv-host"><p class="hint">Select a config to load its role flags.</p></div>
+              </details>
 
-              <div class="cfg-field">
-                <label for="cfg-form-rss-feeds">
-                  <strong>Custom RSS Feeds</strong>
-                  <span class="hint">(one per line, format: <code>Name | URL</code>)</span>
-                  <button type="button" class="help-icon" aria-label="How do I get an RSS feed URL?" title="How do I get an RSS feed URL?" onclick="window.scoutHelp && window.scoutHelp.open('Custom RSS Feeds')">?</button>
-                </label>
-                <textarea id="cfg-form-rss-feeds" rows="4" spellcheck="false" placeholder="Jay's Blog | https://example.com/feed.xml&#10;X listening — &quot;CosmosDB&quot; | https://rss.app/feeds/xxxx.xml"></textarea>
-              </div>
+              <details class="cfg-group">
+                <summary>People</summary>
+                <div class="cfg-field">
+                  <label for="cfg-form-team"><strong>Product Team Members</strong> <span class="hint">(one per line — verified employees only; aliases in parentheses)</span></label>
+                  <textarea id="cfg-form-team" rows="5" spellcheck="false" placeholder="Jane Doe (github: jdoe, x: jdoe)&#10;John Smith"></textarea>
+                </div>
+                <div class="cfg-field">
+                  <label for="cfg-form-influencers"><strong>Influencers to Monitor</strong> <span class="hint">(one per line — high-signal accounts)</span></label>
+                  <textarea id="cfg-form-influencers" rows="4" spellcheck="false" placeholder="John Savill — YouTube — @NTFAQGuy"></textarea>
+                </div>
+              </details>
 
-              <div class="cfg-field">
-                <label for="cfg-form-excluded"><strong>Excluded Domains/Authors</strong> <span class="hint">(one per line — items from these are filtered out)</span></label>
-                <textarea id="cfg-form-excluded" rows="3" spellcheck="false" placeholder="example-spam.com&#10;some-author"></textarea>
-              </div>
+              <details class="cfg-group">
+                <summary>Competitors</summary>
+                <div class="cfg-field">
+                  <label for="cfg-form-competitors"><strong>Competitors</strong> <span class="hint">(one per line — leave empty to disable competitor tracking)</span></label>
+                  <textarea id="cfg-form-competitors" rows="3" spellcheck="false" placeholder="MongoDB Atlas&#10;Amazon DynamoDB"></textarea>
+                </div>
+              </details>
+
+              <details class="cfg-group">
+                <summary>Sources &amp; filters</summary>
+                <div class="cfg-field">
+                  <label for="cfg-form-rss-feeds">
+                    <strong>Custom RSS Feeds</strong>
+                    <span class="hint">(one per line, format: <code>Name | URL</code>)</span>
+                    <button type="button" class="help-icon" aria-label="How do I get an RSS feed URL?" title="How do I get an RSS feed URL?" onclick="window.scoutHelp && window.scoutHelp.open('Custom RSS Feeds')">?</button>
+                  </label>
+                  <textarea id="cfg-form-rss-feeds" rows="4" spellcheck="false" placeholder="Jay's Blog | https://example.com/feed.xml&#10;X listening — &quot;CosmosDB&quot; | https://rss.app/feeds/xxxx.xml"></textarea>
+                </div>
+                <div class="cfg-field">
+                  <label for="cfg-form-excluded"><strong>Excluded Domains/Authors</strong> <span class="hint">(one per line — items from these are filtered out)</span></label>
+                  <textarea id="cfg-form-excluded" rows="3" spellcheck="false" placeholder="example-spam.com&#10;some-author"></textarea>
+                </div>
+              </details>
 
               <p class="hint" id="cfg-form-status"></p>
             </div>
@@ -736,29 +810,31 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
         </div>
       </section>
 
-      <!-- Run -->
+      <!-- Run — dedicated to /scout-scan (content discovery). Other commands
+           launch from their owning views (Setup, Reports, Social, Conversations)
+           via the modal runner at the bottom of <main>. -->
       <section id="view-run" class="view">
-        <h2>Run a command</h2>
+        <h2>Scan</h2>
+        <p class="hint view-intro">Run <code>/scout-scan</code> against one or more subjects to discover new content. Other tools (calendar, SEO, doctor…) now live in their own sections — see the sidebar.</p>
         <div class="run-form">
           <label>
             Command
             <select id="run-command">
-              <option value="scout-onboard">/scout-onboard — interactive setup wizard</option>
               <option value="scout-scan" selected>/scout-scan — scan sources &amp; generate a report</option>
-              <option value="scout-calendar">/scout-calendar — weekly posting schedule</option>
-              <option value="scout-gaps">/scout-gaps — content gap analysis</option>
-              <option value="scout-trends">/scout-trends — month-over-month trends</option>
-              <option value="scout-creators">/scout-creators — creator trajectories &amp; interventions</option>
-              <option value="scout-doctor">/scout-doctor — validate config, keys, sources</option>
-              <option value="scout-replay">/scout-replay — re-run filters on a saved scan (no API calls)</option>
-              <option value="scout-reddit-import">/scout-reddit-import — manually ingest Reddit URLs</option>
-              <option value="scout-seo">/scout-seo — SEO audit &amp; rewrite recommendations</option>
-              <option value="scout-alt">/scout-alt — generate accessibility alt text for an image</option>
-              <option value="scout-keys">/scout-keys — interactive API credential setup</option>
-              <option value="scout-vision">/scout-vision — configure the vision provider for /scout-alt</option>
-              <option value="custom">Custom prompt</option>
+              <option value="custom">Custom prompt (advanced)</option>
             </select>
           </label>
+          <div id="run-custom-prompt-summary" class="run-custom-prompt-summary" hidden>
+            <div>
+              <span class="hint">Custom prompt:</span>
+              <span id="run-custom-prompt-preview" class="run-custom-prompt-preview">(none yet)</span>
+              <button type="button" id="run-custom-prompt-edit" class="link-btn">Edit…</button>
+            </div>
+            <label class="field-inline" style="margin-top:0.4rem">
+              <input type="checkbox" id="run-custom-browser-scan" />
+              <span>Include sign-in browser scan with this prompt</span>
+            </label>
+          </div>
           <div id="run-subject-wrap">
             <div class="subject-picker-head">
               <span>Which subjects?</span>
@@ -775,34 +851,62 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             <!-- Hidden input carries the computed slug value for backwards-compat. -->
             <input type="hidden" id="run-slug" value="" />
           </div>
-          <label id="run-extra-wrap">
-            Extra args (optional)
-            <input id="run-extra" type="text" placeholder="e.g. a URL, item number, or additional context" />
-          </label>
+          <!-- Hidden compat shim: some helpers (bulk picker, dashboard "Draft post")
+               still write a URL or item number here. Kept for backwards-compat;
+               its value is folded into the prompt at submit time. -->
+          <input id="run-extra" type="hidden" value="" />
           <fieldset id="run-browser-scan-wrap" class="run-browser-scan">
-            <legend>Browser scan (Layer 0)</legend>
-            <div class="run-browser-scan-choices">
-              <label class="field-inline"><input type="radio" name="run-browser-scan" value="auto" checked /><span>Auto — refresh sidecars older than 6h <span class="hint">(recommended)</span></span></label>
-              <label class="field-inline"><input type="radio" name="run-browser-scan" value="force" /><span>Force — always re-scan X / LinkedIn / Reddit first</span></label>
-              <label class="field-inline"><input type="radio" name="run-browser-scan" value="skip" /><span>Skip — only API / RSS layers</span></label>
+            <legend>★ Sign-in scan — X / LinkedIn / Reddit / Google News <span class="bs-recommended-badge">Recommended</span></legend>
+            <p class="hint" id="run-browser-scan-intro">
+              <strong>This is the single biggest quality boost you can give Content Scout.</strong>
+              It reads results from a browser you're already signed in to, so scans see what <em>you'd</em> see when logged in —
+              including replies, ranked feed, and members-only subreddits. Never touches passwords or DMs.
+              Skip and Content Scout falls back to public search (Brave) and RSS, which miss a lot.
+              <a href="/docs/SOURCES.md" target="_blank" rel="noopener">Learn more</a>
+            </p>
+            <div class="run-browser-scan-status">
+              <span id="bs-status-pill" class="hint" aria-live="polite">checking browser…</span>
+              <span class="sep" aria-hidden="true">·</span>
+              <span class="hint">Sign-in:</span>
+              <span class="bs-chip" data-platform="x">X <span class="bs-chip-dot">⚪</span></span>
+              <span class="bs-chip" data-platform="linkedin">LinkedIn <span class="bs-chip-dot">⚪</span></span>
+              <span class="bs-chip" data-platform="reddit">Reddit <span class="bs-chip-dot">⚪</span></span>
+              <span class="bs-chip" data-platform="google">Google News <span class="bs-chip-dot">⚪</span></span>
+              <button type="button" id="bs-auth-check-btn" class="link-btn" title="Verify sign-in by attaching to the browser (slow, ~10s)">Check sign-in</button>
+              <span id="bs-auth-time" class="hint"></span>
             </div>
-            <p class="hint" id="run-browser-scan-hint">Runs <code>node tools/browser-scan/index.mjs scan</code> before the agent so X / LinkedIn / Reddit return logged-in results. Requires the browser to be open on the CDP port — use the 🌐 panel above to launch it once.</p>
+            <div class="run-browser-scan-controls">
+              <label class="field-inline bs-browser-label">
+                <span class="hint">Browser</span>
+                <select id="bs-browser-select"></select>
+              </label>
+              <button type="button" id="bs-launch-btn">Open browser &amp; sign in</button>
+              <button type="button" id="bs-scan-btn" class="secondary">Force-rescan active subject</button>
+              <button type="button" id="bs-refresh-btn" class="link-btn" title="Refresh CDP + sidecar status">↻ Refresh</button>
+            </div>
+            <div class="run-browser-scan-mode">
+              <span class="run-browser-scan-mode-label">When /scout-scan runs:</span>
+              <label class="field-inline"><input type="radio" name="run-browser-scan" value="auto" checked /><span>Auto — use sign-in scan when it's fresh (recommended)</span></label>
+              <label class="field-inline"><input type="radio" name="run-browser-scan" value="force" /><span>Always re-scan first (slower, freshest results)</span></label>
+              <label class="field-inline"><input type="radio" name="run-browser-scan" value="skip" /><span>Skip — public search and RSS only</span></label>
+            </div>
+            <div id="bs-sidecars" class="hint"></div>
+            <div id="bs-message" class="hint" aria-live="polite"></div>
           </fieldset>
           <fieldset id="run-range-wrap" class="run-range">
             <legend>Date range</legend>
-            <div class="run-range-choices">
-              <label class="field-inline"><input type="radio" name="run-range" value="default" checked /><span>Last 30 days <span class="hint">(default)</span></span></label>
-              <label class="field-inline"><input type="radio" name="run-range" value="current-month" /><span>Current month</span></label>
-              <label class="field-inline"><input type="radio" name="run-range" value="last-month" /><span>Last month</span></label>
-              <label class="field-inline"><input type="radio" name="run-range" value="month" /><span>Specific month</span></label>
-              <label class="field-inline"><input type="radio" name="run-range" value="custom" /><span>Custom range</span></label>
-            </div>
-            <div id="run-range-month-wrap" class="run-range-detail" hidden>
-              <label class="field">
-                <span>Month</span>
-                <input id="run-range-month" type="month" />
-              </label>
-            </div>
+            <label class="field">
+              <span>Time frame</span>
+              <select id="run-range-preset">
+                <option value="default" selected>Last 30 days (default)</option>
+                <option value="today">Today</option>
+                <option value="this-week">This week (since Monday)</option>
+                <option value="this-month">This month so far</option>
+                <option value="last-month">Last month</option>
+                <option value="custom">Custom range…</option>
+              </select>
+            </label>
+            <p id="run-range-summary" class="hint" style="margin:0.4rem 0 0;">Rolling 30-day window ending now.</p>
             <div id="run-range-custom-wrap" class="run-range-detail" hidden>
               <label class="field">
                 <span>From</span>
@@ -814,10 +918,37 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
               </label>
             </div>
           </fieldset>
-          <label id="run-prompt-wrap" hidden>
-            Custom prompt
-            <textarea id="run-prompt" rows="4" placeholder="Type any message to send the agent"></textarea>
+          <label id="run-prompt-wrap">
+            Additional context (optional)
+            <textarea id="run-prompt" rows="3" placeholder="Anything the agent should keep in mind for this scan — focus areas, topics to skip, specific events to look for, etc."></textarea>
           </label>
+          <dialog id="run-custom-prompt-dialog" class="run-custom-prompt-dialog">
+            <form method="dialog">
+              <h3 style="margin-top:0">Custom prompt</h3>
+              <p class="hint">Type any message to send the agent. This replaces the built-in command.</p>
+              <textarea id="run-custom-prompt-text" rows="8" style="width:100%" placeholder="e.g. /scout-scan azure-cosmos-db focus on vector search content from this week"></textarea>
+              <details class="run-custom-prompt-examples" open>
+                <summary>Examples — click to insert</summary>
+                <p class="hint" style="margin:0.4rem 0">All <code>/scout-*</code> slash commands work here. Most accept a subject slug and optional free-text context.</p>
+                <ul class="run-custom-prompt-example-list" id="run-custom-prompt-examples-list">
+                  <li><button type="button" data-snippet="/scout-scan azure-cosmos-db focus on vector search content from this week"><code>/scout-scan</code></button> — discover new content for a subject (date range + context)</li>
+                  <li><button type="button" data-snippet="/scout-post https://example.com/blog tone=conversational platforms=x,linkedin variants=3"><code>/scout-post</code> from URL</button> — draft social posts from a single link</li>
+                  <li><button type="button" data-snippet="/scout-post 2026-05-16-1845-azure-cosmos-db-content.md item 3"><code>/scout-post</code> from report</button> — draft posts for a specific report item</li>
+                  <li><button type="button" data-snippet="/scout-calendar azure-cosmos-db next 2 weeks"><code>/scout-calendar</code></button> — generate a weekly posting schedule</li>
+                  <li><button type="button" data-snippet="/scout-creators azure-cosmos-db top movers this month"><code>/scout-creators</code></button> — creator trajectories &amp; interventions</li>
+                  <li><button type="button" data-snippet="/scout-seo https://example.com/blog audit headings, meta, and internal links"><code>/scout-seo</code></button> — SEO audit + rewrite recommendations</li>
+                  <li><button type="button" data-snippet="/scout-doctor check API keys and source reachability"><code>/scout-doctor</code></button> — validate config, keys, and sources</li>
+                  <li><button type="button" data-snippet="/scout-onboard add a new subject"><code>/scout-onboard</code></button> — interactive config wizard</li>
+                  <li><button type="button" data-snippet="/scout-alt social-posts/images/2026-05-16-1845/example.png describe for accessibility"><code>/scout-alt</code></button> — generate alt text for an image</li>
+                </ul>
+                <p class="hint" style="margin:0.4rem 0 0">Tip: replace the subject slug with one of your configs (e.g. <code>azure-cosmos-db</code>, <code>azure-documentdb</code>), or use <code>all</code> to run against every subject. Anything after the command is passed to the agent as free-text context.</p>
+              </details>
+              <div class="toolbar" style="margin-top:0.75rem">
+                <button id="run-custom-prompt-save" type="submit" value="save">Save</button>
+                <button id="run-custom-prompt-cancel" value="cancel" class="secondary" type="button">Cancel</button>
+              </div>
+            </form>
+          </dialog>
           <div class="toolbar">
             <button id="run-start">Start run</button>
             <button id="run-copy" class="secondary">Copy prompt</button>
@@ -841,22 +972,100 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
       <!-- Reports -->
       <section id="view-reports" class="view">
         <h2>Reports</h2>
-        <div class="split">
-          <aside>
-            <ul id="reports-list"></ul>
-          </aside>
-          <article id="reports-body" class="markdown">Select a report.</article>
+        <div class="reports-tabs" role="tablist" id="reports-tabs">
+          <span class="reports-tabs-label" aria-hidden="true">Reports</span>
+          <button type="button" data-tab="content" role="tab" class="active" aria-selected="true">Full Report</button>
+          <button type="button" data-tab="mindshare" role="tab" aria-selected="false">Mindshare</button>
+          <button type="button" data-tab="cfp" role="tab" aria-selected="false">CFPs &amp; Events</button>
+        </div>
+
+        <!-- Action bar: contextual actions per tab -->
+        <div class="reports-action-bar" id="reports-action-bar" role="region" aria-label="Tab actions"></div>
+
+        <!-- Browse panel (Full Report, Mindshare, and CFPs & Events) -->
+        <div class="tab-panel" data-panel="browse">
+          <div class="split">
+            <aside>
+              <input type="search" id="reports-filter" class="list-filter" placeholder="Filter reports (name or content)…" autocomplete="off" />
+              <ul id="reports-list"></ul>
+            </aside>
+            <div class="reports-doc">
+              <!-- In-doc section nav for a consolidated scan report; jumps to ## headings -->
+              <div class="reports-section-nav" id="reports-section-nav" role="tablist" aria-label="Report sections" hidden></div>
+              <article id="reports-body" class="markdown">Select a report.</article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tools (SEO / Ask) -->
+      <section id="view-tools" class="view">
+        <h2>Tools</h2>
+        <div class="reports-tabs" role="tablist" id="tools-tabs">
+          <button type="button" data-tooltab="seo" role="tab" class="active" aria-selected="true">SEO</button>
+          <button type="button" data-tooltab="ask" role="tab" aria-selected="false">Ask</button>
+        </div>
+
+        <!-- Action bar: contextual actions per tool (Audit now). -->
+        <div class="reports-action-bar" id="tools-action-bar" role="region" aria-label="Tool actions"></div>
+
+        <!-- Browse panel (SEO outputs land here as dated reports). -->
+        <div class="tab-panel" data-toolpanel="browse">
+          <div class="split">
+            <aside>
+              <input type="search" id="tools-filter" class="list-filter" placeholder="Filter tool outputs (name or content)…" autocomplete="off" />
+              <ul id="tools-list"></ul>
+            </aside>
+            <article id="tools-body" class="markdown">Run a tool from the action bar above, or select a saved result.</article>
+          </div>
+        </div>
+
+        <!-- Ask the agent -->
+        <div class="tab-panel" data-toolpanel="ask" hidden>
+          <div class="ask-form">
+            <p class="hint" id="ask-context-hint">Ask the agent for any analysis across your reports. Quick prompts below pre-fill common requests; edit them before sending if you like.</p>
+            <div class="ask-chips" id="ask-chips">
+              <button type="button" data-ask-chip="seo">SEO audit a URL…</button>
+              <button type="button" data-ask-chip="cfp">Find open CFPs</button>
+              <button type="button" data-ask-chip="conf">Upcoming conferences</button>
+              <button type="button" data-ask-chip="summary">Summarize last 30 days</button>
+              <button type="button" data-ask-chip="recommend">What should we write next?</button>
+            </div>
+            <label class="field">
+              <span>Prompt</span>
+              <textarea id="ask-prompt" rows="5" placeholder="Type a request for the agent (uses your active product slug as context)…"></textarea>
+            </label>
+            <div class="toolbar">
+              <button type="button" id="ask-send">Send to agent</button>
+              <button type="button" id="ask-stop" class="secondary" hidden>Stop</button>
+              <span class="hint" id="ask-meta"></span>
+            </div>
+            <pre id="ask-output" class="ask-output">No request sent yet.</pre>
+          </div>
         </div>
       </section>
 
       <!-- Social -->
       <section id="view-social" class="view">
         <h2>Social posts</h2>
+        <div class="view-toolbar" role="toolbar" aria-label="Social post tools">
+          <button type="button" data-launch-cmd="scout-calendar" data-launch-title="Posting calendar" data-launch-desc="Generate a weekly posting calendar from recent reports + social posts.">Generate posting calendar</button>
+        </div>
 
         <div class="card social-generate">
           <h3>✨ Create posts for me</h3>
           <p class="hint">Paste a URL <em>or</em> drop in raw copy (announcement text, blog draft, talk abstract) — Content Scout will run <code>/scout-post</code> against your chosen agent and draft LinkedIn + X posts. If the link isn't live yet, you can still paste the future URL and tick <strong>Link not live yet</strong> — we'll skip the fetch and use your copy as the source of truth.</p>
           <form id="social-generate-form" class="social-generate-form">
+            <label class="field">
+              <span>Refine an existing post file <span class="hint">(optional — pick a file to edit it inline instead of creating a new one)</span></span>
+              <div class="row" style="gap:.5rem;align-items:center;">
+                <select id="social-gen-refine" style="flex:1;">
+                  <option value="">— Create new (default) —</option>
+                </select>
+                <button type="button" id="social-gen-refine-latest" class="ghost" title="Select the most recent social-posts file (equivalent to '/scout-post update' in chat)">Use latest</button>
+              </div>
+              <span class="hint" id="social-gen-refine-hint" hidden>Refine mode: URL is optional. Use the context box below to describe the changes (e.g., "shorter LinkedIn, drop hashtags, add a Bluesky variant"). The agent will edit the selected file in place.</span>
+            </label>
             <label class="field">
               <span>URL <span class="hint">(optional — paste the future link if you have it, even if it's not live yet)</span></span>
               <input id="social-gen-url" type="url" placeholder="https://example.com/post" />
@@ -1025,6 +1234,7 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
 
         <div class="split">
           <aside>
+            <input type="search" id="social-filter" class="list-filter" placeholder="Filter posts (name or content)…" autocomplete="off" />
             <ul id="social-list"></ul>
           </aside>
           <article id="social-body" class="markdown">Select a file.</article>
@@ -1034,6 +1244,15 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
       <!-- Conversations -->
       <section id="view-conversations" class="view">
         <h2>Conversations &amp; mentions</h2>
+        <div class="view-toolbar" role="toolbar" aria-label="Conversation tools">
+          <button type="button" data-launch-cmd="scout-creators" data-launch-title="Creator trajectories" data-launch-desc="View creator trajectories, log outreach, track sentiment outcomes. (Best run in chat — this command is interactive.)" data-launch-chat-only="true">Creators &amp; interventions</button>
+        </div>
+        <div class="conv-tabs" role="tablist" aria-label="Conversation type">
+          <button type="button" class="conv-tab is-active" role="tab" aria-selected="true" data-conv-tab="all">All <span class="conv-tab-count" data-count-for="all">0</span></button>
+          <button type="button" class="conv-tab" role="tab" aria-selected="false" data-conv-tab="conversations">Conversations <span class="conv-tab-count" data-count-for="conversations">0</span></button>
+          <button type="button" class="conv-tab" role="tab" aria-selected="false" data-conv-tab="mentions">Mentions <span class="conv-tab-count" data-count-for="mentions">0</span></button>
+          <span class="conv-tab-hint hint">Conversations = threaded discussion (Reddit, HN, replies). Mentions = drive-by posts naming the product.</span>
+        </div>
         <div class="conv-toolbar">
           <input id="conv-q" type="search" placeholder="Search full archive (summary, author, platform)…" />
           <select id="conv-sentiment" aria-label="Filter by sentiment" title="Sentiment">
@@ -1060,28 +1279,107 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             <input type="checkbox" id="conv-needs-reply" />
             Needs reply (negative + mixed)
           </label>
+          <select id="conv-team-mode" aria-label="Team filter" title="Filter by team membership: community-only, team-only, or everyone">
+            <option value="community">Community only (hide team)</option>
+            <option value="team">My team only</option>
+            <option value="everyone">Everyone (community + team)</option>
+          </select>
           <select id="conv-show" aria-label="Show closed / muted" title="Show closed / dismissed / muted conversations">
             <option value="open">Hide closed &amp; muted</option>
             <option value="all">Show all (incl. closed &amp; muted)</option>
             <option value="closed">Only closed</option>
             <option value="muted">Only muted</option>
+            <option value="no-triage">Only no-triage people</option>
           </select>
-          <button type="button" id="conv-manage-muted" class="secondary" title="Manage muted accounts">Muted accounts…</button>
+          <button type="button" id="conv-manage-muted" class="secondary" title="Manage muted accounts">
+            🔇 Muted <span id="conv-muted-count-pill" class="cs-count-pill" aria-hidden="true">0</span>
+          </button>
+          <button
+            type="button"
+            id="conv-sentiment-status"
+            class="secondary conv-sentiment-status"
+            title="Local-LLM sentiment reviewer status — click to refresh"
+            data-state="unknown">
+            🤖 LLM: <span class="conv-sentiment-status-label">checking…</span>
+          </button>
+          <button
+            type="button"
+            id="conv-recheck-bulk"
+            class="secondary"
+            title="Re-classify visible low-confidence neutral rows using the local LLM"
+            hidden>
+            🤖 Re-check <span id="conv-recheck-bulk-count">0</span> low-confidence neutrals
+          </button>
           <span class="hint" id="conv-meta"></span>
         </div>
-        <div id="conv-muted-panel" class="conv-muted-panel" hidden>
-          <div class="conv-muted-head">
-            <strong>Muted accounts</strong>
-            <button type="button" id="conv-muted-close" class="secondary" aria-label="Close panel">×</button>
+        <dialog id="conv-muted-panel" class="cs-modal cs-muted-modal">
+          <div class="cs-modal-form">
+            <header class="cs-modal-head">
+              <h3>Muted accounts <span id="conv-muted-count" class="cs-count">0</span></h3>
+              <button type="button" id="conv-muted-close" class="cs-modal-close" aria-label="Close panel">×</button>
+            </header>
+            <div class="cs-modal-body">
+              <div class="cs-muted-toolbar">
+                <input id="conv-muted-search" type="search" placeholder="Filter by handle, platform, reason…" autocomplete="off" />
+              </div>
+              <details class="cs-muted-add">
+                <summary>+ Add account manually</summary>
+                <div class="cs-muted-add-grid">
+                  <label class="cs-field">
+                    <span>Handle</span>
+                    <input type="text" id="conv-add-handle" placeholder="e.g. nirav-mungara" autocomplete="off" />
+                  </label>
+                  <label class="cs-field">
+                    <span>Platform</span>
+                    <select id="conv-add-platform">
+                      <option value="">All platforms</option>
+                      <option value="linkedin">LinkedIn</option>
+                      <option value="x">X / Twitter</option>
+                      <option value="reddit">Reddit</option>
+                      <option value="bluesky">Bluesky</option>
+                      <option value="youtube">YouTube</option>
+                      <option value="github">GitHub</option>
+                    </select>
+                  </label>
+                  <label class="cs-field">
+                    <span>Reason</span>
+                    <select id="conv-add-reason">
+                      <option value="">— None —</option>
+                      <option value="recruiter">Recruiter / job post</option>
+                      <option value="spam">Spam</option>
+                      <option value="irrelevant">Irrelevant</option>
+                      <option value="competitor">Competitor</option>
+                      <option value="microsoft-employee">Microsoft employee / no triage</option>
+                      <option value="microsoft-employee">Microsoft employee / no triage</option>
+                      <option value="owned">Owned account</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </label>
+                  <label class="cs-field cs-field-wide">
+                    <span>Note <span class="hint">(optional)</span></span>
+                    <input type="text" id="conv-add-note" maxlength="200" />
+                  </label>
+                  <div class="cs-muted-add-actions">
+                    <button type="button" id="conv-add-mute" class="primary">Mute account</button>
+                    <span id="conv-add-status" class="hint"></span>
+                  </div>
+                </div>
+              </details>
+              <details class="cs-muted-add">
+                <summary>📥 Import accounts from config</summary>
+                <div class="cs-muted-tools">
+                  <label class="hint" for="conv-owned-slug">Subject config:</label>
+                  <select id="conv-owned-slug" aria-label="Choose subject config"></select>
+                  <button type="button" id="conv-owned-import" class="secondary">Import owned</button>
+                  <button type="button" id="conv-team-import" class="secondary">Import team as no triage</button>
+                  <span id="conv-owned-status" class="hint"></span>
+                  <span id="conv-team-status" class="hint"></span>
+                </div>
+              </details>
+              <div id="conv-muted-list" class="cs-muted-list"><p class="hint">Loading…</p></div>
+            </div>
           </div>
-          <div class="conv-muted-tools">
-            <label class="hint" for="conv-owned-slug">Mute owned accounts from config:</label>
-            <select id="conv-owned-slug" aria-label="Choose subject config"></select>
-            <button type="button" id="conv-owned-import" class="secondary">Import owned</button>
-            <span id="conv-owned-status" class="hint"></span>
-          </div>
-          <div id="conv-muted-list"><p class="hint">Loading…</p></div>
-        </div>
+        </dialog>
         <div id="conv-bulk-bar" class="conv-bulk-bar" hidden>
           <span id="conv-bulk-count">0 selected</span>
           <select id="conv-bulk-reason" aria-label="Close reason">
@@ -1099,6 +1397,35 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
         <div id="conv-list"><p class="hint">Loading…</p></div>
       </section>
     </main>
+
+    <!-- Modal runner — fired by [data-launch-cmd] buttons in any view. -->
+    <div id="cmd-modal" class="cmd-modal" hidden role="dialog" aria-modal="true" aria-labelledby="cmd-modal-title">
+      <div class="cmd-modal-backdrop" data-cmd-modal-close></div>
+      <div class="cmd-modal-panel">
+        <header class="cmd-modal-head">
+          <h3 id="cmd-modal-title">Run command</h3>
+          <button type="button" class="cmd-modal-x" data-cmd-modal-close aria-label="Close">×</button>
+        </header>
+        <p id="cmd-modal-desc" class="hint"></p>
+        <div id="cmd-modal-chat" class="cmd-modal-chat" hidden>
+          <p class="hint">Copy this prompt into your AI chat:</p>
+          <code id="cmd-modal-prompt" class="cmd-modal-prompt"></code>
+          <button type="button" id="cmd-modal-copy">Copy prompt</button>
+        </div>
+        <div id="cmd-modal-form" class="cmd-modal-form">
+          <label id="cmd-modal-extra-wrap" class="field" hidden>
+            <span id="cmd-modal-extra-label">Extra args</span>
+            <input type="text" id="cmd-modal-extra" />
+          </label>
+          <div class="cmd-modal-actions">
+            <button type="button" id="cmd-modal-start">Start</button>
+            <button type="button" id="cmd-modal-stop" class="secondary" hidden>Stop</button>
+            <span id="cmd-modal-meta" class="hint" aria-live="polite"></span>
+          </div>
+          <pre id="cmd-modal-output" class="cmd-modal-output" aria-live="polite"></pre>
+        </div>
+      </div>
+    </div>
 
     <!-- Bulk URLs dialog lives at <body> level so it can be opened from
          any view (Run, Social posts, etc.) without being suppressed by a
@@ -1156,8 +1483,12 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
       </form>
     </dialog>
 
+    <!-- Shared utilities. Loaded before everything so window.scout is ready. -->
+    <script src="lib/utils.js"></script>
     <script src="app.js" type="module"></script>
     <script src="toasts.js" defer></script>
+    <!-- Auto-trap focus + Escape close for any dialog/modal. -->
+    <script src="lib/modal-a11y.js" defer></script>
     <script src="runs-queue.js" defer></script>
     <script src="run-enhancer.js" defer></script>
     <script src="bulk-urls.js" defer></script>

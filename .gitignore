@@ -5,6 +5,14 @@
 .env.*
 !.env.example
 *.env.local
+
+# ---------------------------------------------------------------------------
+# Per-user local state, configs, profiles — NEVER commit
+# All user-personal artifacts live under .local/ at the repo root so the
+# rest of the tree stays a clean general-purpose template.
+# ---------------------------------------------------------------------------
+/.local/
+
 *.pem
 *.key
 *.pfx
@@ -123,7 +131,6 @@ social-posts/images/brand/azure-cosmos-db/
 # lists, internal handles, or product-specific allowlists. Keep these on
 # disk for personal use but never commit. The shareable equivalents live
 # under tools/web-ui/ and tools/browser-scan/.
-tools/one-shot-scan/
 tools/mindshare-feed/
 
 # Stray repo-root log captures (e.g. `node server.js > o.log`). Anything

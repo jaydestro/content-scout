@@ -24,8 +24,6 @@ Before any operation, read config files from `.github/prompts/scout-config-*.pro
 | scout scan | `.github/prompts/scout-scan.prompt.md` | Search sources, filter, generate report |
 | scout post | `.github/prompts/scout-post.prompt.md` | Generate social posts from URL or report item |
 | scout calendar | `.github/prompts/scout-calendar.prompt.md` | Weekly posting schedule |
-| scout gaps | `.github/prompts/scout-gaps.prompt.md` | Topics with no recent coverage |
-| scout trends | `.github/prompts/scout-trends.prompt.md` | Month-over-month comparison |
 
 Read the corresponding prompt file for each command's detailed flow. Ignore VS Code frontmatter and `${{input:...}}` placeholders — ask users for inputs conversationally.
 
@@ -34,7 +32,6 @@ Read the corresponding prompt file for each command's detailed flow. Ignore VS C
 - Reports: `reports/{YYYY-MM}-{slug}-content.md`
 - Social posts: `social-posts/{YYYY-MM}-{slug}-social-posts.md`
 - Calendars: `social-posts/{YYYY-MM}-{slug}-posting-calendar.md`
-- Trends: `reports/{YYYY-MM}-{slug}-trends.md`
 - Dedup: `reports/.seen-links.json`
 
 ## Key Rules

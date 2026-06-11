@@ -14,8 +14,8 @@
 // Notes on choices:
 //   * "hiring" alone is broad enough to catch ~95% of recruiter posts on
 //     LinkedIn; the false-positive rate against actual technical content
-//     is acceptable because legitimate Cosmos DB content rarely includes
-//     the literal word "hiring".
+//     is acceptable because legitimate product / technology content
+//     rarely includes the literal word "hiring".
 //   * Email contact tokens like `hr@`, `careers@`, `recruiting@`,
 //     `talent@` are near-perfect classifiers for job ads.
 //   * Indian-market and US-contracting jargon (`c2c`, `c2h`, `w2 only`,
@@ -98,10 +98,11 @@ const HIRING_PHRASES = [
   'looking to take on',
   'critical role in a high-impact',
   'are you an experienced',
-  'in busca de uma referência',
+  'em busca de uma referência',
   'oportunidade:',
   'oportunidade de',
   'estamos em busca',
+  'estamos contratando',
   'vaga:',
   'vaga de',
   'vagas de',
@@ -109,13 +110,102 @@ const HIRING_PHRASES = [
   'búsqueda laboral',
   'busco trabajo',
   'busco empleo',
+  'nous recrutons',
+  'nous cherchons',
+  // US contracting / vendor-list recruiter posts — Title/Duration/
+  // Location/Rate body format ("***W2,1099 requirement*** Title: …
+  // Duration: 1 year Location: Boston MA").
+  'w2/1099',
+  'w-2/1099',
+  'w2,1099',
+  'w-2,1099',
+  '1099 requirement',
+  'w2 requirement',
+  'w2/c2c',
+  'w2/c2h',
+  'corp to corp',
+  'corp-to-corp',
+  'no h1b',
+  'h1b transfer',
+  'h-1b transfer',
+  'visa status:',
+  'visa sponsorship',
+  'mandatory skills',
+  'key responsibilities',
+  'required qualifications',
+  'need local profiles',
+  'local profiles only',
+  'months contract',
+  'likely extension',
+  'thanks and regards',
+  'required skills:',
+  'must-have skills',
+  'must have skills',
+  'must have skill',
+  'pay rate:',
+  'bill rate:',
+  'hourly rate:',
+  'job description:',
+  'job title:',
+  'job summary:',
+  'role:',
+  'job role:',
+  'looking for consultants',
+  'looking for candidates',
+  'consultant required',
+  'consultant requirement',
+  'send resumes to',
+  'send resumes at',
+  'send cvs to',
+  'kindly share resumes',
+  'kindly share profiles',
+  'please share profiles',
+  'please share matching',
+  'shortlist',
+  'shortlisting',
+  'interested please share',
+  'interested candidates can',
+  'walk in interview',
+  'walk-in interview',
+  'remote ok',
+  'remote contract',
+];
+
+// Recruiter-form-style body markers. Three or more of these in a single
+// post almost always means a vendor-list / contractor job spec sheet
+// (e.g. "Title: ... Duration: 1 year Location: Boston ...").
+const HIRING_FIELD_MARKERS = [
+  'title:',
+  'role:',
+  'position:',
+  'location:',
+  'duration:',
+  'rate:',
+  'pay rate:',
+  'bill rate:',
+  'client:',
+  'work mode:',
+  'work location:',
+  'experience:',
+  'skills:',
+  'mandatory skills',
+  'visa:',
+  'visa status',
+  'job description',
+  'must have',
+  'responsibilities:',
+  'key responsibilities',
+  'required qualifications',
+  'nice to have',
+  'tax term',
+  'work authorization',
 ];
 
 // Subreddits whose entire purpose is recruiting / job-search.
 // r/cscareerquestions has a narrow exception in the agent doc (technical
-// retros where Cosmos DB is non-trivially central) — the safer default in
-// code is to drop, then let the agent's manual review re-add specific
-// items via /scout-reddit-import if needed.
+// retros where the subject technology is non-trivially central) — the
+// safer default in code is to drop, then let the agent's manual review
+// re-add specific items via /scout-reddit-import if needed.
 const HIRING_SUBREDDITS = new Set([
   'r/indiajobs',
   'r/forhire',
@@ -159,6 +249,17 @@ export function isHiringContent(item) {
   for (const phrase of HIRING_PHRASES) {
     if (haystack.includes(phrase)) return true;
   }
+  // Structural fallback: a body that includes 3+ recruiter-form
+  // markers (Title:, Duration:, Location:, Rate:, etc.) is almost
+  // always a vendor-list contractor job spec, even if none of the
+  // explicit phrases trigger.
+  let markerHits = 0;
+  for (const m of HIRING_FIELD_MARKERS) {
+    if (haystack.includes(m)) {
+      markerHits++;
+      if (markerHits >= 3) return true;
+    }
+  }
   return false;
 }
 
@@ -178,3 +279,42 @@ export function filterHiring(items) {
   }
   return { kept, dropped };
 }
+
+// Role buckets for the aggregate "Hiring signal" / role-demand breakdown the
+// report surfaces from dropped hiring posts. These are AGGREGATE counts only —
+// no individual job post is ever surfaced (the No Hiring Content ban still
+// applies). Categories intentionally OVERLAP: most listings span several
+// roles, so a single post can increment multiple buckets and the per-role
+// counts sum to more than the number of distinct listings. Patterns are
+// matched against the NFKD-lowercased title + body.
+const ROLE_CATEGORIES = [
+  { role: 'AI / ML / GenAI Engineer', re: /\bai\b|\bml\b|machine learning|genai|\bllm\b|agentic|\brag\b|\bgpt\b/ },
+  { role: 'DevOps / Platform Engineer', re: /devops|platform engineer|\bsre\b|terraform/ },
+  { role: '.NET / C# Developer', re: /\.net|c#|asp\.net|dotnet/ },
+  { role: 'Data Engineer / Architect', re: /data engineer|data architect|databricks|fabric|\betl\b|data platform/ },
+  { role: 'Backend / Software Engineer', re: /backend|back[\s-]?end|software engineer|\bsde\b/ },
+  { role: 'Full Stack Developer', re: /full[\s-]?stack/ },
+  { role: 'Cloud / Azure Architect', re: /cloud architect|azure architect|solution architect|enterprise architect/ },
+  { role: 'Java Developer', re: /\bjava\b|spring boot/ },
+];
+
+/**
+ * Returns the list of role buckets a (hiring) item matches. Categories
+ * overlap, so the return value may contain multiple roles for one item.
+ *
+ * @param {{title?: string, body?: string}} item
+ * @returns {string[]} matched role labels (possibly empty)
+ */
+export function categorizeRoles(item) {
+  if (!item) return [];
+  const haystack = normalize(`${item.title || ''}\n${item.body || ''}`);
+  if (!haystack.trim()) return [];
+  const roles = [];
+  for (const { role, re } of ROLE_CATEGORIES) {
+    if (re.test(haystack)) roles.push(role);
+  }
+  return roles;
+}
+
+/** Canonical role-bucket order, exported so callers render a stable list. */
+export const ROLE_ORDER = ROLE_CATEGORIES.map((c) => c.role);

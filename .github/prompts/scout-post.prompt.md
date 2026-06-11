@@ -1,11 +1,13 @@
 ---
 description: Generate social media posts for LinkedIn and X from a URL or report item
-mode: content-scout
+mode: agent
 ---
 
 # scout-post
 
 Generate social media posts for LinkedIn and X. Follow all Social Post Standards from the product config. Produce at least 3 LinkedIn options and 3 X options, each with a different framing angle.
+
+> **Sub-flow — accessibility alt text.** If the user asks for alt text for a post image (or invokes `/scout-post --alt <image>`), follow `.github/prompts/scout-alt.prompt.md` end-to-end instead of the post-generation flow below. Output goes to `social-posts/{YYYY-MM-DD-HHmm}-{slug}-alt-{image-slug}.md`.
 
 ${{input:URL (optional) -- the CTA link for the posts. Leave blank if the link isn't live yet and you're drafting from raw copy}}
 
@@ -39,6 +41,39 @@ The user must provide **at least one** of: a URL, a report item number, or sourc
 
 In modes 2 and 3 the post content rules are unchanged — same tone, length, hashtag, mention-author, and platform tuners apply. The only differences are: no URL fetch, the warning callout at the top of the file, and (mode 3 only) the `{LINK}` placeholder.
 
+## Refine mode (edit an existing post file inline)
+
+### Picker entry point — `/scout-post update` (and synonyms)
+
+When the user invokes any of these without naming a specific file:
+
+- `/scout-post update` (or `/scout-post refine`, `/scout-post tweak`, `/scout-post adjust`)
+- A bare chat message like "update the last posts", "refine those posts", "tweak my last social posts", "adjust the previous post file"
+
+…**do not start editing yet.** First list the candidate files so the user can confirm which one to refine:
+
+1. Find the most recent `social-posts/*.md` files (exclude `*-posting-calendar.md` and `*-alt-*.md`). Sort by mtime, descending. Show the top 5.
+2. Render each as a numbered, clickable workspace-relative link with the slug, kind (solo / bulk / draft), and a relative timestamp (e.g., "2h ago", "yesterday").
+3. If the currently open editor file matches one of those, mark it with "(open)" and recommend it as the default.
+4. Ask one question: "Which file do you want to refine? Reply with a number, paste the path, or say 'new' to create a fresh one. Add your refinement notes on the same line or the next one."
+5. Once the user picks, proceed with the refine flow below using `[refine: social-posts/<name>]`.
+
+Skip the picker (go straight to refine) only when the user's message already names a specific `social-posts/*.md` file or already includes `[refine: ...]`.
+
+### Refine flow
+
+When the input contains `[refine: <relative-path>]` (e.g., `[refine: social-posts/2026-05-27-1430-azure-documentdb-solo-...md]`) **or** the user's chat message names an existing `social-posts/*.md` file and asks to refine / tweak / adjust / update those posts:
+
+1. **Do not create a new file.** Read the named file, edit it in place, and preserve its existing structure (front matter, headers, variant ordering, file path, timestamp).
+2. Treat the user's accompanying free-form text as additional context layered on top of the original tuners + product config. Apply globally across every variant unless the user names a specific platform/option.
+3. If the user supplies new tuner values in the same input (any of the `[tone: ...]` / `[length: ...]` / `[platforms: ...]` / etc. tokens), let those override the originals. Tuners not respecified stay as-is.
+4. URL is optional in refine mode — keep the original URL/CTA unless the user explicitly supplies a replacement.
+5. Re-run the humanizer pass on every edited variant before saving (mandatory, same as initial generation).
+6. Skip thumbnail re-rendering unless the user explicitly asks for new thumbnails or changes the `[thumbnails: ...]` tuner.
+7. Confirm with a one-line diff summary and the file link. Do not restate full post bodies unless asked.
+
+If the file named in `[refine: ...]` does not exist, fall back to the normal create flow and warn once.
+
 ## Output File Naming
 
 - **Bulk (from a report, no specific URL)**: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-social-posts.md`
@@ -56,7 +91,7 @@ When multiple products are configured, always include the product `{slug}`. If o
 
 ## Tuner Contract
 
-The web UI and CLI may append a tuner block to the input in this exact form (all fields optional, in any order):
+The web UI and chat/headless runner may append a tuner block to the input in this exact form (all fields optional, in any order):
 
 ```
 [tone: conversational|technical|enthusiastic|professional|playful|matter-of-fact]
@@ -252,3 +287,24 @@ Reddit-specific rules:
 - If the poster is affiliated with the content (works on the product, knows the author personally), say so in the body or OP context comment. Disclosure is a Reddit norm and rule in many subs.
 - If `mention-authors: yes`, credit the creator in the body ("@author from <site> wrote this up…") — not in the title.
 - Never astroturf. Write as someone genuinely sharing, never as the product team unless the user has said they're the maintainer.
+
+## Humanizer pass (mandatory final step — do not skip)
+
+Before writing any post body to disk, run every variant (LinkedIn, X, Bluesky, Reddit title + body, OP context comments) through the **humanizer** skill at [`.claude/skills/humanizer/SKILL.md`](../../.claude/skills/humanizer/SKILL.md). The skill is vendored into this repo so it's always available; load it as part of the post-generation flow, not as an optional cleanup.
+
+What to do:
+
+1. After drafting all variants, do a single editing pass per variant against the patterns in the humanizer skill. Pay particular attention to the patterns that show up most often in social copy:
+   - Promotional / advertisement language ("boasts", "vibrant", "groundbreaking", "seamless", "powerful")
+   - AI-vocabulary words ("delve", "underscore", "unlock", "showcase", "leverage", "robust", "empower", "intricate")
+   - Significance inflation ("a pivotal moment", "reshaping the landscape", "a testament to")
+   - Negative parallelisms ("It's not just X — it's Y")
+   - Rule-of-three lists where two would do ("faster, simpler, and more reliable")
+   - Em-dash overuse (a single em-dash per post is plenty; replace the rest with commas or periods)
+   - Sycophantic / chatbot artifacts ("Excited to share", "Thrilled to announce", "Big news…")
+   - Filler openings ("In today's fast-paced world", "Let's dive into…")
+2. After the cleanup pass, ask yourself the skill's audit prompt: **"What makes this so obviously AI-generated?"** Note 1–3 remaining tells per variant, then revise once more to remove them.
+3. Preserve the tuner contract: tone, length caps, emoji budget, hashtag policy, and the canonical brand name must survive the humanizer pass unchanged. The humanizer trims AI tells, it does not rewrite the angle.
+4. If `tone:` is `enthusiastic` or `playful`, the humanizer still applies — keep the energy but cut the AI tells. Enthusiasm should come from concrete specifics, not from filler intensifiers.
+
+The goal is copy that reads like a real practitioner posted it, not like an LLM autocompleted a marketing brief. If a variant still reads like a press release after two passes, drop it and write a different angle from scratch.

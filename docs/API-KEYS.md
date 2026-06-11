@@ -12,13 +12,13 @@ All API keys are optional. Without them, the agent skips those sources and scans
 |---------|------|-----------|
 | [YouTube Data API v3](#youtube-data-api-v3) | Free | YouTube scanning skipped — community videos won't appear in reports |
 | [Reddit OAuth2](#reddit) | Free (optional) | Layered no-auth scanner takes over: browser-scan Layer 0 (opt-in) → `old.reddit.com` RSS → HTML scrape → [Brave Search API](#brave-search-api) → manual import via `/scout-reddit-import`. Reddit is never silently dropped. |
-| [Brave Search API](#brave-search-api) | Free (2,000 queries/month) | Reddit Layer 3 / LinkedIn Layer 1 / X Layer 2 fall through — you keep browser-scan Layer 0 + RSS + cascade fallbacks. |
+| [Brave Search API](#brave-search-api) | Free AI plan: $5/mo auto-credits (~1,000 requests/mo) | Reddit Layer 3 / LinkedIn Layer 1 / X Layer 2 fall through — you keep browser-scan Layer 0 + RSS + cascade fallbacks. |
 | [Google PSE](#google-pse-legacy) | Legacy (closed to new GCP projects since early 2026) | No effect on new setups — use Brave Search instead. Pre-2026 PSE projects still work as a fallback. |
 | [Bluesky](#bluesky) | Free | Bluesky scanning skipped — mentions and hashtag posts won't be tracked |
 | [X/Twitter](#xtwitter) | $200/mo (Basic) or free tier (limited) | X Layer 1 (authenticated API) skipped. Layer 0 (browser-scan) still works for free if you've signed in to X via [tools/browser-scan/](../tools/browser-scan); Brave Search Layer 2 still works if `BRAVE_SEARCH_API_KEY` is set. |
 | [GitHub Token](#github-token) | Free | GitHub still works, but unauthenticated requests are capped at 60/hr (vs 5000/hr authenticated) |
 
-> **Best free coverage for X / LinkedIn / Reddit:** sign in once via [tools/browser-scan/](../tools/browser-scan) — attaches to your real browser (Edge / Chrome / Brave / Vivaldi / Arc / Opera — auto-detects your OS default) over CDP, no Playwright fingerprint, works with passkeys + 2FA. Either click **🌐 Browser scan (Layer 0)** in the web UI's Run view, or use the CLI in `tools/browser-scan/README.md`. Each `scout scan` then auto-ingests the resulting JSON sidecar as **Layer 0**.
+> **Best free coverage for X / LinkedIn / Reddit:** sign in once via [tools/browser-scan/](../tools/browser-scan) — attaches to your real browser (Edge / Chrome / Brave / Vivaldi / Arc / Opera — auto-detects your OS default) over CDP, no Playwright fingerprint, works with passkeys + 2FA. Either click **🌐 Browser scan (Layer 0)** in the web UI's Run view, or run the browser-scan helper commands in `tools/browser-scan/README.md`. Each `scout scan` then auto-ingests the resulting JSON sidecar as **Layer 0**.
 
 > **Vision provider keys (`VISION_PROVIDER`, `OLLAMA_HOST`, `OLLAMA_VISION_MODEL`, `OPENAI_VISION_MODEL`, `CUSTOM_VISION_*`)** are *not* edited from the API Keys page — they have a dedicated **Vision** card on the Configs page (or run `/scout-vision`). They still live in `.env`, but the API Keys editor filters them out so the two surfaces never overwrite each other.
 
@@ -78,7 +78,7 @@ When you select Reddit during onboarding, the agent offers to collect a client I
 
 ## Brave Search API
 
-**Cost:** Free — 2,000 queries/month, 1 query/second, no credit card required on the **Free AI** / **Data for Search** plan.
+**Cost:** Free on the **Free AI** plan — $5/month in credits auto-applied = **~1,000 requests/month** at $5.00 per 1,000 requests, **50 requests/second** capacity, no credit card required. Beyond the monthly credit it switches to pay-as-you-go at the same $5/1,000 rate. (The legacy **Data for Search** free tier of 2,000 queries/month at 1 query/second was retired in 2026.)
 
 **What it enables:** A single Brave Search API key unlocks free public-web discovery for **three login-walled or paid-only platforms**:
 
@@ -96,7 +96,7 @@ If you already have a working PSE key from a pre-2026 GCP project, you can keep 
 
 ### Setup
 
-1. Sign up at https://brave.com/search/api/ — click **Get Started** and pick the **Free AI** plan (2,000 queries/month at $0). No card required for the free tier.
+1. Sign up at https://brave.com/search/api/ — click **Get Started** and pick the **Free AI** plan ($5/month in auto-applied credits = ~1,000 requests/month at $0 out-of-pocket). No card required for the free credits.
 2. Create an API key at https://api.search.brave.com/app/keys — click **Add API Key** and pick the **Free** subscription. Copy the token.
 3. Add to `.env`:
    ```
@@ -106,9 +106,9 @@ If you already have a working PSE key from a pre-2026 GCP project, you can keep 
 
 ### Notes
 
-- Free tier rate limit is **1 query per second**. Content Scout enforces a 1.1s sleep between Brave calls to stay under it.
-- Free tier monthly limit is **2,000 queries**. A typical daily scan with 3–5 search terms across Reddit + LinkedIn + X uses ~30–60 queries — plenty of headroom.
-- If you exceed the monthly quota, Brave returns 429; the affected layer is skipped and the run summary notes it. Other layers continue.
+- Free AI plan capacity is **50 requests/second**. Content Scout still throttles to ~1.1s between Brave calls to keep behavior predictable across plans.
+- Free AI plan monthly headroom is **~1,000 requests** ($5 credit ÷ $5 per 1,000). A typical daily scan with 3–5 search terms across Reddit + LinkedIn + X uses ~30–60 requests — comfortable headroom for daily scanning.
+- If you exhaust the monthly credits, Brave bills pay-as-you-go at the same $5/1,000 rate (if a payment method is on file) or returns 429 / 402 (if not). The affected layer is skipped and the run summary notes it. Other layers continue.
 - Brave indexes the open web independently of Google — you'll get different (sometimes better) coverage of `linkedin.com/pulse` and Reddit for niche subreddits.
 
 ---
@@ -261,7 +261,7 @@ These all work out of the box:
 | Source | How to Get Credentials | Cost |
 |--------|----------------------|------|
 | Reddit | **Optional.** Register a "script" app at [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps/) (or `old.reddit.com/prefs/apps`) and set `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` / `REDDIT_USER_AGENT` in `.env` for higher limits. Without creds, Content Scout uses the layered no-auth scanner (RSS → HTML → PSE → manual). | Free |
-| Brave Search | **Recommended.** Free 2,000 queries/month. Enables free Reddit Layer 3 + LinkedIn Layer 1 + X/Twitter Layer 2. Set `BRAVE_SEARCH_API_KEY` in `.env`. See [#brave-search-api](#brave-search-api). | Free (2,000/month) |
+| Brave Search | **Recommended.** Free AI plan: $5/mo credits = ~1,000 requests/mo. Enables free Reddit Layer 3 + LinkedIn Layer 1 + X/Twitter Layer 2. Set `BRAVE_SEARCH_API_KEY` in `.env`. See [#brave-search-api](#brave-search-api). | Free (~1,000/mo) |
 | Google PSE | **Legacy / pre-2026 GCP projects only.** Closed to new customers since early 2026. Use Brave Search above for new setups. See [#google-pse-legacy](#google-pse-legacy). | Free (100/day) until Jan 1, 2027 |
 | YouTube | Get an API key at [console.cloud.google.com](https://console.cloud.google.com/apis/credentials). Set `YOUTUBE_API_KEY` in `.env`. | Free |
 | Bluesky | Create an app password at [bsky.app/settings/app-passwords](https://bsky.app/settings/app-passwords). Set `BLUESKY_HANDLE` and `BLUESKY_APP_PASSWORD` in `.env`. | Free |

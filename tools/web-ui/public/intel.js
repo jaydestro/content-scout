@@ -4,10 +4,15 @@
  * Backed by /api/conversations, /api/authors, /api/source-health, /api/sentiment-summary.
  */
 (function () {
+  // Emoji convention matches the agent spec (see
+  // .github/agents/content-scout.agent.md, "Sentiment Classification"):
+  // 🟢 positive · ⚪ neutral · 🔴 negative · 🟠 mixed (rare; requires
+  // explicit trade-off). Keep this aligned with the agent spec and
+  // dashboard sentiment pills.
   const SENTIMENT_DOT = {
     positive: '🟢',
     neutral: '⚪',
-    mixed: '🟡',
+    mixed: '🟠',
     negative: '🔴',
     unknown: '·',
   };
@@ -17,6 +22,53 @@
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
     }[c]));
 
+  // Render a summary string as HTML: escape everything, convert
+  // [text](url) markdown links and bare http(s) URLs into anchors that
+  // open in a new tab, and preserve newlines. Trailing punctuation
+  // (.,;:!?) is stripped from autolinked URLs so prose like "see foo.com."
+  // doesn't capture the period. Only http(s) URLs are linked.
+  const _SAFE_URL = /^https?:\/\//i;
+  function renderSummaryHtml(text) {
+    const raw = String(text == null ? '' : text);
+    if (!raw) return '';
+    // Tokenize so each link's url + text are escaped independently and
+    // never re-scanned for autolinks.
+    const parts = [];
+    let i = 0;
+    const mdLink = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+    let m;
+    while ((m = mdLink.exec(raw)) !== null) {
+      if (m.index > i) parts.push({ t: 'text', v: raw.slice(i, m.index) });
+      parts.push({ t: 'link', href: m[2], label: m[1] });
+      i = m.index + m[0].length;
+    }
+    if (i < raw.length) parts.push({ t: 'text', v: raw.slice(i) });
+    const out = [];
+    for (const p of parts) {
+      if (p.t === 'link') {
+        if (_SAFE_URL.test(p.href)) {
+          out.push(`<a href="${esc(p.href)}" target="_blank" rel="noopener">${esc(p.label)}</a>`);
+        } else {
+          out.push(esc(`[${p.label}](${p.href})`));
+        }
+        continue;
+      }
+      // Autolink bare URLs in plain-text segments.
+      const segments = p.v.split(/(https?:\/\/[^\s<>"')]+)/g);
+      for (const seg of segments) {
+        if (_SAFE_URL.test(seg)) {
+          const trail = seg.match(/[.,;:!?)]+$/);
+          const url = trail ? seg.slice(0, -trail[0].length) : seg;
+          out.push(`<a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a>`);
+          if (trail) out.push(esc(trail[0]));
+        } else {
+          out.push(esc(seg));
+        }
+      }
+    }
+    return out.join('');
+  }
+
   // ============================================================
   // Conversations view
   // ============================================================
@@ -25,9 +77,119 @@
   // Keys of conversations the user has checkbox-selected. Cleared on each
   // re-render so it tracks the currently visible set.
   let _selectedKeys = new Set();
+  // Active tab: 'all' | 'conversations' | 'mentions'. The split is based
+  // on _convKind() — section name + engagement signals + platform.
+  let _activeTab = 'all';
+
+  // Classify a conversation row as 'conversation' (threaded discussion the
+  // team might want to reply to) or 'mention' (drive-by post just naming
+  // the product). Heuristic:
+  //   - section "conversations" or "tracked_conv" → conversation
+  //   - reddit/hn/stackoverflow/discord platforms → conversation (forums)
+  //   - engagement.replies > 0 → conversation (someone is talking)
+  //   - everything else under "social"/"mentions" → mention
+  function _convKind(c) {
+    const sec = String(c.section || '').toLowerCase();
+    if (sec === 'conversations' || sec === 'tracked_conv' || sec === 'mentions') {
+      return sec === 'mentions' ? 'mention' : 'conversation';
+    }
+    const plat = String(c.platform || '').toLowerCase();
+    if (/^(reddit|hacker.?news|hn|stack.?overflow|stackexchange|discord|slack|github|dev\.to)/.test(plat)) {
+      return 'conversation';
+    }
+    // engagement string format: "replies:1 retweets:0 likes:0"
+    const eng = String(c.engagement || '');
+    const m = eng.match(/replies:(\d+)/i) || eng.match(/comments:(\d+)/i);
+    if (m && parseInt(m[1], 10) > 0) return 'conversation';
+    return 'mention';
+  }
   // Currently chosen `include` mode for /api/conversations.
   function _currentInclude() {
     return document.getElementById('conv-show')?.value || 'open';
+  }
+
+  // Switch to the Conversations view and scroll/highlight the row that
+  // matches `key`. Called from Social pulse links so users can read the post
+  // inline instead of being kicked out to the external site.
+  //
+  // The Social pulse card surfaces official/product posts (it fetches with
+  // includeProduct=1), job-ish posts, muted/closed rows, and items up to 30
+  // days old. The Conversations view, by contrast, defaults to community-only,
+  // hides job posts, hides closed/muted, splits anything older than 14 days
+  // into collapsed "by week" <details>, and remembers the last
+  // tab/sentiment/platform/timeframe/search the user set. Any one of those
+  // would filter out — or visually hide — the exact row we're jumping to,
+  // which is why "open in Conversations" used to land on nothing. So we
+  // neutralise every hide filter, refetch, then expand the row's week bucket
+  // before flashing it.
+  async function _navigateToConversation(key) {
+    if (!key) return;
+    const navBtn = document.querySelector('nav button[data-view="conversations"]');
+    if (navBtn) navBtn.click();
+
+    const findRow = () => document.querySelector(`#conv-list .conv-row[data-key="${CSS.escape(key)}"]`);
+
+    const reveal = (row) => {
+      if (!row) return;
+      // scrollIntoView/focus can't reach a child of a closed <details>, so
+      // open the older-week bucket first (and remember it so a later
+      // re-render keeps it open).
+      const wk = row.closest('details.conv-week');
+      if (wk && !wk.open) {
+        wk.open = true;
+        if (wk.dataset.week) _expandedWeeks.add(wk.dataset.week);
+      }
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      row.classList.add('conv-row-flash');
+      setTimeout(() => row.classList.remove('conv-row-flash'), 2200);
+      try { row.focus({ preventScroll: true }); } catch {}
+    };
+
+    const setControl = (id, value) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (el.type === 'checkbox') el.checked = !!value;
+      else el.value = value;
+      // Persist so wireConversationsUI's localStorage restore doesn't revert
+      // the value on a later visit.
+      try {
+        localStorage.setItem('cs.conv.' + id, el.type === 'checkbox' ? (value ? '1' : '0') : String(value));
+      } catch {}
+    };
+
+    // Reset the All / Conversations / Mentions tab so a row of the "other"
+    // kind isn't filtered out.
+    _activeTab = 'all';
+    try { localStorage.setItem('cs.conv.activeTab', 'all'); } catch {}
+    document.querySelectorAll('.conv-tab').forEach((b) => {
+      const on = b.dataset.convTab === 'all';
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+
+    // Clear every client-side filter, then widen the server fetch.
+    setControl('conv-q', '');
+    setControl('conv-sentiment', '');
+    setControl('conv-platform', '');
+    setControl('conv-timeframe', '');
+    setControl('conv-jobs', '');             // include job posts
+    setControl('conv-needs-reply', false);
+    setControl('conv-team-mode', 'everyone'); // community + team/product
+    setControl('conv-show', 'all');           // open + closed + muted
+
+    // conv-show drives the server fetch (include=all also pulls muted +
+    // product). loadConversations reads the controls we just set and
+    // re-renders with the cleared client filters.
+    try { await loadConversations(); } catch {}
+
+    // loadConversations renders synchronously on resolve, but the initial
+    // view-mount load may still be settling — poll briefly so we reliably
+    // catch the row, then reveal it.
+    for (let i = 0; i < 40; i++) {
+      const row = findRow();
+      if (row) { reveal(row); return; }
+      await new Promise((r) => setTimeout(r, 80));
+    }
   }
 
   const REASON_LABELS = {
@@ -38,6 +200,7 @@
     'duplicate': 'Duplicate',
     'other': 'Other',
   };
+  const NO_TRIAGE_REASON = 'microsoft-employee';
 
   async function loadConversations() {
     const list = document.getElementById('conv-list');
@@ -50,9 +213,12 @@
       // "all" explicitly.
       const params = new URLSearchParams({ include });
       if (include === 'all') params.set('includeMuted', '1');
-      const data = await fetch('/api/conversations?' + params.toString()).then((r) => r.json());
+      // Always fetch team-member (product) rows too. The client-side
+      // team-mode filter decides whether to show, hide, or isolate them.
+      params.set('includeProduct', '1');
+      const data = await fetchJsonResilient('/api/conversations?' + params.toString());
       _allConvs = Array.isArray(data.conversations) ? data.conversations : [];
-      _platforms = new Set(_allConvs.map((c) => c.platform).filter(Boolean));
+      _platforms = new Set(_allConvs.map((c) => canonicalPlatform(c.platform)).filter(Boolean));
       _selectedKeys = new Set();
       const sel = document.getElementById('conv-platform');
       if (sel) {
@@ -66,9 +232,24 @@
         if (cur) sel.value = cur;
       }
       renderConversations();
+      // Keep the toolbar mute-count pill fresh without forcing the
+      // modal open.
+      _refreshMutedCountSilent();
     } catch (err) {
       list.innerHTML = `<p class="hint">Failed to load conversations: ${esc(err.message || err)}</p>`;
     }
+  }
+  async function _refreshMutedCountSilent() {
+    try {
+      const data = await fetch('/api/muted-accounts').then((r) => r.json());
+      const n = Array.isArray(data.items) ? data.items.length : 0;
+      const pill = document.getElementById('conv-muted-count-pill');
+      if (pill) {
+        pill.textContent = String(n);
+        pill.style.display = n ? '' : 'none';
+      }
+      _mutedItemsCache = Array.isArray(data.items) ? data.items : _mutedItemsCache;
+    } catch {}
   }
 
   // Default visible window: most recent 14 days. Anything older is bucketed
@@ -136,9 +317,42 @@
     'c2c', 'c2h', 'w2 only', 'usc only', 'gc only',
     'job opportunity', 'job opportunities', 'job opening', 'job openings', 'recruiter',
     'looking to take on', 'critical role in a high-impact', 'are you an experienced',
-    'oportunidade:', 'oportunidade de', 'estamos em busca', 'em busca de uma referência',
+    'em busca de uma referência',
+    'oportunidade:', 'oportunidade de', 'estamos em busca', 'estamos contratando',
     'vaga:', 'vaga de', 'vagas de',
     'búsqueda de', 'búsqueda laboral', 'busco trabajo', 'busco empleo',
+    'nous recrutons', 'nous cherchons',
+    // US contracting / vendor-list recruiter posts — Title/Duration/
+    // Location/Rate body format ("***W2,1099 requirement*** Title: …
+    // Duration: 1 year Location: Boston MA").
+    'w2/1099', 'w-2/1099', 'w2,1099', 'w-2,1099',
+    '1099 requirement', 'w2 requirement', 'w2/c2c', 'w2/c2h',
+    'corp to corp', 'corp-to-corp', 'no h1b', 'h1b transfer', 'h-1b transfer',
+    'visa status:', 'visa sponsorship',
+    'mandatory skills', 'key responsibilities', 'required qualifications',
+    'need local profiles', 'local profiles only', 'months contract', 'likely extension',
+    'thanks and regards', 'required skills:', 'must-have skills', 'must have skills', 'must have skill',
+    'pay rate:', 'bill rate:', 'hourly rate:',
+    'job description:', 'job title:', 'job summary:', 'job role:',
+    'looking for consultants', 'looking for candidates',
+    'consultant required', 'consultant requirement',
+    'send resumes to', 'send resumes at', 'send cvs to',
+    'kindly share resumes', 'kindly share profiles', 'please share profiles', 'please share matching',
+    'shortlist', 'shortlisting',
+    'interested please share', 'interested candidates can',
+    'walk in interview', 'walk-in interview',
+    'remote ok', 'remote contract',
+  ];
+  // Recruiter-form-style body markers. 3+ markers in one post is
+  // almost always a vendor-list contractor job spec sheet.
+  const _HIRING_FIELDS = [
+    'title:', 'role:', 'position:', 'location:', 'duration:',
+    'rate:', 'pay rate:', 'bill rate:', 'client:',
+    'work mode:', 'work location:',
+    'experience:', 'skills:', 'mandatory skills',
+    'visa:', 'visa status', 'job description', 'must have',
+    'responsibilities:', 'key responsibilities', 'required qualifications',
+    'nice to have', 'tax term', 'work authorization',
   ];
   const _HIRING_SUBS = [
     'r/forhire', 'r/hiring', 'r/jobs', 'r/jobsearch', 'r/indiajobs',
@@ -156,14 +370,83 @@
     for (const p of _HIRING_PHRASES) {
       if (hay.includes(p)) return true;
     }
+    // Structural fallback: 3+ recruiter-form markers in one body
+    // (Title: / Duration: / Location: / Rate: / Skills: …) means
+    // it's a vendor-list job spec sheet, even without an explicit
+    // phrase hit.
+    let n = 0;
+    for (const m of _HIRING_FIELDS) {
+      if (hay.includes(m)) {
+        n++;
+        if (n >= 3) return true;
+      }
+    }
     return false;
+  }
+
+  // ----- Social activity quality + freshness ----------------------
+  // Quality gate for the dashboard Community-signals card. Drops the noise
+  // that shouldn't count as community sentiment: recruiter/job posts (already
+  // hard-banned at scan time, but legacy persisted rows can still carry them)
+  // and empty shells with no readable summary or author. Conservative by
+  // design — when in doubt we keep the row so real chatter never silently
+  // disappears from the card.
+  function _passesSocialQuality(c) {
+    if (!c) return false;
+    if (_looksLikeJob(c)) return false;
+    const text = String(c.summary || '')
+      .replace(/\[([^\]]+)\]\(https?:\/\/[^\s)]+\)/g, '$1')
+      .trim();
+    const author = String(c.author || '').trim();
+    // Neither prose nor an author → empty shell (usually a parse miss); it
+    // adds nothing but a blank row.
+    if (!text && !author) return false;
+    // A "summary" that is nothing but a bare URL carries no signal on its own.
+    if (!author && /^https?:\/\/\S+$/i.test(text)) return false;
+    return true;
+  }
+
+  // Parse the leading YYYY-MM-DD-HHmm stamp out of a report filename/stem so
+  // the card can show how fresh the underlying scan is.
+  function _reportStampDate(report) {
+    const m = String(report || '').match(/(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})/);
+    if (!m) return null;
+    const dt = new Date(
+      Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5])
+    );
+    return Number.isFinite(dt.getTime()) ? dt : null;
+  }
+
+  // Compact relative-age label + freshness tier for a Date. Tiers drive the
+  // badge color: fresh (<24h), recent (<3d), aging (<7d), stale (≥7d).
+  function _freshnessFor(dt) {
+    if (!dt) return { rel: '', tier: 'unknown', label: 'unknown age' };
+    const ms = Date.now() - dt.getTime();
+    if (ms < 0) return { rel: 'just now', tier: 'fresh', label: 'just now' };
+    const mins = Math.round(ms / 60000);
+    const hrs = Math.round(ms / 3600000);
+    const days = Math.round(ms / 86400000);
+    let rel;
+    if (mins < 1) rel = 'just now';
+    else if (mins < 60) rel = `${mins}m ago`;
+    else if (hrs < 24) rel = `${hrs}h ago`;
+    else rel = `${days}d ago`;
+    let tier;
+    if (ms < 24 * 3600000) tier = 'fresh';
+    else if (ms < 3 * 86400000) tier = 'recent';
+    else if (ms < 7 * 86400000) tier = 'aging';
+    else tier = 'stale';
+    return { rel, tier, label: rel };
   }
 
   function _convRowHtml(c) {
     const dot = SENTIMENT_DOT[c.sentiment] || '·';
+    const kind = _convKind(c);
+    const platLabel = c.platform || 'source';
     const link = c.url
-      ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">Open ↗</a>`
+      ? `<a class="conv-open-link" href="${esc(c.url)}" target="_blank" rel="noopener" title="Open original ${esc(platLabel)} post in a new tab">View on ${esc(platLabel)} ↗</a>`
       : '';
+    const summaryHtml = renderSummaryHtml(c.summary || '');
     const replyBtn =
       c.url && (c.sentiment === 'negative' || c.sentiment === 'mixed') && !c.isClosed
         ? `<button type="button" class="conv-reply-btn" data-url="${esc(
@@ -190,27 +473,57 @@
       actionBtn = `<button type="button" class="conv-close-btn" data-key="${esc(key)}">Close…</button>`;
     }
     const author = c.author || '';
+    const noTriageBanner = c.isNoTriage
+      ? `<div class="conv-closed-banner conv-no-triage-banner">No triage: <strong>verified Microsoft / owned account</strong>${
+          c.mutedInfo?.note ? ` — ${esc(c.mutedInfo.note)}` : ''
+        }</div>`
+      : '';
     const mutedBanner = c.isMuted
-      ? `<div class="conv-closed-banner">Muted: <strong>@${esc(_cleanHandle(author))}</strong></div>`
+      ? c.isNoTriage
+        ? ''
+        : `<div class="conv-closed-banner">Muted: <strong>@${esc(_cleanHandle(author))}</strong></div>`
+      : '';
+    const noTriageBtn = author && !c.isNoTriage
+      ? `<button type="button" class="conv-no-triage-btn" data-author="${esc(author)}" data-platform="${esc(c.platform || '')}" title="Hide this verified Microsoft employee or owned account from the triage inbox">No triage</button>`
       : '';
     const muteBtn = author && !c.isMuted
       ? `<button type="button" class="conv-mute-btn" data-author="${esc(author)}" data-platform="${esc(c.platform || '')}" title="Hide every conversation from this account">Mute @…</button>`
       : c.isMuted
         ? `<button type="button" class="conv-unmute-btn" data-author="${esc(author)}" data-platform="${esc(c.platform || '')}">Unmute</button>`
         : '';
-    return `<div class="conv-row sent-${esc(c.sentiment)}${closedClass}${c.isMuted ? ' conv-muted' : ''}" data-key="${esc(key)}">
+    const recheckBtn = !c.isClosed && (c.summary || '').trim()
+      ? `<button type="button" class="conv-recheck-btn" data-key="${esc(key)}" title="Ask the local agent LLM to re-classify this row's sentiment">🤖 Re-check sentiment</button>
+         <button type="button" class="conv-recheck-note-toggle" data-key="${esc(key)}" title="Add a short note the LLM should consider (e.g. 'author works for a competitor', 'this is satire')" aria-expanded="false">📝 Add note</button>`
+      : '';
+    const selectedClass = key && _selectedKeys.has(key) ? ' is-selected' : '';
+    const rowAttrs = key ? ` data-key="${esc(key)}" tabindex="0" role="button" aria-pressed="${_selectedKeys.has(key) ? 'true' : 'false'}"` : '';
+    return `<div class="conv-row sent-${esc(c.sentiment)}${closedClass}${c.isMuted ? ' conv-muted' : ''}${selectedClass}"${rowAttrs}>
       <div class="conv-row-head">
         ${checkbox}
         <span class="conv-dot" title="${esc(c.sentiment)}">${dot}</span>
         <strong>${esc(c.author || '(unknown)')}</strong>
+        ${c.community === 'product' ? '<span class="conv-team-badge" title="Member of the product team (from scout-config team-members list)">👥 Team</span>' : ''}
         <span class="conv-platform">${esc(c.platform || '')}</span>
         <span class="conv-date">${esc(c.date || '')}</span>
         <span class="conv-spacer"></span>
         ${link}
       </div>
-      <div class="conv-summary">${esc(c.summary || '')}</div>
-      ${closedBanner}${mutedBanner}
-      <div class="conv-actions">${replyBtn}${actionBtn}${muteBtn}</div>
+      <div class="conv-summary">${summaryHtml}</div>
+      ${closedBanner}${noTriageBanner}${mutedBanner}
+      <div class="conv-actions">${replyBtn}${actionBtn}${noTriageBtn}${muteBtn}${recheckBtn}</div>
+      <div class="conv-recheck-note" data-key="${esc(key)}" hidden>
+        <label class="conv-recheck-note-label" for="conv-recheck-note-input-${esc(key)}">
+          Note to LLM <span class="hint">(optional, max 500 chars — treated as a hint, not ground truth)</span>
+        </label>
+        <textarea
+          id="conv-recheck-note-input-${esc(key)}"
+          class="conv-recheck-note-input"
+          data-key="${esc(key)}"
+          rows="2"
+          maxlength="500"
+          placeholder="e.g. author is a known competitor advocate; this is satire; thread context says X"></textarea>
+      </div>
+      <div class="conv-sentiment-verdict" data-key="${esc(key)}" hidden></div>
     </div>`;
   }
 
@@ -223,8 +536,18 @@
     const timeframe = document.getElementById('conv-timeframe')?.value || '';
     const jobsMode = document.getElementById('conv-jobs')?.value ?? 'hide';
     const needsReply = document.getElementById('conv-needs-reply')?.checked || false;
+    const teamMode = document.getElementById('conv-team-mode')?.value || 'community';
 
     let convs = _allConvs.slice();
+    // Team-mode filter: 'community' hides team-member rows (default — same
+    // as legacy behavior), 'team' shows only team rows, 'everyone' shows
+    // both. A row is considered "team" when the server tagged it with
+    // community === 'product'.
+    if (teamMode === 'community') {
+      convs = convs.filter((c) => c.community !== 'product');
+    } else if (teamMode === 'team') {
+      convs = convs.filter((c) => c.community === 'product');
+    }
     let jobsHidden = 0;
     if (jobsMode === 'hide') {
       const before = convs.length;
@@ -234,7 +557,7 @@
       convs = convs.filter((c) => _looksLikeJob(c));
     }
     if (sentiment) convs = convs.filter((c) => c.sentiment === sentiment);
-    if (platform) convs = convs.filter((c) => c.platform === platform);
+    if (platform) convs = convs.filter((c) => canonicalPlatform(c.platform) === platform);
     if (timeframe) {
       const days = parseInt(timeframe, 10);
       if (Number.isFinite(days) && days > 0) {
@@ -253,6 +576,29 @@
           (c.author || '').toLowerCase().includes(q) ||
           (c.platform || '').toLowerCase().includes(q)
       );
+    }
+
+    // Tab counts reflect everything that passed the other filters, so the
+    // user sees how many items each tab would show without switching.
+    let countAll = 0, countConv = 0, countMen = 0;
+    for (const c of convs) {
+      countAll++;
+      if (_convKind(c) === 'conversation') countConv++;
+      else countMen++;
+    }
+    const setCount = (tab, n) => {
+      const el = document.querySelector(`.conv-tab-count[data-count-for="${tab}"]`);
+      if (el) el.textContent = String(n);
+    };
+    setCount('all', countAll);
+    setCount('conversations', countConv);
+    setCount('mentions', countMen);
+
+    // Apply the active-tab filter last so it doesn't skew the per-tab counts.
+    if (_activeTab === 'conversations') {
+      convs = convs.filter((c) => _convKind(c) === 'conversation');
+    } else if (_activeTab === 'mentions') {
+      convs = convs.filter((c) => _convKind(c) === 'mention');
     }
 
     // Split into recent (≤14d) vs older (bucketed by ISO week). When the
@@ -343,12 +689,41 @@
     });
 
     list.querySelectorAll('.conv-cb').forEach((cb) => {
-      cb.addEventListener('change', () => {
+      // Checkbox = additive multi-select. Don't let the click bubble up
+      // to the row handler (which would treat it as a single-select click).
+      cb.addEventListener('click', (ev) => ev.stopPropagation());
+      cb.addEventListener('change', (ev) => {
+        ev.stopPropagation();
         const key = cb.dataset.key;
         if (!key) return;
         if (cb.checked) _selectedKeys.add(key);
         else _selectedKeys.delete(key);
+        _syncRowSelected(key);
         _updateBulkBar();
+      });
+    });
+    // Click anywhere on the card = single-select (radio-style). Ignore
+    // clicks on interactive children (links, buttons, inputs, labels).
+    list.querySelectorAll('.conv-row').forEach((row) => {
+      const key = row.dataset.key;
+      if (!key) return;
+      const select = (ev) => {
+        if (ev.target.closest('a, button, input, label, textarea, select')) return;
+        if (window.getSelection && String(window.getSelection())) return; // user is text-selecting
+        const wasOnly = _selectedKeys.size === 1 && _selectedKeys.has(key);
+        const prev = [..._selectedKeys];
+        _selectedKeys = new Set(wasOnly ? [] : [key]);
+        prev.forEach((k) => _syncRowSelected(k));
+        _syncRowSelected(key);
+        _updateBulkBar();
+      };
+      row.addEventListener('click', select);
+      row.addEventListener('keydown', (ev) => {
+        if (ev.key === ' ' || ev.key === 'Enter') {
+          if (ev.target !== row) return;
+          ev.preventDefault();
+          select(ev);
+        }
       });
     });
     list.querySelectorAll('.conv-close-btn').forEach((btn) => {
@@ -360,10 +735,294 @@
     list.querySelectorAll('.conv-mute-btn').forEach((btn) => {
       btn.addEventListener('click', () => _promptMute(btn.dataset.author, btn.dataset.platform));
     });
+    list.querySelectorAll('.conv-no-triage-btn').forEach((btn) => {
+      btn.addEventListener('click', () => _markNoTriage(btn.dataset.author, btn.dataset.platform));
+    });
     list.querySelectorAll('.conv-unmute-btn').forEach((btn) => {
       btn.addEventListener('click', () => _unmute(btn.dataset.platform, btn.dataset.author));
     });
+    list.querySelectorAll('.conv-recheck-btn').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        _recheckSentiment(btn.dataset.key, btn);
+      });
+    });
+    list.querySelectorAll('.conv-recheck-note-toggle').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const key = btn.dataset.key;
+        const wrap = list.querySelector(`.conv-recheck-note[data-key="${CSS.escape(key)}"]`);
+        if (!wrap) return;
+        const willShow = wrap.hidden;
+        wrap.hidden = !willShow;
+        btn.setAttribute('aria-expanded', willShow ? 'true' : 'false');
+        if (willShow) {
+          const ta = wrap.querySelector('textarea');
+          if (ta) ta.focus();
+        }
+      });
+    });
     _updateBulkBar();
+    _updateRecheckBulkButton();
+  }
+
+  // ----- Sentiment re-check (local-LLM second opinion) -----------
+
+  // Extract the slug from a report filename like
+  // "2026-05-11-2236-azure-cosmos-db-content.md" -> "azure-cosmos-db".
+  function _slugFromReport(reportName) {
+    if (!reportName) return '';
+    const m = String(reportName).match(/^\d{4}-\d{2}-\d{2}-\d{4}-(.+?)-(?:content|mindshare|supplemental|trends)\.(?:md|json)$/);
+    return m ? m[1] : '';
+  }
+
+  let _sentimentStatusCache = null;
+  async function _refreshSentimentStatus() {
+    const btn = document.getElementById('conv-sentiment-status');
+    if (!btn) return;
+    const lbl = btn.querySelector('.conv-sentiment-status-label');
+    btn.dataset.state = 'checking';
+    if (lbl) lbl.textContent = 'checking…';
+    try {
+      const data = await fetch('/api/sentiment/status').then((r) => r.json());
+      _sentimentStatusCache = data;
+      const ok = !!data?.ok;
+      const provider = data?.provider || 'none';
+      const model = data?.model || '';
+      btn.dataset.state = ok ? 'ok' : 'fail';
+      btn.title = data?.message || (ok ? 'Reviewer ready' : 'Reviewer not configured');
+      if (lbl) {
+        if (provider === 'none') lbl.textContent = 'not configured';
+        else if (provider === 'agent' && ok) lbl.textContent = `agent${model ? ' · ' + model : ''}`;
+        else if (provider === 'agent') lbl.textContent = 'agent (not configured)';
+        else if (ok && data?.modelInstalled === false) lbl.textContent = `${provider} (pull ${model})`;
+        else if (ok) lbl.textContent = `${provider}${model ? ' · ' + model : ''}`;
+        else lbl.textContent = `${provider} unreachable`;
+      }
+    } catch (err) {
+      _sentimentStatusCache = { ok: false, message: err.message };
+      btn.dataset.state = 'fail';
+      btn.title = err.message || 'status check failed';
+      if (lbl) lbl.textContent = 'status error';
+    }
+  }
+
+  async function _recheckSentiment(key, btn) {
+    if (!key) return;
+    const c = _findConvByKey(key);
+    if (!c) return;
+    const verdictEl = document.querySelector(`.conv-sentiment-verdict[data-key="${CSS.escape(key)}"]`);
+    if (!verdictEl) return;
+    const origLabel = btn?.textContent;
+    if (btn) { btn.disabled = true; btn.textContent = '🤖 Reviewing…'; }
+    verdictEl.hidden = false;
+    verdictEl.classList.add('is-loading');
+    const provider = _sentimentStatusCache?.provider || 'agent';
+    const waitMsg = provider === 'agent'
+      ? 'Asking your agent LLM… (this can take 10–30s on first call)'
+      : 'Asking the LLM…';
+    verdictEl.innerHTML = `<span class="hint">${esc(waitMsg)}</span>`;
+    try {
+      const slug = _slugFromReport(c.report);
+      const noteEl = document.querySelector(`.conv-recheck-note-input[data-key="${CSS.escape(key)}"]`);
+      const userNote = noteEl ? String(noteEl.value || '').trim().slice(0, 500) : '';
+      const payload = {
+        summary: c.summary || '',
+        author: c.author || '',
+        platform: c.platform || '',
+        slug,
+        currentSentiment: c.sentiment || 'unknown',
+      };
+      if (userNote) payload.userNote = userNote;
+      const res = await fetch('/api/sentiment/review', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      verdictEl.classList.remove('is-loading');
+      if (!res.ok || data?.error) {
+        verdictEl.innerHTML = `<span class="conv-verdict-error">⚠️ ${esc(data?.error || data?.message || `HTTP ${res.status}`)}</span>`;
+        return;
+      }
+      _renderVerdict(verdictEl, c, data, { userNote });
+    } catch (err) {
+      verdictEl.classList.remove('is-loading');
+      verdictEl.innerHTML = `<span class="conv-verdict-error">⚠️ ${esc(err.message || err)}</span>`;
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = origLabel || '🤖 Re-check sentiment'; }
+    }
+  }
+
+  function _renderVerdict(el, conv, data, opts = {}) {
+    const llmSent = (data.sentiment || 'unknown').toLowerCase();
+    const llmDot = SENTIMENT_DOT[llmSent] || '·';
+    const curSent = (conv.sentiment || 'unknown').toLowerCase();
+    const curDot = SENTIMENT_DOT[curSent] || '·';
+    const agrees = data.agrees === true || llmSent === curSent;
+    const confLabel = data.confidence ? `confidence: ${esc(data.confidence)}` : '';
+    const model = data.model ? ` · ${esc(data.provider)}/${esc(data.model)}` : data.provider ? ` · ${esc(data.provider)}` : '';
+    const verdictClass = agrees ? 'agrees' : 'disagrees';
+    const headline = agrees
+      ? `<span class="conv-verdict-agrees">✓ LLM agrees</span>`
+      : `<span class="conv-verdict-disagrees">⚠ LLM disagrees</span>`;
+    const noteUsed = opts.userNote
+      ? `<div class="conv-verdict-note hint">📝 With note: ${esc(opts.userNote)}</div>`
+      : '';
+    el.innerHTML = `
+      <div class="conv-verdict-row conv-verdict-${verdictClass}">
+        ${headline}
+        <span class="conv-verdict-compare">
+          report says <span class="conv-dot sent-${esc(curSent)}" title="${esc(curSent)}">${curDot}</span> <span class="conv-verdict-sent">${esc(curSent)}</span>
+          → LLM says <span class="conv-dot sent-${esc(llmSent)}" title="${esc(llmSent)}">${llmDot}</span> <span class="conv-verdict-sent">${esc(llmSent)}</span>
+        </span>
+        <span class="conv-verdict-meta hint">${confLabel}${model}</span>
+      </div>
+      ${noteUsed}
+      ${data.rationale ? `<div class="conv-verdict-rationale">${esc(data.rationale)}</div>` : ''}
+    `;
+  }
+
+  // ----- Bulk re-check sentiment for likely-misclassified neutrals --------
+
+  // Walk the DOM after every render to figure out how many visible rows are
+  // currently flagged neutral with low/blank confidence. Those are the rows
+  // most likely to reflect old bulk-stamped sidecars. Update the toolbar
+  // button label and visibility.
+  function _updateRecheckBulkButton() {
+    const btn = document.getElementById('conv-recheck-bulk');
+    if (!btn) return;
+    const lbl = document.getElementById('conv-recheck-bulk-count');
+    const list = document.getElementById('conv-list');
+    if (!list) {
+      btn.hidden = true;
+      return;
+    }
+    const keys = _visibleLowConfidenceNeutralKeys();
+    if (!keys.length) {
+      btn.hidden = true;
+      return;
+    }
+    btn.hidden = false;
+    if (lbl) lbl.textContent = String(keys.length);
+    btn.dataset.count = String(keys.length);
+  }
+
+  function _visibleLowConfidenceNeutralKeys() {
+    const list = document.getElementById('conv-list');
+    if (!list) return [];
+    const keys = [];
+    list.querySelectorAll('.conv-row.sent-neutral').forEach((row) => {
+      if (row.classList.contains('conv-closed') || row.classList.contains('conv-muted')) return;
+      const key = row.dataset.key;
+      if (!key) return;
+      const c = _findConvByKey(key);
+      if (!c || !c.url || !(c.summary || '').trim()) return;
+      const confidence = String(c.sentimentConfidence || '').toLowerCase();
+      if (confidence && confidence !== 'low') return;
+      keys.push(key);
+    });
+    return keys;
+  }
+
+  async function _recheckBulkNeutrals(btn) {
+    const keys = _visibleLowConfidenceNeutralKeys();
+    if (!keys.length) return;
+    const max = 100;
+    const trimmed = keys.slice(0, max);
+    if (keys.length > max) {
+      if (!confirm(`${keys.length} visible low-confidence neutrals — only the first ${max} will be re-checked in this batch. Continue?`)) return;
+    } else if (trimmed.length > 25) {
+      if (!confirm(`Re-check ${trimmed.length} low-confidence neutral conversation${trimmed.length === 1 ? '' : 's'} with the local LLM? This can take 1–2 minutes.`)) return;
+    }
+    const origLabel = btn?.innerHTML;
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `🤖 Reviewing 0 / ${trimmed.length}…`;
+    }
+    // Group by report so we can resolve productName once per report.
+    const bySlug = new Map();
+    for (const key of trimmed) {
+      const c = _findConvByKey(key);
+      if (!c) continue;
+      const slug = _slugFromReport(c.report) || '';
+      if (!bySlug.has(slug)) bySlug.set(slug, []);
+      bySlug.get(slug).push(c);
+    }
+    let done = 0;
+    let agreed = 0;
+    let changed = 0;
+    let errored = 0;
+    for (const [slug, items] of bySlug.entries()) {
+      const payload = {
+        slug,
+        items: items.map((c) => ({
+          key: c.key,
+          url: c.url,
+          summary: c.summary || '',
+          author: c.author || '',
+          platform: c.platform || '',
+          currentSentiment: c.sentiment || 'unknown',
+        })),
+      };
+      try {
+        const res = await fetch('/api/sentiment/review-bulk', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || data?.error) {
+          errored += items.length;
+          done += items.length;
+          if (btn) btn.innerHTML = `🤖 Reviewing ${done} / ${trimmed.length}… (error: ${esc(data?.error || res.status)})`;
+          continue;
+        }
+        for (const r of data.results || []) {
+          done++;
+          if (!r.ok) { errored++; continue; }
+          const conv = _findConvByKey(r.key);
+          if (!conv) continue;
+          const newSent = (r.sentiment || conv.sentiment || 'unknown').toLowerCase();
+          conv.sentimentConfidence = (r.confidence || conv.sentimentConfidence || 'medium').toLowerCase();
+          conv.sentimentOverridden = true;
+          if (newSent !== conv.sentiment) {
+            conv.sentiment = newSent;
+            changed++;
+          } else {
+            agreed++;
+          }
+          // Update the row's dot in place so the user sees progress live.
+          const row = document.querySelector(`.conv-row[data-key="${CSS.escape(r.key)}"]`);
+          if (row) {
+            row.classList.remove('sent-neutral', 'sent-positive', 'sent-negative', 'sent-mixed', 'sent-unknown');
+            row.classList.add(`sent-${newSent}`);
+            const dotEl = row.querySelector('.conv-dot');
+            if (dotEl) {
+              dotEl.textContent = SENTIMENT_DOT[newSent] || '·';
+              dotEl.title = newSent;
+            }
+            const verdictEl = row.querySelector('.conv-sentiment-verdict');
+            if (verdictEl) {
+              verdictEl.hidden = false;
+              _renderVerdict(verdictEl, conv, r);
+            }
+          }
+        }
+        if (btn) btn.innerHTML = `🤖 Reviewing ${done} / ${trimmed.length}… (${changed} changed)`;
+      } catch (err) {
+        errored += items.length;
+        done += items.length;
+        if (btn) btn.innerHTML = `🤖 Reviewing ${done} / ${trimmed.length}… (error: ${esc(err.message || err)})`;
+      }
+    }
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origLabel || '🤖 Re-check <span id="conv-recheck-bulk-count">0</span> low-confidence neutrals';
+    }
+    const msg = `Re-checked ${done} low-confidence neutral conversation${done === 1 ? '' : 's'}: ${changed} re-classified, ${agreed} confirmed neutral${errored ? `, ${errored} errored` : ''}.`;
+    if (typeof window !== 'undefined' && window.alert) alert(msg);
+    _updateRecheckBulkButton();
   }
 
   // ----- Close / reopen plumbing ---------------------------------
@@ -379,6 +1038,22 @@
     bar.hidden = count === 0;
     const lbl = document.getElementById('conv-bulk-count');
     if (lbl) lbl.textContent = count === 1 ? '1 selected' : `${count} selected`;
+  }
+
+  // Toggle the .is-selected class + checkbox state on a single row
+  // without re-rendering the full list.
+  function _syncRowSelected(key) {
+    if (!key) return;
+    const sel = _selectedKeys.has(key);
+    const list = document.getElementById('conv-list');
+    if (!list) return;
+    const row = list.querySelector(`.conv-row[data-key="${CSS.escape(key)}"]`);
+    if (row) {
+      row.classList.toggle('is-selected', sel);
+      row.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      const cb = row.querySelector('.conv-cb');
+      if (cb && cb.checked !== sel) cb.checked = sel;
+    }
   }
 
   function _promptCloseSingle(key) {
@@ -461,26 +1136,113 @@
     return String(h || '').trim().replace(/^@+/, '').replace(/^u\//i, '').toLowerCase();
   }
 
+  // --- Mute modal (replaces 3× window.prompt) ----------------------
+  let _muteModalEl = null;
+  function _ensureMuteModal() {
+    if (_muteModalEl) return _muteModalEl;
+    const dlg = document.createElement('dialog');
+    dlg.className = 'cs-modal cs-mute-modal';
+    dlg.innerHTML = `
+      <form method="dialog" class="cs-modal-form">
+        <header class="cs-modal-head">
+          <h3>Mute account</h3>
+          <button type="button" class="cs-modal-close" aria-label="Close" data-action="cancel">×</button>
+        </header>
+        <div class="cs-modal-body">
+          <label class="cs-field">
+            <span>Handle</span>
+            <input type="text" name="handle" autocomplete="off" required placeholder="e.g. nirav-mungara" />
+          </label>
+          <label class="cs-field">
+            <span>Scope</span>
+            <select name="scope">
+              <option value="platform">Only on this platform</option>
+              <option value="all">All platforms</option>
+            </select>
+          </label>
+          <input type="hidden" name="platform" />
+          <label class="cs-field">
+            <span>Reason</span>
+            <select name="reason">
+              <option value="">— None —</option>
+              <option value="recruiter">Recruiter / job post</option>
+              <option value="spam">Spam</option>
+              <option value="irrelevant">Irrelevant</option>
+              <option value="competitor">Competitor</option>
+              <option value="owned">Owned account</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <label class="cs-field">
+            <span>Note <span class="hint">(optional)</span></span>
+            <input type="text" name="note" maxlength="200" placeholder="Anything worth remembering" />
+          </label>
+          <p class="cs-modal-hint" data-role="ctx"></p>
+        </div>
+        <footer class="cs-modal-foot">
+          <button type="button" class="secondary" data-action="cancel">Cancel</button>
+          <button type="button" class="primary" data-action="confirm">Mute</button>
+        </footer>
+      </form>`;
+    document.body.appendChild(dlg);
+    _muteModalEl = dlg;
+    return dlg;
+  }
   function _promptMute(author, platform) {
     const handle = _cleanHandle(author);
     if (!handle) {
-      alert('No handle to mute.');
+      _toast('No handle to mute.', 'error');
       return;
     }
-    const scopeAns = window.prompt(
-      `Mute @${handle}.\n\nScope (1 = only on ${platform || 'this platform'}, 2 = all platforms):`,
-      '1'
-    );
-    if (scopeAns == null) return;
-    const scope = String(scopeAns).trim();
-    const useGlobal = scope === '2';
-    const reason = window.prompt(
-      'Reason (optional — e.g. recruiter, spam-bot, irrelevant, competitor):',
-      ''
-    );
-    if (reason == null) return;
-    const note = window.prompt('Note (optional):', '') || '';
-    _mute(useGlobal ? '' : platform, handle, reason, note);
+    const dlg = _ensureMuteModal();
+    const form = dlg.querySelector('form');
+    form.handle.value = handle;
+    form.platform.value = platform || '';
+    form.scope.value = platform ? 'platform' : 'all';
+    form.reason.value = '';
+    form.note.value = '';
+    const ctx = dlg.querySelector('[data-role="ctx"]');
+    ctx.textContent = platform
+      ? `From ${author || handle} on ${platform}.`
+      : `From ${author || handle} (no platform — defaults to all).`;
+    const onClick = (e) => {
+      const action = e.target?.dataset?.action;
+      if (!action) return;
+      if (action === 'cancel') {
+        dlg.close('cancel');
+        return;
+      }
+      if (action === 'confirm') {
+        const useGlobal = form.scope.value === 'all';
+        const h = _cleanHandle(form.handle.value);
+        if (!h) {
+          _toast('Handle is required.', 'error');
+          return;
+        }
+        _mute(useGlobal ? '' : (form.platform.value || ''), h, form.reason.value, form.note.value);
+        dlg.close('ok');
+      }
+    };
+    dlg.removeEventListener('click', dlg._csClick || (() => {}));
+    dlg._csClick = onClick;
+    dlg.addEventListener('click', onClick);
+    // Submit on Enter inside any text field
+    form.onsubmit = (ev) => {
+      ev.preventDefault();
+      onClick({ target: { dataset: { action: 'confirm' } } });
+    };
+    if (typeof dlg.showModal === 'function') dlg.showModal();
+    else dlg.setAttribute('open', '');
+    setTimeout(() => form.handle.focus(), 30);
+  }
+  function _toast(msg, tone) {
+    try {
+      if (window.csToast) {
+        window.csToast(msg, tone || 'info');
+        return;
+      }
+    } catch {}
+    if (tone === 'error') alert(msg);
   }
 
   async function _mute(platform, handle, reason, note) {
@@ -497,6 +1259,19 @@
     } catch (err) {
       alert('Mute failed: ' + (err.message || err));
     }
+  }
+
+  async function _markNoTriage(author, platform) {
+    const handle = _cleanHandle(author);
+    if (!handle) {
+      _toast('No handle to mark no-triage.', 'error');
+      return;
+    }
+    const ok = window.confirm(
+      `Mark @${handle} as no-triage?\n\nUse this only for verified Microsoft employees or owned accounts. Microsoft MVP/MCT status alone is community, not employee.`
+    );
+    if (!ok) return;
+    await _mute(platform || '', handle, NO_TRIAGE_REASON, 'Verified Microsoft employee or owned account; no community triage needed.');
   }
 
   async function _unmute(platform, handle) {
@@ -531,40 +1306,125 @@
     }
   }
 
+  let _mutedItemsCache = [];
+  let _mutedFilter = '';
   async function _refreshMutedPanel() {
     const list = document.getElementById('conv-muted-list');
     if (!list) return;
     try {
       const data = await fetch('/api/muted-accounts').then((r) => r.json());
-      const items = Array.isArray(data.items) ? data.items : [];
-      if (!items.length) {
-        list.innerHTML = '<p class="hint">No muted accounts. Use the “Mute @…” button on any conversation row to add one.</p>';
-        return;
-      }
-      list.innerHTML = items
-        .map((it) => {
-          const when = it.mutedAt ? esc(it.mutedAt.slice(0, 10)) : '';
-          const platform = it.platform === '*' ? 'all platforms' : esc(it.platform || '?');
-          const reason = it.reason ? ` — ${esc(it.reason)}` : '';
-          const note = it.note ? ` <span class="hint">(${esc(it.note)})</span>` : '';
-          const ownedBadge = it.owned ? ' <span class="badge" title="Imported from config">owned</span>' : '';
-          return `<div class="conv-muted-row${it.owned ? ' is-owned' : ''}">
-            <span><strong>@${esc(it.handle)}</strong> on ${platform}${ownedBadge}${reason}${note}</span>
-            <span class="hint">${when}</span>
-            <button type="button" class="conv-muted-unmute" data-key="${esc(it.key)}">Unmute</button>
-          </div>`;
-        })
-        .join('');
-      list.querySelectorAll('.conv-muted-unmute').forEach((btn) => {
-        btn.addEventListener('click', () => _unmuteByKey(btn.dataset.key));
-      });
+      _mutedItemsCache = Array.isArray(data.items) ? data.items : [];
+      _renderMutedList();
     } catch (err) {
       list.innerHTML = `<p class="hint">Failed to load muted accounts: ${esc(err.message || err)}</p>`;
     }
   }
+  function _platformGlyph(p) {
+    const k = String(p || '').toLowerCase();
+    if (k === 'linkedin') return 'in';
+    if (k === 'x' || k === 'twitter') return '𝕏';
+    if (k === 'reddit') return 'r/';
+    if (k === 'bluesky') return 'bsky';
+    if (k === 'youtube') return '▶';
+    if (k === 'github') return 'gh';
+    if (k === '*') return '∗';
+    return (k[0] || '?').toUpperCase();
+  }
+  function _renderMutedList() {
+    const list = document.getElementById('conv-muted-list');
+    const countEl = document.getElementById('conv-muted-count');
+    if (!list) return;
+    const items = _mutedItemsCache.slice();
+    if (countEl) countEl.textContent = String(items.length);
+    const pill = document.getElementById('conv-muted-count-pill');
+    if (pill) {
+      pill.textContent = String(items.length);
+      pill.style.display = items.length ? '' : 'none';
+    }
+    if (!items.length) {
+      list.innerHTML = `
+        <div class="cs-empty">
+          <div class="cs-empty-icon">🔇</div>
+          <h4>No muted accounts</h4>
+          <p>Use <strong>Mute @…</strong> on any conversation row, or
+          add one manually above. Owned accounts can also be imported
+          from a subject config.</p>
+        </div>`;
+      return;
+    }
+    const filter = (_mutedFilter || '').toLowerCase().trim();
+    const filtered = filter
+      ? items.filter(
+          (it) =>
+            (it.handle || '').toLowerCase().includes(filter) ||
+            (it.platform || '').toLowerCase().includes(filter) ||
+            (it.reason || '').toLowerCase().includes(filter) ||
+            (it.note || '').toLowerCase().includes(filter)
+        )
+      : items;
+    if (!filtered.length) {
+      list.innerHTML = `<p class="hint">No muted accounts match “${esc(_mutedFilter)}”.</p>`;
+      return;
+    }
+    list.innerHTML = filtered
+      .map((it) => {
+        const when = it.mutedAt ? esc(it.mutedAt.slice(0, 10)) : '';
+        const platform = it.platform === '*' ? 'all' : esc(it.platform || '?');
+        const reason = it.reason ? `<span class="cs-muted-tag cs-tag-reason">${esc(it.reason)}</span>` : '';
+        const noTriage = it.noTriage || it.reason === NO_TRIAGE_REASON
+          ? `<span class="cs-muted-tag cs-tag-no-triage">no triage</span>`
+          : '';
+        const note = it.note ? `<span class="cs-muted-note">${esc(it.note)}</span>` : '';
+        const ownedBadge = it.owned ? `<span class="cs-muted-tag cs-tag-owned" title="Imported from config">owned</span>` : '';
+        return `<div class="cs-muted-card${it.owned ? ' is-owned' : ''}" data-key="${esc(it.key)}">
+          <div class="cs-muted-avatar" data-platform="${esc(it.platform || '')}" aria-hidden="true">${esc(_platformGlyph(it.platform))}</div>
+          <div class="cs-muted-main">
+            <div class="cs-muted-title">
+              <strong>@${esc(it.handle)}</strong>
+              <span class="cs-muted-plat">${platform}</span>
+              ${ownedBadge}${noTriage}${reason}
+            </div>
+            ${note}
+            ${when ? `<div class="cs-muted-when">Muted ${when}</div>` : ''}
+          </div>
+          <button type="button" class="cs-muted-unmute" data-key="${esc(it.key)}" title="Unmute">Unmute</button>
+        </div>`;
+      })
+      .join('');
+    list.querySelectorAll('.cs-muted-unmute').forEach((btn) => {
+      btn.addEventListener('click', () => _unmuteByKey(btn.dataset.key));
+    });
+  }
 
   function wireConversationsUI() {
-    ['conv-q', 'conv-sentiment', 'conv-platform', 'conv-timeframe', 'conv-jobs', 'conv-needs-reply'].forEach((id) => {
+    // Tabs: All / Conversations / Mentions. Persisted to localStorage.
+    try {
+      const savedTab = localStorage.getItem('cs.conv.activeTab');
+      if (savedTab === 'all' || savedTab === 'conversations' || savedTab === 'mentions') {
+        _activeTab = savedTab;
+      }
+    } catch {}
+    document.querySelectorAll('.conv-tab').forEach((btn) => {
+      if (btn.dataset.wired) return;
+      btn.dataset.wired = '1';
+      const tab = btn.dataset.convTab;
+      // Sync initial active state with restored _activeTab.
+      const isActive = tab === _activeTab;
+      btn.classList.toggle('is-active', isActive);
+      btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      btn.addEventListener('click', () => {
+        if (!tab || tab === _activeTab) return;
+        _activeTab = tab;
+        try { localStorage.setItem('cs.conv.activeTab', tab); } catch {}
+        document.querySelectorAll('.conv-tab').forEach((b) => {
+          const on = b.dataset.convTab === tab;
+          b.classList.toggle('is-active', on);
+          b.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        renderConversations();
+      });
+    });
+    ['conv-q', 'conv-sentiment', 'conv-platform', 'conv-timeframe', 'conv-jobs', 'conv-needs-reply', 'conv-team-mode'].forEach((id) => {
       const el = document.getElementById(id);
       if (el && !el.dataset.wired) {
         el.dataset.wired = '1';
@@ -614,24 +1474,89 @@
         renderConversations();
       });
     }
-    // Muted accounts manage panel
+    // Muted accounts manage panel (now a <dialog> modal)
     const manageBtn = document.getElementById('conv-manage-muted');
     if (manageBtn && !manageBtn.dataset.wired) {
       manageBtn.dataset.wired = '1';
       manageBtn.addEventListener('click', () => {
         const panel = document.getElementById('conv-muted-panel');
         if (!panel) return;
-        const willOpen = panel.hidden;
-        panel.hidden = !willOpen;
-        if (willOpen) _refreshMutedPanel();
+        if (typeof panel.showModal === 'function') {
+          if (!panel.open) panel.showModal();
+        } else {
+          panel.hidden = false;
+          panel.setAttribute('open', '');
+        }
+        _refreshMutedPanel();
       });
+    }
+    // Sentiment reviewer status pill (click to re-probe).
+    const sentStatusBtn = document.getElementById('conv-sentiment-status');
+    if (sentStatusBtn && !sentStatusBtn.dataset.wired) {
+      sentStatusBtn.dataset.wired = '1';
+      sentStatusBtn.addEventListener('click', () => _refreshSentimentStatus());
+      _refreshSentimentStatus();
+    }
+    const recheckBulkBtn = document.getElementById('conv-recheck-bulk');
+    if (recheckBulkBtn && !recheckBulkBtn.dataset.wired) {
+      recheckBulkBtn.dataset.wired = '1';
+      recheckBulkBtn.addEventListener('click', () => _recheckBulkNeutrals(recheckBulkBtn));
     }
     const mutedCloseBtn = document.getElementById('conv-muted-close');
     if (mutedCloseBtn && !mutedCloseBtn.dataset.wired) {
       mutedCloseBtn.dataset.wired = '1';
       mutedCloseBtn.addEventListener('click', () => {
         const panel = document.getElementById('conv-muted-panel');
-        if (panel) panel.hidden = true;
+        if (!panel) return;
+        if (typeof panel.close === 'function' && panel.open) panel.close();
+        else {
+          panel.hidden = true;
+          panel.removeAttribute('open');
+        }
+      });
+    }
+    // Click on backdrop closes the dialog
+    const mutedDlg = document.getElementById('conv-muted-panel');
+    if (mutedDlg && !mutedDlg.dataset.wiredBackdrop) {
+      mutedDlg.dataset.wiredBackdrop = '1';
+      mutedDlg.addEventListener('click', (e) => {
+        if (e.target === mutedDlg && typeof mutedDlg.close === 'function') mutedDlg.close();
+      });
+    }
+    // Search filter
+    const searchEl = document.getElementById('conv-muted-search');
+    if (searchEl && !searchEl.dataset.wired) {
+      searchEl.dataset.wired = '1';
+      searchEl.addEventListener('input', () => {
+        _mutedFilter = searchEl.value || '';
+        _renderMutedList();
+      });
+    }
+    // Manual add
+    const addBtn = document.getElementById('conv-add-mute');
+    if (addBtn && !addBtn.dataset.wired) {
+      addBtn.dataset.wired = '1';
+      addBtn.addEventListener('click', async () => {
+        const handle = _cleanHandle(document.getElementById('conv-add-handle')?.value);
+        const platform = document.getElementById('conv-add-platform')?.value || '';
+        const reason = document.getElementById('conv-add-reason')?.value || '';
+        const note = document.getElementById('conv-add-note')?.value || '';
+        const status = document.getElementById('conv-add-status');
+        if (!handle) {
+          if (status) status.textContent = 'Handle is required.';
+          return;
+        }
+        if (status) status.textContent = 'Muting…';
+        try {
+          await _mute(platform, handle, reason, note);
+          const inp = document.getElementById('conv-add-handle');
+          const n = document.getElementById('conv-add-note');
+          if (inp) inp.value = '';
+          if (n) n.value = '';
+          if (status) status.textContent = `Muted @${handle}.`;
+        } catch (err) {
+          if (status) status.textContent = 'Failed: ' + (err.message || err);
+        }
       });
     }
     // "Mute owned accounts from config" controls inside the muted panel.
@@ -644,6 +1569,11 @@
     if (ownedBtn && !ownedBtn.dataset.wired) {
       ownedBtn.dataset.wired = '1';
       ownedBtn.addEventListener('click', _importOwnedAccounts);
+    }
+    const teamBtn = document.getElementById('conv-team-import');
+    if (teamBtn && !teamBtn.dataset.wired) {
+      teamBtn.dataset.wired = '1';
+      teamBtn.addEventListener('click', _importTeamNoTriageAccounts);
     }
   }
 
@@ -696,6 +1626,37 @@
     }
   }
 
+  async function _importTeamNoTriageAccounts() {
+    const sel = document.getElementById('conv-owned-slug');
+    const status = document.getElementById('conv-team-status') || document.getElementById('conv-owned-status');
+    const slug = sel && sel.value;
+    if (!slug) {
+      if (status) status.textContent = 'Pick a config first.';
+      return;
+    }
+    if (status) status.textContent = 'Importing team…';
+    try {
+      const res = await fetch('/api/muted-accounts/import-team-members', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ slug }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      const added = (data.added || []).length;
+      const parsed = data.parsed || 0;
+      if (status) {
+        status.textContent = parsed
+          ? `Marked ${added} of ${parsed} team handle(s) no-triage.`
+          : 'No team handles found. Add platform aliases like (linkedin: name) to Product Team Members.';
+      }
+      await _refreshMutedPanel();
+      await loadConversations();
+    } catch (err) {
+      if (status) status.textContent = 'Import failed: ' + (err.message || err);
+    }
+  }
+
   // ============================================================
   // Dashboard intel cards
   // ============================================================
@@ -704,25 +1665,117 @@
     await Promise.all([loadSentiment(), loadCreators(), loadSourceHealth(), loadSocialActivity()]);
   }
 
+  // ----- Post URL validation ---------------------------------------
+  // Syntactic + live check used by the social-activity card to hide dead
+  // links. Results cached client-side; the server has its own 1h cache.
+  function isValidPostUrl(u) {
+    if (!u || typeof u !== 'string') return false;
+    let parsed;
+    try { parsed = new URL(u); } catch { return false; }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    if (!parsed.hostname || !parsed.hostname.includes('.')) return false;
+    // LinkedIn SDUI search results expose only a synthesized
+    // `/feed/sdui-post/{hash}/` permalink — LinkedIn lazy-loads the real
+    // post URL on "..." menu open, so this hash never resolves to a public
+    // page and clicking it dead-ends. Treat it as non-navigable so the card
+    // renders these as plain text (and prefers a sibling sample that has a
+    // working link) instead of shipping a broken LinkedIn link.
+    if (/linkedin\.com$/i.test(parsed.hostname) && /\/feed\/sdui-post\//i.test(parsed.pathname)) return false;
+    return true;
+  }
+  const _urlLiveCache = new Map(); // url -> Promise<{ok,status}>
+  const URL_CHECK_TIMEOUT_MS = 1500;
+  function checkUrlLive(u, timeoutMs = URL_CHECK_TIMEOUT_MS) {
+    if (!isValidPostUrl(u)) return Promise.resolve({ ok: false, status: 0, reason: 'malformed' });
+    if (_urlLiveCache.has(u)) return _urlLiveCache.get(u);
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), timeoutMs);
+    const p = fetch(`/api/check-url?u=${encodeURIComponent(u)}`, { signal: ac.signal })
+      .then((r) => r.json())
+      .catch((err) => ({ ok: false, status: 0, reason: err?.name === 'AbortError' ? 'timeout' : 'fetch-failed' }))
+      .finally(() => clearTimeout(t));
+    _urlLiveCache.set(u, p);
+    return p;
+  }
+  // Expose so dashboard-enhancer.js (and any other dashboard module) can
+  // honor the "never put dead links in the dashboard" rule.
+  window.csUrlCheck = { isValidPostUrl, checkUrlLive };
+
   // ----- Social activity (community + product, multi-platform) ----
   // Buckets every conversation into Community vs Product per platform so the
   // dashboard surfaces both sides of social activity (Reddit, Bluesky,
   // LinkedIn, X, plus HN / Stack Overflow / YouTube). Negative + mixed items
   // are still flagged for response in a "Needs reply" sub-card.
   const SOCIAL_PLATFORMS = [
-    { key: 'reddit',         label: 'Reddit',        match: /reddit/i,                       icon: '👽' },
-    { key: 'bluesky',        label: 'Bluesky',       match: /bluesky|bsky/i,                  icon: '🦋' },
-    { key: 'linkedin',       label: 'LinkedIn',      match: /linkedin/i,                      icon: '💼' },
+    { key: 'reddit',         label: 'Reddit',        match: /reddit/i,                       icon: 'RD' },
+    { key: 'bluesky',        label: 'Bluesky',       match: /bluesky|bsky/i,                  icon: 'BS' },
+    { key: 'linkedin',       label: 'LinkedIn',      match: /linkedin/i,                      icon: 'IN' },
     { key: 'x',              label: 'X',             match: /^x$|x\/twitter|twitter|x\.com/i, icon: '𝕏'  },
-    { key: 'hackernews',     label: 'Hacker News',   match: /hacker\s*news|news\.ycombinator/i, icon: '🟧' },
-    { key: 'stackoverflow',  label: 'Stack Overflow',match: /stack\s*overflow/i,              icon: '📚' },
-    { key: 'youtube',        label: 'YouTube',       match: /youtube|youtu\.be/i,             icon: '▶️' },
+    { key: 'hackernews',     label: 'Hacker News',   match: /hacker\s*news|news\.ycombinator/i, icon: 'HN' },
+    { key: 'stackoverflow',  label: 'Stack Overflow',match: /stack\s*overflow/i,              icon: 'SO' },
+    { key: 'youtube',        label: 'YouTube',       match: /youtube|youtu\.be/i,             icon: 'YT' },
   ];
 
   function platformKey(name) {
     const s = String(name || '');
     for (const p of SOCIAL_PLATFORMS) if (p.match.test(s)) return p.key;
     return 'other';
+  }
+
+  // Wrap fetch with an AbortController-based timeout so a slow or hung
+  // /api/conversations response can't pin the "Needs your attention" card on
+  // "Loading…" forever and block the rest of the dashboard from feeling done.
+  async function fetchJsonWithTimeout(url, timeoutMs) {
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), timeoutMs);
+    try {
+      const r = await fetch(url, { signal: ac.signal });
+      if (!r.ok) throw new Error(`${url}: ${r.status}`);
+      return await r.json();
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+  // Retry a JSON GET a couple of times with backoff. The dashboard's
+  // index-backed endpoints (conversations / sentiment / authors / source-
+  // health) can trigger a cold server-side index build on the very first
+  // load. Before this, a single slow attempt left the card showing an error
+  // and the user had to manually refresh — the "dashboard is useless on first
+  // visit" complaint. With a retry the page heals itself: the 2nd attempt is
+  // served warm once the build finishes.
+  async function fetchJsonResilient(url, { timeoutMs = 12000, retries = 1, backoffMs = 700 } = {}) {
+    let lastErr;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await fetchJsonWithTimeout(url, timeoutMs);
+      } catch (err) {
+        lastErr = err;
+        if (attempt < retries) await new Promise((r) => setTimeout(r, backoffMs * (attempt + 1)));
+      }
+    }
+    throw lastErr;
+  }
+
+  // Collapse the many raw platform spellings the corpus accumulates over time
+  // ("X", "x", "X / Twitter", "X + Bluesky", "Reddit", "reddit", "r/AZURE",
+  // "Bluesky", "bluesky", "LinkedIn", "linkedin"…) into one canonical label per
+  // real platform. Without this the Conversations platform filter listed a
+  // dozen case/spelling variants of the same handful of platforms, which is
+  // exactly the kind of thing that made the view feel broken.
+  function canonicalPlatform(raw) {
+    const s = String(raw || '').trim().toLowerCase();
+    if (!s) return 'Unknown';
+    if (/reddit|^r\//.test(s)) return 'Reddit';
+    if (/bluesky|bsky/.test(s)) return 'Bluesky';
+    if (/linkedin/.test(s)) return 'LinkedIn';
+    if (/hacker\s*news|ycombinator|^hn$/.test(s)) return 'Hacker News';
+    if (/stack\s*overflow/.test(s)) return 'Stack Overflow';
+    if (/youtube|youtu\.be/.test(s)) return 'YouTube';
+    if (/twitter|x\.com|^x$|^x\b|\bx\b|x\s*[\/+]/.test(s)) return 'X';
+    // Single unrecognized token: title-case-ish passthrough, but cap length
+    // so a stray sentence can't blow out the dropdown.
+    return raw && raw.length <= 24 ? raw : 'Other';
   }
 
   async function loadSocialActivity() {
@@ -732,31 +1785,99 @@
     if (!host) return;
     host.innerHTML = '<p class="hint">Loading…</p>';
     try {
-      const data = await fetch('/api/conversations').then((r) => r.json());
+      // 15s ceiling — covers a cold index build on first dashboard load
+      // plus any browser HTTP/1.1 connection-pool queueing, while still
+      // failing fast enough that the user sees an actionable error instead
+      // of a stuck card.
+      const [data, itemsData] = await Promise.all([
+        fetchJsonResilient('/api/conversations?includeProduct=1', { timeoutMs: 12000, retries: 1 }),
+        // Pull social-kind items in parallel so we can backfill the Pulse
+        // card when agents file Reddit/X/Bluesky/LinkedIn posts under
+        // "Community Projects & Tools" instead of "Conversations & Mentions".
+        // Without this, a Reddit project launch wouldn't surface here at
+        // all even though it's social activity from the user's POV.
+        fetchJsonWithTimeout('/api/items', 15000).catch(() => ({ items: [] })),
+      ]);
       const allEver = Array.isArray(data.conversations) ? data.conversations : [];
+      const SOCIAL_KINDS = new Set(['reddit', 'bluesky', 'x', 'linkedin']);
+      const convUrlSet = new Set(allEver.map((c) => (c.url || '').trim()).filter(Boolean));
+      const socialItems = (Array.isArray(itemsData.items) ? itemsData.items : [])
+        .filter((it) => SOCIAL_KINDS.has(it.kind))
+        .filter((it) => !convUrlSet.has((it.url || '').trim()))
+        .map((it) => ({
+          date: it.date || '',
+          platform: it.source || it.kind || 'Unknown',
+          author: it.author || '',
+          summary: it.title || '',
+          sentiment: 'unknown',
+          community: 'community',
+          communityRaw: '',
+          engagement: '',
+          url: it.url || '',
+          section: it.section || '',
+          report: it.report || '',
+          _fromItems: true,
+        }));
+      allEver.push(...socialItems);
+      // Quality gate: strip recruiter/job noise and empty parse-miss shells
+      // so the Community-signals card reflects real conversation. Job posts
+      // are hard-banned at scan time, but older persisted rows can still
+      // carry them, and item-backfilled rows occasionally arrive bodyless.
+      const _preQualityCount = allEver.length;
+      const _qualityKept = allEver.filter(_passesSocialQuality);
+      const lowQualityCount = _preQualityCount - _qualityKept.length;
+      allEver.length = 0;
+      allEver.push(..._qualityKept);
       // Dashboard card is intentionally scoped to the most recent 30 days.
       // Anything older lives in the Conversations view, which has its own
       // searchable timeframe filter (30d / 90d / 6m / 1y / all time).
+      //
+      // Exception: always include everything from the *latest scan* even if
+      // its post date is older than 30 days. Scans routinely surface posts
+      // that were authored weeks ago but only just discovered — a strict
+      // post-date window would hide that fresh-from-the-last-scan activity
+      // from Community signals, which is exactly what users expect to see.
+      const latestReport = allEver.reduce(
+        (acc, c) => (c.report && c.report > acc ? c.report : acc),
+        ''
+      );
       const WINDOW_DAYS = 30;
       const cutoffMs = Date.now() - WINDOW_DAYS * 86400000;
       const all = allEver.filter((c) => {
+        // Anything from the most recent scan stays, regardless of post age.
+        if (latestReport && c.report === latestReport) return true;
         const dt = _parseDate(c.date);
         // Keep undated items so they don't silently disappear.
         return !dt || dt.getTime() >= cutoffMs;
       });
       const olderCount = allEver.length - all.length;
 
+      // Freshness of the underlying data, derived from the most recent scan's
+      // report stamp. Drives a colored badge so users can tell at a glance
+      // whether the card reflects current chatter or needs a fresh scan.
+      const scanFresh = _freshnessFor(_reportStampDate(latestReport));
+
       // Sentiment pills (top of card)
       const totals = { positive: 0, neutral: 0, mixed: 0, negative: 0, unknown: 0 };
       all.forEach((c) => { totals[c.sentiment] = (totals[c.sentiment] || 0) + 1; });
+      const flaggedCount = all.filter((c) => c.sentiment === 'negative' || c.sentiment === 'mixed').length;
       if (summary) {
+        // Hide buckets that are empty so "0 mixed" doesn't waste a slot when
+        // the classifier (intentionally restrictive) finds no items there.
+        const pills = [];
+        if (totals.positive) pills.push(`<span class="pill pill-pos" title="Advocates"><span class="tone-dot tone-positive"></span>${totals.positive} advocate${totals.positive === 1 ? '' : 's'}</span>`);
+        if (totals.neutral)  pills.push(`<span class="pill pill-neu" title="Neutral"><span class="tone-dot tone-neutral"></span>${totals.neutral} neutral</span>`);
+        if (totals.mixed)    pills.push(`<span class="pill pill-mix" title="Mixed — worth a thoughtful reply"><span class="tone-dot tone-mixed"></span>${totals.mixed} mixed</span>`);
+        if (totals.negative) pills.push(`<span class="pill pill-neg" title="Critical — respond first"><span class="tone-dot tone-negative"></span>${totals.negative} critical</span>`);
+        if (totals.unknown)  pills.push(`<span class="pill pill-unk" title="Unknown — not enough product stance to score"><span class="tone-dot tone-unknown"></span>${totals.unknown} unclassified</span>`);
         summary.innerHTML = all.length
-          ? `<div class="dash-sent-pills">
-              <span class="pill pill-pos" title="Advocates">🟢 ${totals.positive} advocate${totals.positive === 1 ? '' : 's'}</span>
-              <span class="pill pill-neu" title="Neutral">⚪ ${totals.neutral} neutral</span>
-              <span class="pill pill-mix" title="Mixed — worth a thoughtful reply">🟡 ${totals.mixed} mixed</span>
-              <span class="pill pill-neg" title="Critical — respond first">🔴 ${totals.negative} critical</span>
-            </div>`
+          ? `<div class="dash-signal-strip">
+              <div class="dash-signal-metric"><strong>${all.length}</strong><span>conversations</span></div>
+              <div class="dash-signal-metric"><strong>${flaggedCount}</strong><span>need review</span></div>
+              <div class="dash-signal-metric"><strong>${olderCount}</strong><span>older archived</span></div>
+              <div class="dash-signal-metric dash-fresh-metric dash-fresh-${scanFresh.tier}" title="Most recent scan ${scanFresh.tier === 'unknown' ? 'date unknown' : scanFresh.label}${scanFresh.tier === 'stale' || scanFresh.tier === 'aging' ? ' — run a scan to refresh' : ''}"><strong>${scanFresh.rel || '—'}</strong><span>last scan</span></div>
+            </div>
+            <div class="dash-sent-pills">${pills.join('')}</div>`
           : `<p class="hint">No conversations tracked yet. Run a scan to surface community chatter.</p>`;
       }
 
@@ -764,6 +1885,18 @@
         host.innerHTML = '';
         if (meta) meta.textContent = '';
         return;
+      }
+
+      // URL liveness used to be probed *before* render — that added up to 4s
+      // of blocking time and meant a slow `/api/check-url` round-trip could
+      // hold the whole "Needs your attention" card on "Loading…" and make the
+      // dashboard feel broken. Now we render with the URLs we have, then
+      // probe in the background and strip dead links in place. The markup
+      // already tags every candidate link with `data-check-url`, so the
+      // background pass can find and downgrade them without re-rendering.
+      for (const c of all) {
+        if (!c) continue;
+        if (!isValidPostUrl(c.url)) c.url = '';
       }
 
       // Bucket by platform → community/product
@@ -776,22 +1909,62 @@
         byPlatform.set(k, bucket);
       }
 
+      const byDateDesc = (a, b) => {
+        const da = _parseDate(a?.date)?.getTime();
+        const db = _parseDate(b?.date)?.getTime();
+        if (Number.isFinite(db) && Number.isFinite(da) && db !== da) return db - da;
+        if (Number.isFinite(db) && !Number.isFinite(da)) return -1;
+        if (!Number.isFinite(db) && Number.isFinite(da)) return 1;
+        return String(b?.date || '').localeCompare(String(a?.date || ''));
+      };
+
       const needs = all
         .filter((c) => c.sentiment === 'negative' || c.sentiment === 'mixed')
-        .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+        .sort(byDateDesc);
 
       if (meta) {
         const platformsSeen = byPlatform.size;
         const olderNote = olderCount > 0
           ? ` · ${olderCount} older in Conversations`
           : '';
+        const qualityNote = lowQualityCount > 0
+          ? ` · ${lowQualityCount} low-quality hidden`
+          : '';
+        const freshNote = scanFresh.rel ? ` · scanned ${scanFresh.label}` : '';
         meta.textContent =
-          `Last 30d · ${all.length} conversation${all.length === 1 ? '' : 's'} across ${platformsSeen} platform${platformsSeen === 1 ? '' : 's'}` +
-          (needs.length ? ` · ${needs.length} flagged for response` : '') +
+          `Latest scan · last 30d · ${platformsSeen} platform${platformsSeen === 1 ? '' : 's'}` +
+          (needs.length ? ` · ${needs.length} need review` : '') +
+          qualityNote +
+          freshNote +
           olderNote;
       }
 
       // Render: per-platform breakdown
+      // Helper: extract a leading [text](url) markdown link from a summary
+      // string. YouTube items in particular store their title as
+      // `[Title](https://youtu.be/…)` and have an empty `url` field, which
+      // used to leak raw markdown into the card preview. Returns
+      // `{ text, url }` with `text` always being plain prose (markdown link
+      // collapsed to its label) and `url` set when the source had no
+      // explicit `url` but the summary's first markdown link covers it.
+      const _mdLeadingLink = /^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)\s*/;
+      function extractSamplePreview(c) {
+        const raw = String(c.summary || c.author || '(post)');
+        const m = raw.match(_mdLeadingLink);
+        if (m) {
+          const rest = raw.slice(m[0].length).trim();
+          return {
+            text: rest ? `${m[1]} — ${rest}` : m[1],
+            url: c.url || m[2],
+          };
+        }
+        // Strip any inline markdown link wrappers so prose like
+        // "see [the docs](https://…)" never renders as raw markdown.
+        return {
+          text: raw.replace(/\[([^\]]+)\]\(https?:\/\/[^\s)]+\)/g, '$1'),
+          url: c.url || '',
+        };
+      }
       const platformRows = SOCIAL_PLATFORMS
         .map((p) => {
           const b = byPlatform.get(p.key);
@@ -799,17 +1972,67 @@
           const c = b.community.length;
           const pr = b.product.length;
           if (!c && !pr) return null;
-          const sample = (b.community[0] || b.product[0]);
+          // Pick the first sample whose URL — either explicit or extracted
+          // from a leading markdown link in the summary — is syntactically
+          // valid; fall back to whatever's first if nothing has one.
+          const withUrl = (x) => {
+            const u = (x.url || (String(x.summary || '').match(_mdLeadingLink) || [])[2] || '').trim();
+            return u && isValidPostUrl(u);
+          };
+          // Show the *newest* sample, not whatever happened to be first in
+          // the API response. Without this sort the bucket order is stable
+          // across scans, so the same (often oldest) Reddit post stuck on the
+          // card run after run even when fresher chatter had arrived.
+          const communitySorted = [...b.community].sort(byDateDesc);
+          const productSorted = [...b.product].sort(byDateDesc);
+          const sample =
+            communitySorted.find(withUrl) ||
+            productSorted.find(withUrl) ||
+            communitySorted[0] ||
+            productSorted[0];
+          const prev = sample ? extractSamplePreview(sample) : { text: '', url: '' };
+          const sampleHasUrl = !!prev.url && isValidPostUrl(prev.url);
+          const sampleHasKey = !!(sample && sample.key);
+          const sampleTone = sample?.sentiment || 'unknown';
+          const sentTitle = sample ? esc(sample.sentiment || 'unknown') : '';
+          // Three render modes for the sample line:
+          //  1. valid external URL → keyed samples open the tracked
+          //     conversation on plain click (source via Ctrl/Cmd-click);
+          //     keyless samples open the original post directly. Either way,
+          //     decayDeadDashLinks strips the link when the URL probes as a
+          //     definitive 404/410, so a click never lands on a dead post.
+          //  2. key but no usable URL (e.g. LinkedIn SDUI posts, whose
+          //     synthesized permalinks dead-end) → in-app link only.
+          //  3. neither → plain text.
+          const sampleLabel = esc(trim(prev.text, 100));
+          let sampleLink;
+          if (sampleHasUrl) {
+            const sampleTitle = sampleHasKey
+              ? 'Open in Conversations (Ctrl/Cmd-click for source)'
+              : 'Open original post ↗';
+            sampleLink = `<a href="${esc(prev.url)}" class="dash-link" data-check-url="${esc(prev.url)}" data-conv-key="${esc(sample.key || '')}" target="_blank" rel="noopener" title="${esc(sampleTitle)}">${sampleLabel}</a>`;
+          } else if (sampleHasKey) {
+            sampleLink = `<a href="#conversations" class="dash-link" data-conv-key="${esc(sample.key)}" title="Open in Conversations (no public source link available)">${sampleLabel}</a>`;
+          } else {
+            sampleLink = sampleLabel;
+          }
           const sampleHtml = sample
             ? `<div class="dash-plat-sample">
-                ${sample.url ? `<a href="${esc(sample.url)}" target="_blank" rel="noopener">${esc(trim(sample.summary || sample.author || '(post)', 100))}</a>` : esc(trim(sample.summary || sample.author || '(post)', 100))}
-                <div class="hint">${esc(sample.author || '')}${sample.author && sample.date ? ' · ' : ''}${esc(sample.date || '')}</div>
+                <span class="dash-plat-sent tone-dot tone-${esc(sampleTone)}" title="${sentTitle}" aria-label="sentiment: ${sentTitle}"></span>
+                ${sampleLink}
+                <div class="hint">${esc(sample.author || '')}${sample.author && sample.date ? ' · ' : ''}${esc(sample.date || '')}${(() => {
+                  const f = _freshnessFor(_parseDate(sample.date));
+                  return f.rel
+                    ? ` <span class="dash-fresh-badge dash-fresh-${f.tier}" title="Posted ${esc(f.label)}">${esc(f.rel)}</span>`
+                    : '';
+                })()}</div>
               </div>`
             : '';
           return `<div class="dash-plat-row" data-platform="${p.key}">
             <div class="dash-plat-head">
               <span class="dash-plat-icon" aria-hidden="true">${p.icon}</span>
               <strong>${esc(p.label)}</strong>
+              <span class="dash-plat-total">${c + pr}</span>
               <span class="dash-plat-counts">
                 <span class="dash-plat-chip dash-plat-community" title="Community-generated posts">${c} community</span>
                 <span class="dash-plat-chip dash-plat-product" title="Product / official posts">${pr} official</span>
@@ -826,17 +2049,19 @@
         ? `<details class="dash-needs-card" ${needs.length <= 3 ? 'open' : ''}>
             <summary><strong>Needs reply</strong> <span class="hint">${needs.length} item${needs.length === 1 ? '' : 's'}</span></summary>
             ${needs.slice(0, 5).map((c) => {
-              const dot = c.sentiment === 'negative' ? '🔴' : '🟡';
               const tone = c.sentiment === 'negative' ? 'critical' : 'mixed';
-              const link = c.url
-                ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">Source ↗</a>`
-                : '';
-              const replyBtn = c.url
+              const hasUrl = isValidPostUrl(c.url);
+              const link = hasUrl
+                ? `<a href="${esc(c.url)}" class="dash-link" data-check-url="${esc(c.url)}" data-conv-key="${esc(c.key || '')}" target="_blank" rel="noopener" title="Open in Conversations (Ctrl/Cmd-click for source)">Source ↗</a>`
+                : (c.key
+                    ? `<a href="#conversations" class="dash-link" data-conv-key="${esc(c.key)}" title="Open in Conversations (no public source link available)">Open ↗</a>`
+                    : '');
+              const replyBtn = hasUrl
                 ? `<button type="button" class="dash-reply-btn" data-url="${esc(c.url)}">Draft reply</button>`
                 : '';
               return `<div class="dash-needs-row sent-${esc(c.sentiment)}">
                 <div class="dash-needs-head">
-                  <span class="dash-needs-dot">${dot}</span>
+                  <span class="dash-needs-dot tone-dot tone-${tone}" aria-label="${tone}"></span>
                   <strong>${esc(c.author || '(unknown)')}</strong>
                   <span class="hint">on ${esc(c.platform || '—')} · ${esc(c.date || '')}</span>
                   <span class="dash-needs-tone tone-${tone}">${tone}</span>
@@ -854,6 +2079,28 @@
         needsHtml ||
         '<p class="hint">No platform-specific conversations parsed yet.</p>';
 
+      // Background liveness probe: walk every `data-check-url` we just
+      // rendered, probe in the background, and downgrade dead links to
+      // plain text in place. This used to block render for up to 4s; now
+      // the card paints immediately and dead links quietly fall away once
+      // the probe completes. Server caches probe results for 1h, so
+      // subsequent dashboard loads finish near-instantly.
+      queueMicrotask(() => decayDeadDashLinks(host));
+
+      // Keyed social-pulse links open the tracked conversation in-app on a
+      // plain click; Ctrl/Cmd/middle-click still opens the external source.
+      // Keyless samples have no tracked conversation, so their plain click
+      // opens the original post — decayDeadDashLinks has already stripped any
+      // link that probes as a definitive 404/410, so it won't be a dead post.
+      host.querySelectorAll('a.dash-link[data-conv-key]').forEach((a) => {
+        const k = a.dataset.convKey;
+        if (!k) return;
+        a.addEventListener('click', (e) => {
+          if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) return;
+          e.preventDefault();
+          _navigateToConversation(k);
+        });
+      });
       host.querySelectorAll('.dash-reply-btn').forEach((btn) => {
         btn.addEventListener('click', () => {
           const url = btn.dataset.url;
@@ -895,8 +2142,73 @@
         });
       });
     } catch (err) {
-      host.innerHTML = `<p class="hint">Failed to load conversations: ${esc(err.message || err)}</p>`;
+      const isTimeout = err && (err.name === 'AbortError' || /aborted/i.test(String(err.message || '')));
+      host.innerHTML = isTimeout
+        ? `<p class="hint">Couldn't load conversations in time — the server may still be indexing. <button type="button" class="link-btn" id="dash-social-retry">Retry</button></p>`
+        : `<p class="hint">Failed to load conversations: ${esc(err.message || err)} <button type="button" class="link-btn" id="dash-social-retry">Retry</button></p>`;
+      document.getElementById('dash-social-retry')?.addEventListener('click', () => loadSocialActivity());
     }
+  }
+
+  // Hosts that routinely block automated HEAD/GET probes (bot walls, 403,
+  // 999, or silent timeouts) even though the post URL is perfectly valid for
+  // a human clicking through. A failed probe to these is a false negative, so
+  // we must never strip their links — otherwise every X / LinkedIn / Reddit
+  // post in the dashboard silently downgrades to dead plain text.
+  const PROBE_EXEMPT_HOSTS = /(^|\.)(x\.com|twitter\.com|linkedin\.com|reddit\.com|bsky\.app|youtube\.com|youtu\.be)$/i;
+  function isProbeExemptUrl(u) {
+    try { return PROBE_EXEMPT_HOSTS.test(new URL(u).hostname); } catch { return false; }
+  }
+
+  // Probe every rendered `data-check-url` in the host and remove the `href`
+  // / collapse the `<a>` to a plain `<span>` when the URL is unreachable.
+  // Runs in the background after the card paints — never blocks render.
+  async function decayDeadDashLinks(host) {
+    const anchors = Array.from(host.querySelectorAll('a.dash-link[data-check-url]'));
+    if (!anchors.length) return;
+    // Probe EVERY rendered link, including ones on bot-walled social hosts.
+    // The strip rule below separates a definitive "gone" (404/410 — the post
+    // was deleted) from an ambiguous failure (403 / 429 / timeout — usually a
+    // bot wall, not a real death). That lets us honor the rule "a community-
+    // signal URL should never be a 404" on X / LinkedIn / Reddit / Bluesky /
+    // YouTube without nuking valid posts that merely refuse automated probes.
+    // The per-probe budget is generous so the server's HEAD→GET round-trip can
+    // return a definitive status on first paint; the server caches results for
+    // 1h, so later dashboard loads strip dead links instantly.
+    const urls = [...new Set(anchors.map((a) => a.dataset.checkUrl).filter(Boolean))]
+      .slice(0, 24);
+    const CONC = 6;
+    let i = 0;
+    async function worker() {
+      while (i < urls.length) {
+        const u = urls[i++];
+        let ok = false;
+        let status = 0;
+        try {
+          const r = await checkUrlLive(u, 5000);
+          ok = !!(r && r.ok);
+          status = r && typeof r.status === 'number' ? r.status : 0;
+        } catch { ok = false; status = 0; }
+        // 404/410 = the post is genuinely gone → strip on ANY host.
+        // Any other failure → strip only on non-exempt hosts, because exempt
+        // hosts return 403/999/timeout for posts that are actually live.
+        const definitivelyGone = status === 404 || status === 410;
+        const strip = definitivelyGone || (!ok && !isProbeExemptUrl(u));
+        if (!strip) continue;
+        anchors
+          .filter((a) => a.dataset.checkUrl === u && a.isConnected)
+          .forEach((a) => {
+            const span = document.createElement('span');
+            span.className = a.className;
+            span.textContent = a.textContent;
+            span.title = definitivelyGone
+              ? 'Original post is no longer available (removed by author or platform)'
+              : 'Link could not be verified';
+            a.replaceWith(span);
+          });
+      }
+    }
+    await Promise.all(Array.from({ length: CONC }, worker));
   }
 
   function trim(s, n) {
@@ -908,10 +2220,10 @@
     const host = document.getElementById('dash-sentiment');
     if (!host) return;
     try {
-      const data = await fetch('/api/sentiment-summary').then((r) => r.json());
+      const data = await fetchJsonResilient('/api/sentiment-summary');
       const groups = data.groups || [];
       if (!groups.length) {
-        host.innerHTML = `<p class="hint">No reports yet. Run a scan to see sentiment trends.</p>`;
+        host.innerHTML = `<p class="hint">No reports yet. Run a scan to see sentiment.</p>`;
         return;
       }
       host.innerHTML = groups
@@ -919,11 +2231,20 @@
           const t = g.latest?.totals || {};
           const total =
             (t.positive || 0) + (t.neutral || 0) + (t.mixed || 0) + (t.negative || 0);
-          if (!total)
+          if (!total) {
+            // Don't claim "no conversations" when the scan did surface some but
+            // none carried a strong enough product stance to classify — that
+            // contradicted the Community-signals card right above and read as
+            // a bug. Use the real conversation count to tell the two apart.
+            const convoCount = g.latest?.convoCount || 0;
+            const msg = convoCount
+              ? `${convoCount} conversation${convoCount === 1 ? '' : 's'} · sentiment not yet classified`
+              : 'No conversations in latest scan';
             return `<div class="sent-row">
               <strong>${esc(g.slug)}</strong>
-              <span class="hint">No conversations in latest scan</span>
+              <span class="hint">${msg}</span>
             </div>`;
+          }
           const bar = (n, cls) => {
             const pct = Math.round((n / total) * 100);
             return pct
@@ -936,10 +2257,18 @@
             const dp = (t.positive || 0) - (prior.positive || 0);
             const dn = (t.negative || 0) - (prior.negative || 0);
             if (dp || dn) {
-              delta = `<span class="sent-delta">Δ +${dp >= 0 ? dp : dp} 🟢, ${
+              delta = `<span class="sent-delta">${dp >= 0 ? '+' + dp : dp} advocates, ${
                 dn >= 0 ? '+' + dn : dn
-              } 🔴</span>`;
+              } critical</span>`;
             }
+          }
+          // When the newest scan added no classified conversations, we show
+          // sentiment carried from the most recent scan that did. Say so
+          // plainly so a returning user doesn't read older numbers as current.
+          let carried = '';
+          if (g.newest && g.latest && g.newest.report !== g.latest.report) {
+            const d = (g.latest.generatedAt || '').slice(0, 10);
+            carried = `<div class="hint" style="margin-top:0.25rem">Latest scan added no new conversations — showing sentiment from ${d ? `the ${esc(d)} scan` : 'the most recent scan with conversations'}.</div>`;
           }
           return `<div class="sent-row">
             <div class="sent-head">
@@ -953,11 +2282,12 @@
               ${bar(t.mixed || 0, 'mix')}
               ${bar(t.negative || 0, 'neg')}
             </div>
+            ${carried}
             <div class="sent-legend">
-              ${t.positive ? `🟢 ${t.positive}` : ''}
-              ${t.neutral ? `⚪ ${t.neutral}` : ''}
-              ${t.mixed ? `🟡 ${t.mixed}` : ''}
-              ${t.negative ? `🔴 ${t.negative}` : ''}
+              ${t.positive ? `<span><span class="tone-dot tone-positive"></span>${t.positive} advocate${t.positive === 1 ? '' : 's'}</span>` : ''}
+              ${t.neutral ? `<span><span class="tone-dot tone-neutral"></span>${t.neutral} neutral</span>` : ''}
+              ${t.mixed ? `<span><span class="tone-dot tone-mixed"></span>${t.mixed} mixed</span>` : ''}
+              ${t.negative ? `<span><span class="tone-dot tone-negative"></span>${t.negative} critical</span>` : ''}
             </div>
           </div>`;
         })
@@ -971,7 +2301,7 @@
     const host = document.getElementById('dash-creators');
     if (!host) return;
     try {
-      const data = await fetch('/api/authors').then((r) => r.json());
+      const data = await fetchJsonResilient('/api/authors');
       const top = (data.authors || [])
         .filter((a) => a.name && a.name !== '(unknown)' && a.name.length < 80)
         .slice(0, 8);
@@ -985,7 +2315,7 @@
           const pos = a.sentiments?.positive || 0;
           const neg = a.sentiments?.negative || 0;
           const skew =
-            pos > neg ? `🟢 +${pos - neg}` : neg > pos ? `🔴 -${neg - pos}` : '';
+            pos > neg ? `+${pos - neg} advocate` : neg > pos ? `${neg - pos} critical` : '';
           return `<li class="creator-row" data-author="${esc(a.name)}">
             <div class="creator-name">${esc(a.name)}</div>
             <div class="creator-meta">
@@ -1019,7 +2349,7 @@
     const host = document.getElementById('dash-source-health');
     if (!host) return;
     try {
-      const data = await fetch('/api/source-health').then((r) => r.json());
+      const data = await fetchJsonResilient('/api/source-health');
       const skipped = data.lastSkipped || [];
       const sources = (data.sources || []).slice(0, 6);
       const skippedHtml = skipped.length
@@ -1036,7 +2366,7 @@
               .join('')}</ul>
             <button type="button" class="src-doctor-btn">Run scout doctor</button>
           </div>`
-        : `<p class="hint">No skipped sources in the latest scan. 🎉</p>`;
+        : `<p class="hint">No skipped sources in the latest scan.</p>`;
       const topHtml = sources.length
         ? `<div class="src-top">
             <strong>Top contributing sources:</strong>

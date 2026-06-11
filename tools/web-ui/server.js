@@ -13,6 +13,38 @@ import createSuggestionsRouter from './routes/suggestions.js';
 import { ROLE_PRESETS, renderConfigTemplate } from './lib/config-template.js';
 import { findMissingPrompts, findUnreferencedPrompts } from './lib/prompt-health.js';
 import { describeImage, formatVisionReport, probeVision, getVisionProvider } from './lib/vision.js';
+import { reviewSentiment, probeSentiment, getSentimentProvider } from './lib/sentiment-review.js';
+import { getSeoRewriteProvider, generateSeoRewrites, hasAnyRewrite } from './lib/seo-rewrite.js';
+import { searchCorpus } from '../lib/corpus-search.mjs';
+import { extractDocMeta } from '../lib/doc-meta.mjs';
+import { responseCache } from '../lib/response-cache.mjs';
+import {
+  runSeoAudit,
+  extractSeoSnapshot,
+  htmlToText,
+} from '../lib/analytics.mjs';
+import {
+  loadReport,
+  parseReport,
+  parseReportFromJson,
+  normalizeSentiment,
+  classifyItem,
+  canonicalUrlKey,
+} from '../lib/report-index.mjs';
+import { isHiringContent } from '../browser-scan/lib/hiring-filter.mjs';
+import {
+  SENTIMENT_OVERRIDES_FILE,
+  WEB_SETTINGS_FILE,
+  STATE_DIR,
+  stateFilePath,
+  resolveStateRead,
+  resolveStateWrite,
+  browserScanReadDirs,
+  BROWSER_SCAN_DIR as BROWSER_SCAN_SIDECAR_DIR,
+  LEGACY_BROWSER_SCAN_DIR,
+  BROWSER_PROFILE_DIR,
+  LEGACY_BROWSER_PROFILE_DIR,
+} from '../lib/paths.mjs';
 import {
   ALLOWED_REASONS,
   convoKey,
@@ -25,10 +57,14 @@ import {
   muteAccount,
   unmuteMany,
   isMutedConv,
+  mutedInfoForConv,
+  isNoTriageInfo,
   muteKey,
   normHandle,
   normPlatform,
+  NO_TRIAGE_REASON,
   parseOwnedAccountsFromConfig,
+  parseTeamMemberAccountsFromConfig,
 } from './lib/muted-accounts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -40,11 +76,17 @@ marked.setOptions({ breaks: true, gfm: true });
 // Repo root = tools/web-ui/../..
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const PROMPTS_DIR = path.join(REPO_ROOT, '.github', 'prompts');
+// Personal product configs live in the gitignored .local/configs/ dir
+// (standard location: scout-config-{slug}.md). Legacy installs kept them in
+// .github/prompts/scout-config-{slug}.prompt.md. Reads prefer .local; writes
+// always go to .local so a config can never be accidentally committed.
+const CONFIGS_DIR = path.join(REPO_ROOT, '.local', 'configs');
 const REPORTS_DIR = path.join(REPO_ROOT, 'reports');
 const SOCIAL_DIR = path.join(REPO_ROOT, 'social-posts');
 const ENV_FILE = path.join(REPO_ROOT, '.env');
 const ENV_EXAMPLE = path.join(REPO_ROOT, '.env.example');
 const SETTINGS_FILE = path.join(__dirname, '.scout-web-settings.json');
+const SETTINGS_FILE_NEW = stateFilePath(WEB_SETTINGS_FILE);
 
 const PORT = Number(process.env.PORT || 4477);
 // Bind to loopback by default. Set SCOUT_HOST=0.0.0.0 to expose on the LAN
@@ -62,48 +104,60 @@ const AGENT_PRESETS = {
     label: 'Claude Code',
     runner: 'claude -p "{prompt}"',
     install: 'https://docs.anthropic.com/en/docs/claude-code/overview',
-    note: 'Runs /scout-* commands non-interactively via the Claude Code CLI.',
+    note: 'Runs /scout-* prompts non-interactively via Claude Code.',
   },
   copilot: {
     id: 'copilot',
-    label: 'GitHub Copilot CLI',
+    label: 'GitHub Copilot runner',
     runner: 'copilot --allow-all-tools --allow-all-paths --allow-all-urls -p "{prompt}"',
     install: 'https://docs.github.com/en/copilot/github-copilot-in-the-cli',
-    note: 'Requires the newer `copilot` CLI (not `gh copilot`). Runs with --allow-all-tools/paths/urls so the agent can fetch web content and execute shell commands without an interactive permission prompt (there is no TTY when spawned by the server). Tighten the runner string in Settings if you want to scope it.',
+    note: 'Requires the newer `copilot` headless runner (not `gh copilot`). Runs with --allow-all-tools/paths/urls so the agent can fetch web content and execute shell commands without an interactive permission prompt (there is no TTY when spawned by the server). Tighten the runner string in Settings if you want to scope it.',
   },
   codex: {
     id: 'codex',
-    label: 'OpenAI Codex CLI',
+    label: 'OpenAI Codex runner',
     runner: 'codex exec "{prompt}"',
     install: 'https://github.com/openai/codex',
     note: 'Non-interactive exec mode. Reads repo context automatically.',
   },
   cursor: {
     id: 'cursor',
-    label: 'Cursor Agent CLI',
+    label: 'Cursor agent runner',
     runner: 'cursor-agent -p "{prompt}"',
     install: 'https://docs.cursor.com/en/cli/overview',
     note: 'Headless Cursor agent. Reads `.cursor/rules/content-scout.mdc` automatically.',
   },
   gemini: {
     id: 'gemini',
-    label: 'Gemini CLI',
+    label: 'Gemini runner',
     runner: 'gemini -p "{prompt}"',
     install: 'https://github.com/google-gemini/gemini-cli',
-    note: 'Google Gemini CLI in non-interactive prompt mode.',
+    note: 'Google Gemini in non-interactive prompt mode.',
   },
   none: {
     id: 'none',
     label: 'In-editor only (VS Code Copilot / Windsurf / Cline) — copy prompts manually',
     runner: '',
-    note: 'For editor-embedded agents without a headless CLI. The Run view will show the prompt text so you can paste it into your editor\'s chat panel.',
+    note: 'For editor-embedded agents without a headless runner. The Run view will show the prompt text so you can paste it into your editor\'s chat panel.',
   },
 };
 
 // --- Settings persistence -----------------------------------------
+// Settings live at .local/state/web-settings.json. Reads fall back to the
+// legacy tools/web-ui/.scout-web-settings.json so the first run after the
+// path-refactor doesn't lose the saved agent/runner.
 async function loadSettings() {
+  let raw;
   try {
-    const raw = await fs.readFile(SETTINGS_FILE, 'utf8');
+    raw = await fs.readFile(SETTINGS_FILE_NEW, 'utf8');
+  } catch {
+    try {
+      raw = await fs.readFile(SETTINGS_FILE, 'utf8');
+    } catch {
+      return { agent: null, runner: '' };
+    }
+  }
+  try {
     const data = JSON.parse(raw);
     return {
       agent: typeof data.agent === 'string' ? data.agent : null,
@@ -115,7 +169,8 @@ async function loadSettings() {
 }
 
 async function saveSettings(settings) {
-  await fs.writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2) + '\n', 'utf8');
+  await fs.mkdir(STATE_DIR, { recursive: true });
+  await fs.writeFile(SETTINGS_FILE_NEW, JSON.stringify(settings, null, 2) + '\n', 'utf8');
 }
 
 // Effective runner: env var wins, then saved settings.
@@ -142,6 +197,28 @@ app.use((err, req, res, next) => {
   }
   return next(err);
 });
+// Defense-in-depth: wrap res.json so every JSON response body has all string
+// fields run through redactSecrets. Catches `err.message` payloads from
+// upstream API failures that may echo URLs or headers containing keys, without
+// requiring every endpoint to remember to call redactSecrets itself.
+app.use((req, res, next) => {
+  const origJson = res.json.bind(res);
+  res.json = (body) => origJson(redactDeep(body));
+  next();
+});
+function redactDeep(v) {
+  if (v == null) return v;
+  if (typeof v === 'string') return redactSecrets(v);
+  if (Array.isArray(v)) {
+    for (let i = 0; i < v.length; i++) v[i] = redactDeep(v[i]);
+    return v;
+  }
+  if (typeof v === 'object') {
+    for (const k of Object.keys(v)) v[k] = redactDeep(v[k]);
+    return v;
+  }
+  return v;
+}
 // Disable browser caching for the SPA assets so iterative dev changes are picked up.
 app.use((req, res, next) => {
   if (/\.(html|js|css)$/.test(req.path) || req.path === '/') {
@@ -345,7 +422,7 @@ function slugifyForAnchor(s) {
 
 function pushRunOutput(run, chunk) {
   // Always run terminal output through the secret redactor before storing
-  // or streaming. Defense-in-depth: even if a CLI prints a key, the UI and
+  // or streaming. Defense-in-depth: even if a runner prints a key, the UI and
   // the persisted in-memory log will only ever see [REDACTED:KEY].
   const safe = redactSecrets(chunk);
   run.output += safe;
@@ -366,6 +443,23 @@ function closeRun(run, status) {
     } catch {}
   }
   run.listeners.clear();
+  // A finished scan/post run has (likely) written new reports or social-posts
+  // to disk. Proactively drop the TTL response caches and the parsed index so
+  // the dashboard, Conversations, and Reports reflect the new artifacts on the
+  // next request instead of serving up-to-30s-stale data. The index also
+  // self-invalidates via its content signature, but clearing here removes the
+  // directory-cache lag so a just-completed scan shows up immediately.
+  if (status === 'success') {
+    clearArtifactResponseCaches();
+    _indexCache = null;
+    // Rebuild the index in the background with the now-fresh directory
+    // listing so the next dashboard / Conversations load after a scan is
+    // served warm. Without this, a just-finished scan invalidates the cache
+    // and the next visit pays a cold rebuild that can time out the
+    // Community-signals card and make the dashboard look broken until a
+    // manual refresh. Fire-and-forget; failures simply rebuild on demand.
+    getIndex().catch(() => { /* will rebuild on demand */ });
+  }
   // Auto-render thumbnails for any run that produces a social-posts/*.md
   // (scout-post bulk + solo, plus scout-scan when posts are auto-generated).
   // Fire-and-forget so the SSE close above isn't delayed. Honor the
@@ -378,6 +472,12 @@ function closeRun(run, status) {
       autoRenderThumbnails(run).catch(() => {});
     }
   }
+  // CFPs + Conferences are no longer written as separate dated artifacts.
+  // Each /scout-scan now produces ONE consolidated content report whose
+  // "Open Calls for Papers (CFPs)" and "Conferences & Events" sections hold
+  // that data inline (navigable via the in-doc section nav and in a plain
+  // editor). The read-only /api/cfp-conferences live snapshot remains
+  // available for ad-hoc lookups.
 }
 
 // Spawn `node tools/render-thumbnails/index.js` to produce LinkedIn (1200x1200)
@@ -411,48 +511,81 @@ async function autoRenderThumbnails(run) {
 }
 
 // --- helpers -------------------------------------------------------
+// Config file resolution: the standard home is .local/configs/scout-config-
+// {slug}.md (gitignored). The legacy home was .github/prompts/scout-config-
+// {slug}.prompt.md. Reads prefer .local and fall back to legacy; writes go to
+// .local only (and clean up any legacy copy) so configs stay uncommittable.
+function localConfigPath(slug) {
+  return safeJoin(CONFIGS_DIR, `scout-config-${slug}.md`);
+}
+function legacyConfigPath(slug) {
+  return safeJoin(PROMPTS_DIR, `scout-config-${slug}.prompt.md`);
+}
+async function resolveConfigPath(slug) {
+  for (const p of [localConfigPath(slug), legacyConfigPath(slug)]) {
+    try {
+      await fs.access(p);
+      return p;
+    } catch {}
+  }
+  return null;
+}
+
 async function listConfigs() {
-  try {
-    const files = await fs.readdir(PROMPTS_DIR);
+  const bySlug = new Map();
+  // Legacy first, then .local — .local entries win on slug collision.
+  for (const [dir, suffix] of [
+    [PROMPTS_DIR, '.prompt.md'],
+    [CONFIGS_DIR, '.md'],
+  ]) {
+    let files = [];
+    try {
+      files = await fs.readdir(dir);
+    } catch {
+      continue;
+    }
     const entries = files.filter(
       (f) =>
         f.startsWith('scout-config-') &&
-        f.endsWith('.prompt.md') &&
-        f !== 'scout-config-example.prompt.md' &&
+        f.endsWith(suffix) &&
+        f !== `scout-config-example${suffix}` &&
         !f.startsWith('scout-config-example-')
     );
-    const configs = await Promise.all(
-      entries.map(async (f) => {
-        const slug = f.replace(/^scout-config-/, '').replace(/\.prompt\.md$/, '');
-        let name = '';
-        let type = '';
-        try {
-          const raw = await fs.readFile(path.join(PROMPTS_DIR, f), 'utf8');
-          const nameM = raw.match(/^\s*-\s*\*\*Name:\*\*\s*(.+)$/m);
-          const typeM = raw.match(/^\s*-\s*\*\*Type:\*\*\s*(.+)$/m);
-          if (nameM) name = nameM[1].trim();
-          if (typeM) type = typeM[1].trim();
-        } catch {}
-        return { slug, file: f, name, type };
-      })
-    );
-    return configs;
-  } catch {
-    return [];
+    for (const f of entries) {
+      const slug = f.slice('scout-config-'.length, f.length - suffix.length);
+      if (!slug) continue;
+      let name = '';
+      let type = '';
+      try {
+        const raw = await fs.readFile(path.join(dir, f), 'utf8');
+        const nameM = raw.match(/^\s*-\s*\*\*Name:\*\*\s*(.+)$/m);
+        const typeM = raw.match(/^\s*-\s*\*\*Type:\*\*\s*(.+)$/m);
+        if (nameM) name = nameM[1].trim();
+        if (typeM) type = typeM[1].trim();
+      } catch {}
+      bySlug.set(slug, { slug, file: f, name, type });
+    }
   }
+  return [...bySlug.values()];
 }
 
 async function readConfig(slug) {
   if (!isValidSlug(slug)) throw new Error('invalid slug');
-  const file = safeJoin(PROMPTS_DIR, `scout-config-${slug}.prompt.md`);
+  const file = await resolveConfigPath(slug);
+  if (!file) throw new Error('config not found');
   const raw = await fs.readFile(file, 'utf8');
-  return { slug, file: `scout-config-${slug}.prompt.md`, raw };
+  return { slug, file: path.basename(file), raw };
 }
 
 async function writeConfig(slug, raw) {
   if (!isValidSlug(slug)) throw new Error('invalid slug');
-  const file = safeJoin(PROMPTS_DIR, `scout-config-${slug}.prompt.md`);
-  await fs.writeFile(file, raw, 'utf8');
+  await fs.mkdir(CONFIGS_DIR, { recursive: true });
+  await fs.writeFile(localConfigPath(slug), raw, 'utf8');
+  // Remove any legacy .github/prompts copy so the config lives only in the
+  // gitignored .local/ tree and can never be accidentally committed.
+  try {
+    await fs.unlink(legacyConfigPath(slug));
+  } catch {}
 }
 
 app.get('/api/role-presets', (_req, res) => {
@@ -475,24 +608,79 @@ app.use(createSuggestionsRouter({ repoRoot: REPO_ROOT }));
 // (see top-of-file imports). Users can enrich the resulting markdown via the
 // Configs editor or by running /scout-onboard in a chat agent.
 
+// In-memory cache for the parsed doc-meta blob attached to each list entry.
+// Reports/social markdown can be 5–50 KB; parsing every file on every
+// dashboard refresh would dominate cold-load time. Key by full path + mtimeMs
+// so any save invalidates the entry automatically.
+const docMetaCache = new Map();
+
+function clearArtifactResponseCaches() {
+  responseCache.clear('reports:');
+  responseCache.clear('activity:');
+  responseCache.clear('markdown:');
+  responseCache.clear('thumbs:');
+  responseCache.clear('search:');
+}
+
+async function readDocMeta(fullPath, mtimeMs, name) {
+  const key = `${fullPath}:${mtimeMs}`;
+  const hit = docMetaCache.get(key);
+  if (hit) return hit;
+  try {
+    // Only the first ~8 KB is needed for H1 + summary + date-range metadata.
+    const fh = await fs.open(fullPath, 'r');
+    try {
+      const buf = Buffer.alloc(8192);
+      const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
+      const raw = buf.slice(0, bytesRead).toString('utf8');
+      const meta = extractDocMeta(raw, name);
+      docMetaCache.set(key, meta);
+      // Soft cap so a noisy workspace doesn't grow the cache unbounded.
+      if (docMetaCache.size > 2000) {
+        const firstKey = docMetaCache.keys().next().value;
+        if (firstKey) docMetaCache.delete(firstKey);
+      }
+      return meta;
+    } finally {
+      await fh.close();
+    }
+  } catch {
+    return extractDocMeta('', name);
+  }
+}
+
 async function listMarkdownFiles(dir) {
+  const cacheKey = `markdown:${dir}`;
+  const cached = responseCache.get(cacheKey);
+  if (cached) return cached;
   try {
     const files = (await fs.readdir(dir)).filter((f) => f.endsWith('.md'));
-    // Stat in parallel — directory may have 100+ entries and a sequential
-    // await per-file was a measurable chunk of the dashboard's cold load.
+    // Stat + meta-parse in parallel — directory may have 100+ entries and a
+    // sequential await per-file was a measurable chunk of the dashboard's
+    // cold load. Meta is cached by (path, mtimeMs) so steady-state refreshes
+    // hit RAM.
     const stats = await Promise.all(
       files.map(async (f) => {
         try {
-          const stat = await fs.stat(path.join(dir, f));
-          return { name: f, mtime: stat.mtime.toISOString(), size: stat.size };
+          const full = path.join(dir, f);
+          const stat = await fs.stat(full);
+          const meta = await readDocMeta(full, stat.mtimeMs, f);
+          return {
+            name: f,
+            mtime: stat.mtime.toISOString(),
+            size: stat.size,
+            meta,
+          };
         } catch {
           return null;
         }
       })
     );
-    return stats
+    const out = stats
       .filter(Boolean)
       .sort((a, b) => b.mtime.localeCompare(a.mtime));
+    responseCache.set(cacheKey, out, 30_000);
+    return out;
   } catch {
     return [];
   }
@@ -569,7 +757,7 @@ function serializeEnv(entries) {
 // --- API -----------------------------------------------------------
 
 // Detect whether some external agent (e.g. Copilot Chat in VS Code, or a
-// `claude` CLI session) has been writing into the workspace recently. We
+// headless runner session) has been writing into the workspace recently. We
 // can't see their processes, but we can see their side-effects:
 //   - a new/updated file under reports/ or social-posts/
 //   - mtime changes in .scout-state/
@@ -584,7 +772,8 @@ async function detectExternalActivity(windowSec = 90) {
   const dirs = [
     { dir: path.join(REPO_ROOT, 'reports'), kind: 'report', exts: ['.md', '.json'] },
     { dir: path.join(REPO_ROOT, 'social-posts'), kind: 'social post', exts: ['.md'] },
-    { dir: path.join(REPO_ROOT, '.scout-state'), kind: 'state', exts: null },
+    { dir: path.join(REPO_ROOT, 'reports', '.scout-state'), kind: 'state', exts: null },
+    { dir: path.join(STATE_DIR, 'scout-state'), kind: 'state', exts: null },
   ];
   const now = Date.now();
   let best = null;
@@ -971,7 +1160,7 @@ app.post('/api/configs', async (req, res) => {
       competitors, conferences, customSources, standardSources,
     });
     await writeConfig(slug, raw);
-    res.json({ ok: true, slug, file: `scout-config-${slug}.prompt.md` });
+    res.json({ ok: true, slug, file: `scout-config-${slug}.md` });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
   }
@@ -998,21 +1187,25 @@ app.put('/api/configs/:slug', async (req, res) => {
   }
 });
 
-// Delete a config by slug. The config file is removed from .github/prompts/.
-// Reports and social posts produced for this slug are kept on disk.
+// Delete a config by slug. The config file is removed from .local/configs/
+// (and any legacy .github/prompts/ copy). Reports and social posts produced
+// for this slug are kept on disk.
 app.delete('/api/configs/:slug', async (req, res) => {
   try {
     const slug = String(req.params.slug || '').toLowerCase();
     if (!isValidSlug(slug)) {
       return res.status(400).json({ error: 'invalid slug' });
     }
-    const file = safeJoin(PROMPTS_DIR, `scout-config-${slug}.prompt.md`);
-    try {
-      await fs.unlink(file);
-    } catch (err) {
-      if (err && err.code === 'ENOENT') return res.status(404).json({ error: 'not found' });
-      throw err;
+    let removed = false;
+    for (const file of [localConfigPath(slug), legacyConfigPath(slug)]) {
+      try {
+        await fs.unlink(file);
+        removed = true;
+      } catch (err) {
+        if (err && err.code !== 'ENOENT') throw err;
+      }
     }
+    if (!removed) return res.status(404).json({ error: 'not found' });
     res.json({ ok: true, slug });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
@@ -1020,10 +1213,14 @@ app.delete('/api/configs/:slug', async (req, res) => {
 });
 
 app.get('/api/reports', async (_req, res) => {
-  res.json({
+  const cached = responseCache.get('reports:all');
+  if (cached) return res.json(cached);
+  const payload = {
     reports: await listMarkdownFiles(REPORTS_DIR),
     social: await listMarkdownFiles(SOCIAL_DIR),
-  });
+  };
+  responseCache.set('reports:all', payload, 30_000);
+  res.json(payload);
 });
 
 // Convenience alias: just the social-posts/ markdown files.
@@ -1037,6 +1234,8 @@ app.get('/api/social', async (_req, res) => {
 // directory. Skips the brand/logo asset folder. Used by /api/activity so
 // the dashboard can show "thumbnails generated" alongside reports + posts.
 async function listThumbnailBatches() {
+  const cached = responseCache.get('thumbs:batches');
+  if (cached) return cached;
   const root = path.join(SOCIAL_DIR, 'images');
   let entries = [];
   try {
@@ -1061,7 +1260,9 @@ async function listThumbnailBatches() {
     } catch {}
     out.push({ batch: ent.name, count: pngs.length, mtime });
   }
-  return out.sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''));
+  const sorted = out.sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''));
+  responseCache.set('thumbs:batches', sorted, 30_000);
+  return sorted;
 }
 
 // Unified dashboard feed: real totals + a single time-sorted activity stream
@@ -1069,6 +1270,8 @@ async function listThumbnailBatches() {
 // recent runs. The "doesn't truly represent what's been done" complaint is
 // solved here — no more cards-of-counts that ignore half the work.
 app.get('/api/activity', async (_req, res) => {
+  const cached = responseCache.get('activity:all');
+  if (cached) return res.json(cached);
   const [reportFiles, socialFiles, thumbBatches] = await Promise.all([
     listMarkdownFiles(REPORTS_DIR),
     listMarkdownFiles(SOCIAL_DIR),
@@ -1077,7 +1280,6 @@ app.get('/api/activity', async (_req, res) => {
 
   const reports = reportFiles.filter((f) => /-content\.md$/.test(f.name));
   const calendars = socialFiles.filter((f) => /-posting-calendar\.md$/.test(f.name));
-  const trends = reportFiles.filter((f) => /-trends\.md$/.test(f.name));
   const altText = socialFiles.filter((f) => /-alt-/.test(f.name));
   const soloPosts = socialFiles.filter((f) => /-solo[-.]/.test(f.name));
   const bulkPosts = socialFiles.filter(
@@ -1098,7 +1300,6 @@ app.get('/api/activity', async (_req, res) => {
     socialBulk: bulkPosts.length,
     socialSolo: soloPosts.length,
     calendars: calendars.length,
-    trends: trends.length,
     altText: altText.length,
     thumbnailBatches: thumbBatches.length,
     thumbnailImages: thumbBatches.reduce((n, b) => n + b.count, 0),
@@ -1113,13 +1314,12 @@ app.get('/api/activity', async (_req, res) => {
     calendar: lastByName(calendars),
     thumbnails: thumbBatches[0]?.mtime || null,
     altText: lastByName(altText),
-    trends: lastByName(trends),
   };
 
   // Build the unified activity stream.
   const slugFromFile = (name) => {
     // Pattern: YYYY-MM-DD-HHmm-{slug}-{kind}.md  or  …-{slug}-solo-…
-    const m = name.match(/^\d{4}-\d{2}-\d{2}-\d{4}-(.+?)-(content|social-posts|posting-calendar|trends|solo|alt)/);
+    const m = name.match(/^\d{4}-\d{2}-\d{2}-\d{4}-(.+?)-(content|social-posts|posting-calendar|solo|alt)/);
     return m ? m[1] : '';
   };
   const stream = [];
@@ -1138,7 +1338,6 @@ app.get('/api/activity', async (_req, res) => {
   for (const s of bulkPosts) push('social-bulk', 'Social posts (bulk)', s, { href: `/view/social/${encodeURIComponent(s.name)}` });
   for (const s of soloPosts) push('social-solo', 'Social posts (solo)', s, { href: `/view/social/${encodeURIComponent(s.name)}` });
   for (const c of calendars) push('calendar', 'Posting calendar', c, { href: `/view/social/${encodeURIComponent(c.name)}` });
-  for (const t of trends) push('trends', 'Trends report', t, { href: `/view/reports/${encodeURIComponent(t.name)}` });
   for (const a of altText) push('alt', 'Alt text', a, { href: `/view/social/${encodeURIComponent(a.name)}` });
   for (const o of otherSocial) push('social-other', 'Social file', o, { href: `/view/social/${encodeURIComponent(o.name)}` });
   for (const b of thumbBatches) {
@@ -1169,7 +1368,9 @@ app.get('/api/activity', async (_req, res) => {
 
   // Cap the rendered timeline. The full counts still surface in the meta line
   // and stat cards; the card itself stays a digestible glance, not a feed.
-  res.json({ totals, last, activity: stream.slice(0, 10) });
+  const payload = { totals, last, activity: stream.slice(0, 10) };
+  responseCache.set('activity:all', payload, 30_000);
+  res.json(payload);
 });
 
 // --- Action items: parse the latest content report per subject ----
@@ -1381,6 +1582,336 @@ function enrichCfp(text) {
   };
 }
 
+// --- Conference / CFP date parsing + open-status policy -------------
+// Scans must only surface conferences that haven't happened yet and CFPs we
+// can prove are still open. These helpers parse the free-form date strings in
+// the config table and decide upcoming/open deterministically (offline).
+const MONTH_INDEX = {
+  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+};
+
+// Parse a date string into the END date of the event/window.
+// Handles "Apr 19–20, 2026", "Jul 19, 2026", "Feb 9–11, 2027", "Sep 6–7, 2026",
+// and ISO "2026-06-30". Returns a Date (end of that day, UTC) or null for
+// "TBD"/unparseable strings.
+function parseEndDate(s) {
+  const str = String(s || '');
+  const iso = str.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return new Date(Date.UTC(+iso[1], +iso[2] - 1, +iso[3], 23, 59, 59));
+  const m = str.match(/([A-Za-z]{3,})\s+(\d{1,2})(?:\s*[–—-]\s*(\d{1,2}))?,?\s*(\d{4})/);
+  if (m) {
+    const mon = MONTH_INDEX[m[1].slice(0, 3).toLowerCase()];
+    if (mon != null) {
+      const day = parseInt(m[3] || m[2], 10);
+      return new Date(Date.UTC(parseInt(m[4], 10), mon, day, 23, 59, 59));
+    }
+  }
+  return null;
+}
+
+// Parse a "CFP Closes" cell. Returns { date, openAlways }.
+//   "rolling" / "open" / "always"  → openAlways: true (never expires)
+//   "closed" / "n/a" / "—" / ""    → date in the past (treated as closed)
+//   a real date                     → parsed Date
+function parseCfpClose(s) {
+  const str = String(s || '').trim();
+  if (!str || /^[—–-]+$/.test(str)) return { date: new Date(0), openAlways: false };
+  if (/rolling|always|^open$/i.test(str)) return { date: null, openAlways: true };
+  if (/closed|^n\/?a$|past|tbd/i.test(str)) return { date: new Date(0), openAlways: false };
+  return { date: parseEndDate(str), openAlways: false };
+}
+
+// Default scan policy — a conference is "upcoming" when its event end date is
+// today or later. Unparseable / TBD dates are kept (we can't prove they're past).
+function isUpcomingConference(row, now = new Date()) {
+  if (!row.endDate) return true;
+  return row.endDate.getTime() >= now.getTime();
+}
+
+// Default scan policy — a CFP only counts as OPEN when we can prove it: the
+// conference is upcoming, it has a submission link, and its close date is today
+// or later (or it is explicitly rolling). Unknown close dates are NOT open, so
+// unvalidated CFPs never leak into the CFP report.
+function isOpenCfp(row, now = new Date()) {
+  if (!isUpcomingConference(row, now)) return false;
+  if (!row.cfp) return false;
+  if (row.cfpOpenAlways) return true;
+  if (!row.cfpCloseDate) return false;
+  return row.cfpCloseDate.getTime() >= now.getTime();
+}
+
+// Parse the "## Conferences & Events" table out of a scout-config-*.prompt.md.
+// Header-aware: recognizes an optional "CFP Closes" / "Deadline" column. Returns
+// rows of { name, dates, location, site, cfp, cfpClosesRaw, endDate,
+// cfpCloseDate, cfpOpenAlways } — links are enriched from CONFERENCE_LINKS and
+// the date fields feed isUpcomingConference()/isOpenCfp().
+function parseConferencesFromConfig(rawConfig) {
+  const lines = rawConfig.split(/\r?\n/);
+  const start = lines.findIndex((l) => /^##\s+Conferences\s*&\s*Events/i.test(l));
+  if (start < 0) return [];
+  const rows = [];
+  // Find the first pipe-table header after the section heading.
+  let i = start + 1;
+  while (i < lines.length && !/^##\s+/.test(lines[i])) {
+    if (/^\s*\|/.test(lines[i]) && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1] || '')) {
+      const headers = lines[i]
+        .split('|')
+        .slice(1, -1)
+        .map((s) => s.trim().toLowerCase());
+      const nameIdx = headers.findIndex((h) => /event|conference|name/.test(h));
+      const datesIdx = headers.findIndex((h) => /date/.test(h));
+      const locIdx = headers.findIndex((h) => /location|venue|city/.test(h));
+      const cfpIdx = headers.findIndex((h) => /cfp|close|deadline/.test(h));
+      // Skip header + separator, then walk body rows.
+      let j = i + 2;
+      while (j < lines.length && /^\s*\|/.test(lines[j])) {
+        const cells = lines[j]
+          .split('|')
+          .slice(1, -1)
+          .map((s) => s.trim());
+        const name = cells[nameIdx >= 0 ? nameIdx : 0] || '';
+        const dates = cells[datesIdx >= 0 ? datesIdx : 1] || '';
+        const location = cells[locIdx >= 0 ? locIdx : 2] || '';
+        const cfpClosesRaw = cfpIdx >= 0 ? cells[cfpIdx] || '' : '';
+        if (name) {
+          let site = '';
+          let cfp = '';
+          for (const entry of CONFERENCE_LINKS) {
+            if (entry.match.test(name)) {
+              site = entry.site || '';
+              cfp = entry.cfp || '';
+              break;
+            }
+          }
+          const close = parseCfpClose(cfpClosesRaw);
+          rows.push({
+            name,
+            dates,
+            location,
+            site,
+            cfp,
+            cfpClosesRaw,
+            endDate: parseEndDate(dates),
+            cfpCloseDate: close.date,
+            cfpOpenAlways: close.openAlways,
+          });
+        }
+        j++;
+      }
+      break;
+    }
+    i++;
+  }
+  return rows;
+}
+
+// Locate the most recent content-report markdown for a given slug.
+async function findLatestContentReport(slug) {
+  if (!isValidSlug(slug)) return null;
+  const reports = await listMarkdownFiles(REPORTS_DIR);
+  return reports
+    .filter(
+      (r) =>
+        /-content\.md$/.test(r.name) &&
+        (r.name.includes(`-${slug}-`) || r.name.includes(`-${slug}.`))
+    )
+    .sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''))[0] || null;
+}
+
+// --- Persisted CFP / Conference scan artifacts ----------------------
+// Called from closeRun() after a successful /scout-scan. Writes two dated
+// report files per subject so CFPs + Conferences become saved, browseable
+// reports (same lifecycle as Content / Mindshare) rather than being re-
+// derived live on every dashboard tab open. Deterministic + offline: CFPs
+// come from the just-written content report's "## Open Calls for Papers"
+// section and conferences from the active config's "## Conferences & Events"
+// table; submission/site links come from the curated CONFERENCE_LINKS table
+// (already vetted, no network calls). Idempotent — files sharing a run stamp
+// are never overwritten. Never throws.
+function mdCell(s) {
+  return String(s || '').replace(/\s*\n\s*/g, ' ').replace(/\|/g, '\\|').trim();
+}
+
+function mdLinkCell(label, url) {
+  return url ? `[${label}](${url})` : '';
+}
+
+function titleCase(slug) {
+  return slug.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function renderCfpReportMd({ slug, now, source, cfps }) {
+  const lines = [];
+  lines.push(`# Open Calls for Papers — ${titleCase(slug)}`);
+  lines.push('');
+  lines.push(`**Generated:** ${now} · **Source scan:** ${source}`);
+  lines.push('');
+  lines.push(
+    `Point-in-time snapshot of open conference CFPs relevant to ${slug.replace(/-/g, ' ')}, ` +
+      `captured automatically when this scan completed. Submission and site links come from the ` +
+      `curated known-events table.`
+  );
+  lines.push('');
+  lines.push('| Conference | Date / Location | CFP | Site | Notes |');
+  lines.push('|---|---|---|---|---|');
+  for (const c of cfps) {
+    const cfpLink = c.cfp
+      ? mdLinkCell('Submit', c.cfp)
+      : c.links && c.links[0]
+        ? mdLinkCell(c.links[0].label, c.links[0].url)
+        : '';
+    const siteLink = c.site ? mdLinkCell('Site', c.site) : '';
+    lines.push(
+      `| **${mdCell(c.name || c.raw)}** | ${mdCell(c.dateLoc)} | ${cfpLink} | ${siteLink} | ${mdCell(c.note)} |`
+    );
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
+function renderConferencesReportMd({ slug, now, source, conferences }) {
+  const lines = [];
+  lines.push(`# Conferences & Events — ${titleCase(slug)}`);
+  lines.push('');
+  lines.push(`**Generated:** ${now} · **Source config:** scout-config-${slug}.prompt.md`);
+  lines.push('');
+  lines.push(
+    `Conferences tracked for ${slug.replace(/-/g, ' ')}, captured automatically at scan time. ` +
+      `Submission and site links come from the curated known-events table.`
+  );
+  lines.push('');
+  lines.push('| Conference | Dates | Location | CFP Closes | CFP | Site |');
+  lines.push('|---|---|---|---|---|---|');
+  for (const c of conferences) {
+    const closes = c.cfpClosesRaw || (c.cfpOpenAlways ? 'Rolling' : '—');
+    lines.push(
+      `| **${mdCell(c.name)}** | ${mdCell(c.dates)} | ${mdCell(c.location)} | ${mdCell(closes)} | ${
+        c.cfp ? mdLinkCell('Submit', c.cfp) : ''
+      } | ${c.site ? mdLinkCell('Site', c.site) : ''} |`
+    );
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
+async function generateCfpConferenceArtifacts(run) {
+  let slugs = [];
+  try {
+    slugs = await computePreflightSlugs((run && run.args) || {});
+  } catch {
+    return;
+  }
+  if (!slugs.length) return;
+  let wrote = 0;
+  for (const slug of slugs) {
+    try {
+      if (!isValidSlug(slug)) continue;
+      const latest = await findLatestContentReport(slug);
+      if (!latest) continue;
+      const m = latest.name.match(/^(\d{4}-\d{2}-\d{2}-\d{4})-/);
+      const stamp = m ? m[1] : new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-');
+      const nowIso = new Date().toISOString();
+      const now = new Date();
+
+      let conferences = [];
+      try {
+        const cfg = await readConfig(slug);
+        conferences = parseConferencesFromConfig(cfg.raw) || [];
+      } catch {}
+
+      // Default scan policy: only upcoming events, and CFPs we can prove are open.
+      const upcoming = conferences.filter((c) => isUpcomingConference(c, now));
+      const cfps = upcoming
+        .filter((c) => isOpenCfp(c, now))
+        .map((c) => ({
+          name: c.name,
+          raw: c.name,
+          dateLoc: [c.dates, c.location].filter(Boolean).join(' · '),
+          note: c.cfpOpenAlways ? 'Rolling CFP' : c.cfpClosesRaw ? `CFP closes ${c.cfpClosesRaw}` : '',
+          site: c.site,
+          cfp: c.cfp,
+          links: [],
+        }));
+
+      if (cfps.length) {
+        const file = path.join(REPORTS_DIR, `${stamp}-${slug}-cfp.md`);
+        if (!fsExistsSync(file)) {
+          await fs.writeFile(file, renderCfpReportMd({ slug, now: nowIso, source: latest.name, cfps }), 'utf8');
+          wrote++;
+        }
+      }
+      if (upcoming.length) {
+        const file = path.join(REPORTS_DIR, `${stamp}-${slug}-conferences.md`);
+        if (!fsExistsSync(file)) {
+          await fs.writeFile(
+            file,
+            renderConferencesReportMd({ slug, now: nowIso, source: latest.name, conferences: upcoming }),
+            'utf8'
+          );
+          wrote++;
+        }
+      }
+    } catch (err) {
+      pushRunOutput(run, `\n[cfp-artifacts] ${slug}: ${err.message}\n`);
+    }
+  }
+  if (wrote > 0) {
+    pushRunOutput(
+      run,
+      `\n[scout-web] Wrote ${wrote} CFP/Conference report artifact(s) to reports/ — browse them under Reports → CFPs / Conferences.\n`
+    );
+  }
+}
+
+// CFPs + Conferences for the active subject. CFPs come from the latest
+// content report's "## Open Calls for Papers" section (populated by
+// /scout-scan when "Conference CFP tracking" is on); conferences come
+// from the active scout-config-*.prompt.md "## Conferences & Events"
+// table. Read-only; no writes.
+app.get('/api/cfp-conferences', async (req, res) => {
+  const slug = String(req.query.slug || '').trim();
+  if (!isValidSlug(slug)) {
+    return res.status(400).json({ error: 'invalid slug' });
+  }
+  try {
+    const out = {
+      slug,
+      cfps: [],
+      conferences: [],
+      report: null,
+      reportMtime: null,
+    };
+    // CFPs + conferences from the active config — filtered to the same
+    // default scan policy: only upcoming events, only provably-open CFPs.
+    const latest = await findLatestContentReport(slug);
+    if (latest) {
+      out.report = latest.name;
+      out.reportMtime = latest.mtime;
+    }
+    try {
+      const cfg = await readConfig(slug);
+      const all = parseConferencesFromConfig(cfg.raw);
+      const now = new Date();
+      out.conferences = all.filter((c) => isUpcomingConference(c, now));
+      out.cfps = out.conferences
+        .filter((c) => isOpenCfp(c, now))
+        .map((c) => ({
+          raw: c.name,
+          name: c.name,
+          dateLoc: [c.dates, c.location].filter(Boolean).join(' · '),
+          note: c.cfpOpenAlways ? 'Rolling CFP' : c.cfpClosesRaw ? `CFP closes ${c.cfpClosesRaw}` : '',
+          site: c.site,
+          cfp: c.cfp,
+          links: [],
+        }));
+    } catch {}
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
 app.get('/api/reports/:name', async (req, res) => {
   try {
     res.json(await readMarkdown(REPORTS_DIR, req.params.name));
@@ -1541,28 +2072,220 @@ app.get('/view/social/:name', async (req, res) => {
 // =====================================================================
 // Item / conversation / author / source index
 // ---------------------------------------------------------------------
-// Lazily builds an in-memory index by parsing every *-content.md report.
+// Lazily builds an in-memory index by reading every *-content.md report
+// (or, when available, its *-content.json sidecar — the agent writes a
+// structured sidecar with sentiment/score/author already classified, so
+// the JSON path avoids re-deriving anything from markdown emoji cells).
+//
 // Cached for 30s (or until reports/ mtime changes) so /api/items,
 // /api/conversations, /api/authors, /api/search, /api/source-health all
 // share the same scan. Read-only; never writes back to disk.
+//
+// All parsing/classification lives in tools/lib/report-index.mjs so the
+// agent surface and the web UI surface stay in lock-step.
 // =====================================================================
 
-let _indexCache = null; // { builtAt, signature, items, conversations, authors, sources, reports }
-const INDEX_TTL_MS = 30_000;
+let _indexCache = null;// { builtAt, signature, items, conversations, authors, sources, reports }
+let _indexBuilding = null; // in-flight build promise — concurrent callers share it
+
+async function stateFileMtime(name) {
+  try {
+    const file = await resolveStateRead(name, REPORTS_DIR);
+    if (!file) return '';
+    const st = await fs.stat(file);
+    return st.mtimeMs;
+  } catch {
+    return '';
+  }
+}
 
 async function getIndex() {
+  // If a build is already in flight, every concurrent caller awaits the same
+  // promise instead of racing four parallel rebuilds. The dashboard fires four
+  // index-backed endpoints in parallel (conversations, authors, sentiment,
+  // source-health) and without this mutex each cold start did 4× the I/O,
+  // pushing total time over the client-side timeout.
+  if (_indexBuilding) return _indexBuilding;
+  _indexBuilding = (async () => {
+    try { return await _buildIndex(); }
+    finally { _indexBuilding = null; }
+  })();
+  return _indexBuilding;
+}
+
+const BROWSER_SOCIAL_PLATFORMS = ['x', 'linkedin', 'reddit'];
+const BROWSER_SOCIAL_LABELS = { x: 'X', linkedin: 'LinkedIn', reddit: 'Reddit' };
+
+function parseContentReportName(name) {
+  const m = String(name || '').match(/^(\d{4}-\d{2}-\d{2}-\d{4})-(.+)-content\.md$/);
+  return m ? { stamp: m[1], slug: m[2] } : null;
+}
+
+async function collectBrowserSocialSidecars() {
+  const bySlug = new Map();
+  const signatureParts = [];
+  for (const root of [BROWSER_SCAN_SIDECAR_DIR, LEGACY_BROWSER_SCAN_DIR]) {
+    let slugs = [];
+    try { slugs = await fs.readdir(root); } catch { continue; }
+    for (const slug of slugs) {
+      if (!isValidSlug(slug)) continue;
+      const slugDir = path.join(root, slug);
+      let files = [];
+      try { files = await fs.readdir(slugDir); } catch { continue; }
+      const entry = bySlug.get(slug) || { platforms: {} };
+      for (const file of files) {
+        const m = file.match(/^(\d{4}-\d{2}-\d{2}-\d{4})-(x|linkedin|reddit)\.json$/);
+        if (!m) continue;
+        const [, stamp, platform] = m;
+        let stat;
+        try { stat = await fs.stat(path.join(slugDir, file)); } catch { continue; }
+        signatureParts.push(`${slug}/${file}@${stat.mtimeMs}`);
+        const existing = entry.platforms[platform];
+        if (!existing || stamp > existing.stamp || (stamp === existing.stamp && stat.mtimeMs > existing.mtimeMs)) {
+          entry.platforms[platform] = { stamp, platform, file, dir: slugDir, mtimeMs: stat.mtimeMs };
+        }
+      }
+      bySlug.set(slug, entry);
+    }
+  }
+  return { bySlug, signature: signatureParts.sort().join('|') };
+}
+
+function browserSidecarDate(value) {
+  const d = value ? new Date(value) : null;
+  if (!d || Number.isNaN(d.getTime())) return '';
+  return d.toISOString().slice(0, 10);
+}
+
+function formatBrowserEngagement(value) {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  if (typeof value !== 'object') return '';
+  return Object.entries(value)
+    .filter(([, v]) => v != null && v !== '' && Number(v) !== 0)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(', ');
+}
+
+function browserSidecarSummary(item) {
+  const title = String(item.title || '').trim();
+  const body = String(item.body || '').replace(/\s+/g, ' ').trim();
+  if (title && body && !body.toLowerCase().includes(title.toLowerCase())) return `${title} — ${body}`;
+  return title || body || String(item.thread_context || '').trim() || '(post)';
+}
+
+function browserSidecarAuthor(item) {
+  const display = String(item.author_display || '').trim();
+  const handle = String(item.author_handle || '').trim();
+  if (display && handle && !display.includes(handle)) return `${display} (${handle})`;
+  return display || handle || '';
+}
+
+function browserSidecarIsRelevant(item, slug) {
+  const text = [item.title, item.body, item.url, item.thread_context, item.source]
+    .map((v) => String(v || '').toLowerCase())
+    .join(' ');
+  // Bare "cosmos" is noisy (NVIDIA Cosmos, novels, astronomy, etc.). For
+  // Azure Cosmos DB / DocumentDB, require a product phrase.
+  if (/cosmos/.test(String(slug || '').toLowerCase())) {
+    return ['cosmos db', 'cosmosdb', 'azure cosmos', 'documentdb'].some((term) => text.includes(term));
+  }
+  const slugTokens = String(slug || '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length >= 4 && !['azure', 'microsoft', 'cloud'].includes(token));
+  const terms = new Set(slugTokens);
+  if (!terms.size) return true;
+  return [...terms].some((term) => text.includes(term));
+}
+
+function browserSidecarConversation(item, { slug, platform, stamp }) {
+  return {
+    date: browserSidecarDate(item.post_date || item.scraped_at),
+    platform: BROWSER_SOCIAL_LABELS[platform] || platform,
+    author: browserSidecarAuthor(item),
+    summary: browserSidecarSummary(item),
+    sentiment: 'unknown',
+    community: 'community',
+    communityRaw: '',
+    engagement: formatBrowserEngagement(item.engagement),
+    url: String(item.url || '').trim(),
+    section: 'Browser scan sidecar',
+    report: `${stamp}-${slug}-content.md`,
+    source: `browser-scan:${platform}`,
+  };
+}
+
+function addConversationAggregate(c, slug, authors, sources) {
+  if (c.author) {
+    const key = c.author.toLowerCase();
+    const entry =
+      authors.get(key) ||
+      { name: c.author, items: 0, conversations: 0, lastSeen: '', sentiments: {}, slugs: new Set(), urls: new Set() };
+    entry.conversations += 1;
+    const s = (c.sentiment || 'unknown').toLowerCase();
+    entry.sentiments[s] = (entry.sentiments[s] || 0) + 1;
+    if (c.date && c.date > entry.lastSeen) entry.lastSeen = c.date;
+    if (slug) entry.slugs.add(slug);
+    if (c.url) entry.urls.add(c.url);
+    authors.set(key, entry);
+  }
+  if (c.platform) {
+    const key = c.platform.toLowerCase();
+    const entry = sources.get(key) || { source: c.platform, items: 0, lastSeen: '', skipped: 0 };
+    entry.items += 1;
+    if (c.date && c.date > entry.lastSeen) entry.lastSeen = c.date;
+    sources.set(key, entry);
+  }
+}
+
+async function _buildIndex() {
   const reports = (await listMarkdownFiles(REPORTS_DIR)).filter((r) =>
     /-content\.md$/.test(r.name)
   );
+  const latestReportStampBySlug = new Map();
+  for (const report of reports) {
+    const parsedName = parseContentReportName(report.name);
+    if (!parsedName) continue;
+    const prev = latestReportStampBySlug.get(parsedName.slug) || '';
+    if (parsedName.stamp > prev) latestReportStampBySlug.set(parsedName.slug, parsedName.stamp);
+  }
+  // Cache signature also hashes sidecar mtime so a fresh JSON write (e.g. an
+  // agent rerun that updates sentiment without touching the .md) invalidates.
+  const [sidecarMtimes, sentimentOverridesMtime, browserSidecars] = await Promise.all([
+    Promise.all(
+      reports.map(async (r) => {
+        try {
+          const st = await fs.stat(path.join(REPORTS_DIR, r.name.replace(/\.md$/, '.json')));
+          return st.mtimeMs;
+        } catch {
+          return '';
+        }
+      })
+    ),
+    // Sentiment overrides alter parsed conversation labels and totals even
+    // though the report markdown/JSON files are untouched.
+    stateFileMtime(SENTIMENT_OVERRIDES_FILE),
+    collectBrowserSocialSidecars(),
+  ]);
   const signature = reports
-    .map((r) => `${r.name}@${r.mtime || ''}`)
+    .map((r, idx) => `${r.name}@${r.mtime || ''}#${sidecarMtimes[idx] || ''}`)
     .sort()
-    .join('|');
-  if (
-    _indexCache &&
-    _indexCache.signature === signature &&
-    Date.now() - _indexCache.builtAt < INDEX_TTL_MS
-  ) {
+    .join('|') +
+    `|sentiment-overrides@${sentimentOverridesMtime || ''}` +
+    `|browser-social-sidecars@${browserSidecars.signature || ''}`;
+  // Validate the cache by content fingerprint, not by wall-clock age. The
+  // signature already captures every input that can change the parsed index
+  // (each report's mtime + its JSON sidecar mtime + the sentiment-overrides
+  // mtime, all surfaced through listMarkdownFiles' own 30s directory cache).
+  // If the fingerprint is unchanged, a rebuild would reparse the entire
+  // corpus only to produce byte-identical output — so reuse it regardless of
+  // age. Re-parsing every 30s was the dominant dashboard cold-load cost
+  // (a full /api/conversations went from ~3.6s cold to ~0.6s warm purely on
+  // index reuse). Freshness is unchanged: any real file change flips a
+  // mtime, the signature differs, and the index rebuilds on the next call.
+  if (_indexCache && _indexCache.signature === signature) {
     return _indexCache;
   }
 
@@ -1572,18 +2295,13 @@ async function getIndex() {
   const sources = new Map(); // sourceKey -> aggregate
   const reportsMeta = [];
 
-  // Read + parse all reports in parallel. The aggregation loop below still
-  // runs serially so Map/Array ordering stays deterministic, but the I/O +
-  // markdown parse (the slow parts) overlap. On a workspace with ~30 reports
-  // this dropped /api/conversations cold time from ~600ms to ~120ms.
+  // Read + parse all reports in parallel via the shared lib. loadReport()
+  // prefers the JSON sidecar (the agent's structured output) and falls back
+  // to markdown for legacy reports.
   const parsedReports = await Promise.all(
     reports.map(async (r) => {
-      try {
-        const raw = await fs.readFile(path.join(REPORTS_DIR, r.name), 'utf8');
-        return { r, parsed: parseReport(raw, r.name) };
-      } catch {
-        return null;
-      }
+      const parsed = await loadReport(REPORTS_DIR, r.name);
+      return parsed ? { r, parsed } : null;
     })
   );
 
@@ -1595,6 +2313,7 @@ async function getIndex() {
       mtime: r.mtime,
       slug: parsed.slug,
       generatedAt: parsed.generatedAt,
+      source: parsed.source || 'md',
       itemCount: parsed.items.length,
       convoCount: parsed.conversations.length,
       sentimentTotals: parsed.sentimentTotals,
@@ -1654,6 +2373,38 @@ async function getIndex() {
     }
   }
 
+  // Safety net for freshness: browser-scan sidecars are written before the
+  // agent/report step. If the report generation is still in flight or fails,
+  // expose the newest social sidecars directly as conversation rows so the
+  // dashboard does not keep showing stale community activity. Once a later
+  // report is written for the same slug, these sidecar rows are skipped.
+  const existingConversationKeys = new Set(conversations.map((c) => convoKey(c)).filter(Boolean));
+  for (const [slug, entry] of browserSidecars.bySlug.entries()) {
+    const latestReportStamp = latestReportStampBySlug.get(slug) || '';
+    for (const platform of BROWSER_SOCIAL_PLATFORMS) {
+      const sidecar = entry.platforms[platform];
+      if (!sidecar) continue;
+      if (latestReportStamp && sidecar.stamp <= latestReportStamp) continue;
+      let raw = [];
+      try {
+        raw = JSON.parse(await fs.readFile(path.join(sidecar.dir, sidecar.file), 'utf8'));
+      } catch { continue; }
+      if (!Array.isArray(raw)) continue;
+      for (const item of raw) {
+        if (!item || typeof item !== 'object') continue;
+        if (isHiringContent(item)) continue;
+        if (!browserSidecarIsRelevant(item, slug)) continue;
+        const conversation = browserSidecarConversation(item, { slug, platform, stamp: sidecar.stamp });
+        if (!conversation.url && !conversation.summary) continue;
+        const key = convoKey(conversation);
+        if (key && existingConversationKeys.has(key)) continue;
+        if (key) existingConversationKeys.add(key);
+        conversations.push(conversation);
+        addConversationAggregate(conversation, slug, authors, sources);
+      }
+    }
+  }
+
   _indexCache = {
     builtAt: Date.now(),
     signature,
@@ -1672,169 +2423,6 @@ async function getIndex() {
     reports: reportsMeta,
   };
   return _indexCache;
-}
-
-// Parse a single content report into structured items + conversations + meta.
-function parseReport(raw, fileName) {
-  const lines = raw.split(/\r?\n/);
-  const slugMatch = fileName.match(/^\d{4}-\d{2}-\d{2}-\d{4}-(.+)-content\.md$/);
-  const slug = slugMatch ? slugMatch[1] : '';
-  const genMatch = raw.match(/\*\*Generated:\*\*\s*([^\n]+)/);
-  const generatedAt = genMatch ? genMatch[1].trim() : '';
-
-  const items = [];
-  const conversations = [];
-  let currentSection = '';
-  const seenItems = new Set();
-  const sentimentTotals = { positive: 0, neutral: 0, negative: 0, mixed: 0, unknown: 0 };
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const headerMatch = line.match(/^##+\s+(.+)$/);
-    if (headerMatch) {
-      currentSection = headerMatch[1].trim();
-      continue;
-    }
-    if (!/^\s*\|/.test(line)) continue;
-    const next = lines[i + 1] || '';
-    if (!/^\s*\|[\s:|-]+\|\s*$/.test(next)) continue;
-    const headers = line
-      .split('|')
-      .slice(1, -1)
-      .map((s) => s.trim().toLowerCase());
-    const idx = (names) => headers.findIndex((h) => names.includes(h));
-    const titleIdx = idx(['title', 'topic', 'session', 'summary', 'post', 'thread', 'discussion', 'mention']);
-    const linkIdx = idx(['link', 'url']);
-    const dateIdx = idx(['date']);
-    const epIdx = idx(['ep', 'score']);
-    const authorIdx = idx(['speaker', 'author']);
-    const sourceIdx = idx(['source', 'channel', 'platform']);
-    const tagsIdx = idx(['tags']);
-    const sentimentIdx = idx(['sentiment']);
-    const summaryIdx = idx(['summary']);
-    const communityIdx = idx(['community']);
-    const engagementIdx = idx(['engagement']);
-    const isConversation = sentimentIdx >= 0 || /conversations|mentions/i.test(currentSection);
-
-    let j = i + 2;
-    while (j < lines.length && /^\s*\|/.test(lines[j])) {
-      const cells = lines[j]
-        .split('|')
-        .slice(1, -1)
-        .map((s) => s.trim());
-      const titleCell = titleIdx >= 0 ? cells[titleIdx] || '' : '';
-      const linkCell = linkIdx >= 0 ? cells[linkIdx] || '' : '';
-      const dateCell = dateIdx >= 0 ? cells[dateIdx] || '' : '';
-      const epRaw = epIdx >= 0 ? cells[epIdx] || '' : '';
-      const authorCell = authorIdx >= 0 ? cells[authorIdx] || '' : '';
-      const sourceCell = sourceIdx >= 0 ? cells[sourceIdx] || '' : '';
-      const tagsCell = tagsIdx >= 0 ? cells[tagsIdx] || '' : '';
-      const sentimentCell = sentimentIdx >= 0 ? cells[sentimentIdx] || '' : '';
-      const summaryCell = summaryIdx >= 0 ? cells[summaryIdx] || '' : '';
-      const communityCell = communityIdx >= 0 ? cells[communityIdx] || '' : '';
-      const engagementCell = engagementIdx >= 0 ? cells[engagementIdx] || '' : '';
-
-      const linkMatch = linkCell.match(/\((https?:\/\/[^\s)]+)\)/);
-      const url = linkMatch ? linkMatch[1] : '';
-      const title = titleCell
-        .replace(/\\\|/g, '|')
-        .replace(/\s+/g, ' ')
-        .trim();
-      const ep = parseInt(epRaw, 10);
-
-      if (!title || title.length < 3) {
-        j++;
-        continue;
-      }
-      const sentiment = normalizeSentiment(sentimentCell);
-      const tags = tagsCell
-        .split(/[,;]/)
-        .map((t) => t.replace(/[`*_]/g, '').trim())
-        .filter(Boolean);
-
-      if (isConversation) {
-        sentimentTotals[sentiment] = (sentimentTotals[sentiment] || 0) + 1;
-        const community = (communityCell || '').replace(/[`*_]/g, '').trim().toLowerCase();
-        // Heuristic: rows tagged "official", "product", "first-party", or matching
-        // a known Microsoft/official handle pattern get classified as product.
-        // Everything else (including blanks, "community", "third-party", "story",
-        // "user", "mvp") is community-generated.
-        const isProduct =
-          /^(official|product|first[\s-]?party|microsoft|brand|company)$/.test(community) ||
-          /microsoft|@msft|@azure/i.test(authorCell);
-        conversations.push({
-          date: dateCell,
-          platform: sourceCell || 'Unknown',
-          author: authorCell || '',
-          summary: summaryCell || title,
-          sentiment,
-          community: isProduct ? 'product' : 'community',
-          communityRaw: community || '',
-          engagement: engagementCell.replace(/[`*_]/g, '').trim(),
-          url,
-          section: currentSection,
-        });
-      } else {
-        const dedupKey = url || `${title}::${authorCell}`;
-        if (!seenItems.has(dedupKey)) {
-          seenItems.add(dedupKey);
-          items.push({
-            title,
-            url,
-            date: dateCell,
-            ep: Number.isFinite(ep) ? ep : null,
-            author: authorCell || '',
-            source: sourceCell || '',
-            tags,
-            section: currentSection,
-            kind: classifyItem(currentSection, sourceCell, url),
-          });
-        }
-      }
-      j++;
-    }
-    i = j - 1;
-  }
-
-  // Skipped sources from "Sources That Could Not Be Reached" or "Skipped Sources" sections.
-  const skippedSources = [];
-  const skipStart = lines.findIndex((l) =>
-    /^##\s+(Sources That Could Not Be Reached|Skipped Sources|Sources Skipped)/i.test(l)
-  );
-  if (skipStart >= 0) {
-    for (let k = skipStart + 1; k < lines.length; k++) {
-      const l = lines[k];
-      if (/^##\s+/.test(l)) break;
-      const m = l.match(/^\s*[-*]\s+\*\*([^*]+)\*\*\s*[—:-]\s*(.+)$/);
-      if (m) skippedSources.push({ name: m[1].trim(), reason: m[2].trim() });
-    }
-  }
-
-  return { slug, generatedAt, items, conversations, sentimentTotals, skippedSources };
-}
-
-function normalizeSentiment(cell) {
-  if (!cell) return 'unknown';
-  const lower = cell.toLowerCase();
-  if (cell.includes('🟢') || /positive|advoc/i.test(lower)) return 'positive';
-  if (cell.includes('🔴') || /negative|critic|frustrat/i.test(lower)) return 'negative';
-  if (cell.includes('🟡') || /mixed|cautious|confus/i.test(lower)) return 'mixed';
-  if (/neutral/i.test(lower)) return 'neutral';
-  return 'unknown';
-}
-
-function classifyItem(section, source, url) {
-  const s = (section + ' ' + source + ' ' + url).toLowerCase();
-  if (/youtube\.com|youtu\.be|video/i.test(s)) return 'video';
-  if (/dev\.to|medium\.com|hashnode|dzone|infoq|blog|article/i.test(s)) return 'blog';
-  if (/github\.com|repo|project/i.test(s)) return 'repo';
-  if (/reddit/i.test(s)) return 'reddit';
-  if (/hacker news|news\.ycombinator/i.test(s)) return 'hn';
-  if (/bluesky|bsky/i.test(s)) return 'bluesky';
-  if (/twitter|^x$|\bx\/|x\.com/i.test(s)) return 'x';
-  if (/stack overflow|stackoverflow/i.test(s)) return 'stackoverflow';
-  if (/conf|talk|session|stream/i.test(s)) return 'video';
-  return 'other';
 }
 
 app.get('/api/items', async (req, res) => {
@@ -1878,18 +2466,26 @@ app.get('/api/conversations', async (req, res) => {
     // conversations from muted accounts. Default is to hide them entirely.
     const includeMutedFlag = String(req.query.includeMuted || '').toLowerCase();
     const includeMuted = includeMutedFlag === '1' || includeMutedFlag === 'true' || include === 'muted';
+    const includeProductFlag = String(req.query.includeProduct || '').toLowerCase();
+    const includeProduct = includeProductFlag === '1' || includeProductFlag === 'true' || include === 'all';
     const onlyMuted = include === 'muted';
+    const onlyNoTriage = include === 'no-triage';
     const closed = await loadClosed(REPORTS_DIR);
     const muted = await loadMuted(REPORTS_DIR);
     let convs = idx.conversations.map((c) => {
       const key = convoKey(c);
       const closedInfo = key && closed.items[key] ? closed.items[key] : null;
-      const isMuted = isMutedConv(muted, c);
-      const base = { ...c, key, isClosed: !!closedInfo, isMuted };
+      const mutedInfo = mutedInfoForConv(muted, c);
+      const isMuted = !!mutedInfo || isMutedConv(muted, c);
+      const isNoTriage = isNoTriageInfo(mutedInfo);
+      const base = { ...c, key, isClosed: !!closedInfo, isMuted, isNoTriage };
       if (closedInfo) base.closedInfo = closedInfo;
+      if (mutedInfo) base.mutedInfo = mutedInfo;
       return base;
     });
-    if (onlyMuted) convs = convs.filter((c) => c.isMuted);
+    if (!includeProduct) convs = convs.filter((c) => c.community !== 'product');
+    if (onlyNoTriage) convs = convs.filter((c) => c.isNoTriage);
+    else if (onlyMuted) convs = convs.filter((c) => c.isMuted);
     else if (!includeMuted) convs = convs.filter((c) => !c.isMuted);
     if (include === 'open') convs = convs.filter((c) => !c.isClosed);
     else if (include === 'closed') convs = convs.filter((c) => c.isClosed);
@@ -1909,14 +2505,14 @@ app.get('/api/conversations', async (req, res) => {
     convs = convs
       .slice()
       .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    // Dedupe by key — the same conversation often appears in multiple
-    // report files. Keep the newest occurrence (already first after sort)
-    // and collect the other report names in `dupReports` for context.
+    // Pass 1: dedupe by exact key (URL or composite). Same conversation
+    // appears in multiple report files — keep the newest occurrence and
+    // collect the other report names in `dupReports`.
     const seen = new Map();
     for (const c of convs) {
       const k = c.key || c.url || `${c.platform}::${c.author}::${c.summary}`;
       if (!seen.has(k)) {
-        seen.set(k, { ...c, dupReports: [] });
+        seen.set(k, { ...c, dupReports: [], dupUrls: [] });
       } else {
         const first = seen.get(k);
         if (c.report && c.report !== first.report && !first.dupReports.includes(c.report)) {
@@ -1924,8 +2520,43 @@ app.get('/api/conversations', async (req, res) => {
         }
       }
     }
-    const dedupedConvs = Array.from(seen.values());
-    const dupesRemoved = convs.length - dedupedConvs.length;
+    let dedupedConvs = Array.from(seen.values());
+    // Pass 2: collapse near-duplicate posts from the same author whose
+    // bodies are virtually identical (e.g. recruiter/spam accounts that
+    // re-post the same blurb daily with a fresh activity URN). Signature
+    // is platform + author + first 120 chars of normalized summary.
+    // Skip when author/summary is empty — those would over-collapse.
+    const sigSeen = new Map();
+    const collapsed = [];
+    for (const c of dedupedConvs) {
+      const author = (c.author || '').toString().toLowerCase().trim();
+      const summary = (c.summary || '')
+        .toString()
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120);
+      if (!author || summary.length < 40) {
+        collapsed.push(c);
+        continue;
+      }
+      const platform = (c.platform || '').toString().toLowerCase().trim();
+      const sig = `sig::${platform}|${author}|${summary}`;
+      if (!sigSeen.has(sig)) {
+        sigSeen.set(sig, c);
+        collapsed.push(c);
+      } else {
+        const first = sigSeen.get(sig);
+        if (c.url && c.url !== first.url && !first.dupUrls.includes(c.url)) {
+          first.dupUrls.push(c.url);
+        }
+        if (c.report && c.report !== first.report && !first.dupReports.includes(c.report)) {
+          first.dupReports.push(c.report);
+        }
+      }
+    }
+    const dupesRemoved = convs.length - collapsed.length;
+    dedupedConvs = collapsed;
     res.json({
       conversations: dedupedConvs,
       total: dedupedConvs.length,
@@ -2039,13 +2670,124 @@ app.post('/api/muted-accounts/import-owned', express.json({ limit: '32kb' }), as
   }
 });
 
+// Import configured product-team handles as no-triage accounts. These are
+// verified employees / owned people whose posts should be tracked
+// separately but should not clutter community triage.
+// Body: { slug: string }.
+app.post('/api/muted-accounts/import-team-members', express.json({ limit: '32kb' }), async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const slug = String(body.slug || '').trim();
+    if (!slug) return res.status(400).json({ error: 'slug: required' });
+    let cfg;
+    try {
+      cfg = await readConfig(slug);
+    } catch (err) {
+      return res.status(404).json({ error: `config not found for slug "${slug}"` });
+    }
+    const team = parseTeamMemberAccountsFromConfig(cfg.raw || '');
+    const added = [];
+    const skipped = [];
+    for (const acct of team) {
+      try {
+        const { key } = await muteAccount(REPORTS_DIR, {
+          platform: acct.platform,
+          handle: acct.handle,
+          reason: NO_TRIAGE_REASON,
+          note: acct.name ? `Product team member from ${cfg.file}: ${acct.name}` : `Product team member from ${cfg.file}`,
+        });
+        added.push({ key, platform: acct.platform, handle: acct.handle, name: acct.name || '' });
+      } catch (err) {
+        skipped.push({ platform: acct.platform, handle: acct.handle, name: acct.name || '', error: String(err.message || err) });
+      }
+    }
+    const state = await loadMuted(REPORTS_DIR);
+    res.json({
+      ok: true,
+      slug,
+      file: cfg.file,
+      parsed: team.length,
+      added,
+      skipped,
+      total: Object.keys(state.items).length,
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
 // --- Conversation close / reopen --------------------------------
 // Persistent "dismissed" state lives in reports/.closed-conversations.json
 // and is consumed by both the web UI and tools/conversations-cli.mjs so
-// the CLI agent and the browser see the same view.
+// the chat/headless agent and the browser see the same view.
 
 app.get('/api/conversations/reasons', (_req, res) => {
   res.json({ reasons: ALLOWED_REASONS });
+});
+
+// URL liveness probe — used by the dashboard to hide/flag dead post links.
+// In-memory cache; HEAD with GET fallback (many sites 405 HEAD). Treats
+// 2xx / 3xx / 401 / 403 / 429 as "reachable" (the page exists; we just can't
+// see it anonymously). Aggressively short timeout so we never block the UI.
+const _urlCheckCache = new Map(); // url -> { at, ok, status }
+const URL_CHECK_TTL_MS = 60 * 60 * 1000; // 1h
+const URL_CHECK_TIMEOUT_MS = 6000;
+async function probeUrl(url) {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), URL_CHECK_TIMEOUT_MS);
+  // Browser-shaped UA: some hosts (notably x.com / bsky.app / linkedin.com)
+  // return 403/404 to "compatible;" bot UAs even on GET. Pretend to be a
+  // recent Chromium so liveness probes match what a user would actually see.
+  const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+  try {
+    let r = await fetch(url, {
+      method: 'HEAD',
+      redirect: 'follow',
+      signal: ac.signal,
+      headers: { 'user-agent': ua, accept: '*/*' },
+    });
+    // Many SPAs (bsky.app, some LinkedIn routes, x.com) return 404 to HEAD
+    // even though the page renders 200 on GET. 4xx that *might* be the
+    // server lying about HEAD support gets a second-chance GET.
+    if (r.status === 404 || r.status === 405 || r.status === 410 || r.status === 501 || r.status === 403) {
+      // Try GET — some hosts block HEAD or return 403/404 to it.
+      r = await fetch(url, {
+        method: 'GET',
+        redirect: 'follow',
+        signal: ac.signal,
+        headers: { 'user-agent': ua, accept: 'text/html,*/*' },
+      });
+    }
+    const s = r.status;
+    const ok = (s >= 200 && s < 400) || s === 401 || s === 403 || s === 429;
+    return { ok, status: s };
+  } catch (err) {
+    return { ok: false, status: 0, error: String(err && err.message || err) };
+  } finally {
+    clearTimeout(t);
+  }
+}
+app.get('/api/check-url', async (req, res) => {
+  const raw = String(req.query.u || '').trim();
+  if (!raw) return res.status(400).json({ error: 'u: required' });
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return res.json({ ok: false, status: 0, reason: 'malformed' });
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return res.json({ ok: false, status: 0, reason: 'bad-protocol' });
+  }
+  const key = parsed.toString();
+  const now = Date.now();
+  const hit = _urlCheckCache.get(key);
+  if (hit && now - hit.at < URL_CHECK_TTL_MS) {
+    return res.json({ ok: hit.ok, status: hit.status, cached: true });
+  }
+  const result = await probeUrl(key);
+  _urlCheckCache.set(key, { at: now, ok: result.ok, status: result.status });
+  res.json({ ...result, cached: false });
 });
 
 app.get('/api/conversations/closed', async (_req, res) => {
@@ -2136,11 +2878,21 @@ app.get('/api/sentiment-summary', async (_req, res) => {
       list.push(r);
       bySlug.set(r.slug, list);
     }
+    const sentTotal = (t) =>
+      ((t && (t.positive || 0) + (t.neutral || 0) + (t.mixed || 0) + (t.negative || 0)) || 0);
     const groups = [];
     for (const [slug, list] of bySlug.entries()) {
       list.sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''));
-      const latest = list[0];
-      const prior = list[1];
+      const newest = list[0];
+      // Show the freshest report that actually classified sentiment, not just
+      // the newest file. A Mindshare-only or items-only scan has 0 classified
+      // conversations, and rigidly using it left the card blank ("No
+      // conversations in latest scan") even though a recent scan DID have
+      // sentiment — which read as stale/broken. Fall back to newest when none
+      // have sentiment so brand-new subjects still render.
+      const withSent = list.filter((r) => sentTotal(r.sentimentTotals) > 0);
+      const latest = withSent[0] || newest;
+      const prior = withSent[0] ? withSent[1] : list[1];
       groups.push({
         slug,
         latest: latest && {
@@ -2149,6 +2901,13 @@ app.get('/api/sentiment-summary', async (_req, res) => {
           totals: latest.sentimentTotals,
           convoCount: latest.convoCount,
           itemCount: latest.itemCount,
+        },
+        // The literal newest scan, so the client can note when the sentiment
+        // shown is carried from an earlier scan rather than the latest run.
+        newest: newest && {
+          report: newest.name,
+          generatedAt: newest.generatedAt,
+          convoCount: newest.convoCount,
         },
         prior: prior && {
           report: prior.name,
@@ -2167,6 +2926,9 @@ app.get('/api/search', async (req, res) => {
   try {
     const q = String(req.query.q || '').trim();
     if (!q) return res.json({ q, items: [], conversations: [], reports: [], authors: [] });
+    const cacheKey = `search:${q.toLowerCase()}`;
+    const cached = responseCache.get(cacheKey);
+    if (cached) return res.json(cached);
     const idx = await getIndex();
     const needle = q.toLowerCase();
     const closed = await loadClosed(REPORTS_DIR);
@@ -2188,18 +2950,35 @@ app.get('/api/search', async (req, res) => {
       .map((c) => ({ ...c, key: convoKey(c) }))
       .filter((c) => !closed.items[c.key])
       .slice(0, 20);
-    const reportHits = idx.reports.filter((r) => r.name.toLowerCase().includes(needle)).slice(0, 10);
+    const reportHits = idx.reports.filter((r) => r.name.toLowerCase().includes(needle)).slice(0, 25);
     const authorHits = idx.authors
       .filter((a) => a.name.toLowerCase().includes(needle))
       .slice(0, 10);
-    res.json({
+    // Full-text grep over reports/*.md + social-posts/*.md so the search
+    // also surfaces matches that live in item bodies, blockquotes, social
+    // post drafts, and posting-calendar files. Shared with tools/search.mjs.
+    let fileHits = [];
+    try {
+      const corpus = await searchCorpus({
+        repoRoot: REPO_ROOT,
+        query: q,
+        options: { maxFiles: 50, maxSnippetsPerFile: 3 },
+      });
+      fileHits = corpus.results;
+    } catch {
+      fileHits = [];
+    }
+    const payload = {
       q,
       items: itemHits,
       conversations: convoHits,
       reports: reportHits,
       authors: authorHits,
+      files: fileHits,
       builtAt: idx.builtAt,
-    });
+    };
+    responseCache.set(cacheKey, payload, 30_000);
+    res.json(payload);
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
   }
@@ -2499,7 +3278,7 @@ app.post('/api/vision/ollama-pull', express.json(), async (req, res) => {
   const host = (process.env.OLLAMA_HOST || 'http://localhost:11434').replace(/\/+$/, '');
   const state = { lines: [], done: false, startedAt: Date.now() };
   ollamaPulls.set(model, state);
-  // Use Ollama's HTTP API (no shell) so we don't depend on the CLI being on PATH.
+  // Use Ollama's HTTP API (no shell) so we don't depend on an executable being on PATH.
   (async () => {
     try {
       const r = await fetch(`${host}/api/pull`, {
@@ -2583,6 +3362,175 @@ app.post('/api/alt/describe', express.json({ limit: '256kb' }), async (req, res)
   }
 });
 
+// --- Sentiment review (local-LLM second opinion) -----------------
+// Used by the Conversations triage inbox: a human clicks "🤖 Re-check"
+// on a row and we ask the configured agent LLM what it thinks the
+// sentiment is, given the same rules the agent uses at report-generation
+// time. Default provider is `agent` — it reuses the CLI runner the user
+// configured for /scout-scan (Claude Code, Copilot CLI, Codex, …).
+
+app.get('/api/sentiment/status', async (_req, res) => {
+  try {
+    const env = await readEnvObject();
+    const { runner } = await getRunner();
+    const status = await probeSentiment(env, { runner });
+    res.json(status);
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+// Derive a human-friendly product name for prompt context. Prefers the
+// "**Name:**" line from the scout-config prompt for the slug; falls back
+// to title-casing the slug.
+async function resolveProductName(slug) {
+  const s = String(slug || '').trim();
+  if (!s) return '';
+  try {
+    if (!isValidSlug(s)) return _titleCaseSlug(s);
+    const configPath = await resolveConfigPath(s);
+    if (!configPath) return _titleCaseSlug(s);
+    const raw = await fs.readFile(configPath, 'utf8');
+    const m = raw.match(/^[-*]?\s*\*\*Name:\*\*\s*(.+)$/m);
+    if (m) return m[1].trim();
+  } catch {}
+  return _titleCaseSlug(s);
+}
+function _titleCaseSlug(slug) {
+  return String(slug)
+    .split('-')
+    .map((w) => (w.length <= 2 ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1)))
+    .join(' ');
+}
+
+app.post('/api/sentiment/review', express.json({ limit: '64kb' }), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const summary = String(body.summary || '').trim();
+    if (!summary) return res.status(400).json({ error: 'summary required' });
+    const env = await readEnvObject();
+    if (getSentimentProvider(env) === 'none') {
+      return res.status(400).json({
+        error: 'No sentiment provider configured. Set SENTIMENT_PROVIDER=agent|ollama|openai|custom in .env.',
+      });
+    }
+    const productName = body.productName
+      ? String(body.productName).trim()
+      : await resolveProductName(body.slug || '');
+    const { runner } = await getRunner();
+    const result = await reviewSentiment(
+      {
+        summary,
+        author: String(body.author || '').slice(0, 200),
+        platform: String(body.platform || '').slice(0, 80),
+        productName,
+        currentSentiment: String(body.currentSentiment || 'unknown').toLowerCase(),
+        userNote: String(body.userNote || '').slice(0, 500),
+      },
+      env,
+      { runner, cwd: REPO_ROOT },
+    );
+    if (result?.error) {
+      return res.status(502).json({ ...result, ok: false });
+    }
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Bulk re-check sentiment for many conversation rows in one request. Used by
+// the Conversations toolbar "Re-check N neutrals" button. Persists results to
+// .local/state/sentiment-overrides.json so they survive a server restart and
+// get applied during loadReport(). Runs items serially to avoid hammering a
+// local Ollama model with parallel requests.
+app.post('/api/sentiment/review-bulk', express.json({ limit: '2mb' }), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const items = Array.isArray(body.items) ? body.items : [];
+    if (!items.length) return res.status(400).json({ error: 'items[] required' });
+    const MAX = 100;
+    const limited = items.slice(0, MAX);
+    const env = await readEnvObject();
+    if (getSentimentProvider(env) === 'none') {
+      return res.status(400).json({
+        error: 'No sentiment provider configured. Set SENTIMENT_PROVIDER=agent|ollama|openai|custom in .env.',
+      });
+    }
+    const productName = body.productName
+      ? String(body.productName).trim()
+      : await resolveProductName(body.slug || '');
+    const { runner } = await getRunner();
+    // Sentiment overrides live at .local/state/sentiment-overrides.json;
+    // the resolver auto-migrates from the legacy reports/.sentiment-overrides.json
+    // on first read.
+    const overridesReadPath = await resolveStateRead(SENTIMENT_OVERRIDES_FILE, REPORTS_DIR);
+    let overrides = {};
+    try {
+      if (overridesReadPath) {
+        overrides = JSON.parse(await fs.readFile(overridesReadPath, 'utf8')) || {};
+      }
+    } catch {}
+    const results = [];
+    for (const raw of limited) {
+      const summary = String(raw?.summary || '').trim();
+      const url = String(raw?.url || '').trim();
+      const key = raw?.key || canonicalUrlKey(url);
+      if (!summary) {
+        results.push({ key, ok: false, error: 'empty summary' });
+        continue;
+      }
+      try {
+        const r = await reviewSentiment(
+          {
+            summary,
+            author: String(raw?.author || '').slice(0, 200),
+            platform: String(raw?.platform || '').slice(0, 80),
+            productName,
+            currentSentiment: String(raw?.currentSentiment || 'unknown').toLowerCase(),
+          },
+          env,
+          { runner, cwd: REPO_ROOT },
+        );
+        if (r?.error) {
+          results.push({ key, ok: false, error: r.error });
+        } else {
+          results.push({ key, ok: true, ...r });
+          if (url) {
+            overrides[url] = {
+              sentiment: r.sentiment,
+              confidence: r.confidence,
+              rationale: r.rationale,
+              provider: r.provider,
+              model: r.model,
+              reviewedAt: new Date().toISOString(),
+            };
+          }
+        }
+      } catch (err) {
+        results.push({ key, ok: false, error: err.message });
+      }
+    }
+    try {
+      const overridesWritePath = await resolveStateWrite(SENTIMENT_OVERRIDES_FILE);
+      await fs.writeFile(overridesWritePath, JSON.stringify(overrides, null, 2));
+      // Overrides affect parsed conversation labels and sentiment totals, but
+      // do not change report file mtimes. Drop the in-memory index so Pulse,
+      // Conversations, and /api/sentiment-summary see the new verdicts on the
+      // next request instead of waiting for the cache TTL.
+      _indexCache = null;
+      // Re-prime in the background so the next read is warm (see run-success
+      // handler for rationale).
+      getIndex().catch(() => { /* will rebuild on demand */ });
+    } catch (err) {
+      return res.json({ ok: true, results, persistError: err.message });
+    }
+    res.json({ ok: true, results, persisted: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/runs', async (req, res) => {
   const { command, args, options } = req.body || {};
   if (!command || typeof command !== 'string') {
@@ -2625,6 +3573,7 @@ async function startRunInternal(command, args, opts = {}) {
     status: 'running',
     command: commandLine,
     cmdName: command,
+    args: args || {},
     startedAt: new Date().toISOString(),
     finishedAt: null,
     output: '',
@@ -2691,6 +3640,15 @@ async function startRunInternal(command, args, opts = {}) {
   // agent always sees fresh logged-in results. Opt-out via
   // options.browserScan === 'skip'; force-refresh via 'force'.
   const browserScanOpt = (opts.options && opts.options.browserScan) || 'auto';
+  // Optional rangeDays from the Run form — used to scope the
+  // browser-scan preflight to the same date window the agent will use.
+  // Clamp to 1..365 to keep the CLI happy; missing/invalid → leave 0
+  // so the preflight uses its default (30d).
+  const rangeDaysRaw = Number(opts.options && opts.options.rangeDays);
+  const preflightDays =
+    Number.isFinite(rangeDaysRaw) && rangeDaysRaw >= 1
+      ? Math.min(365, Math.floor(rangeDaysRaw))
+      : 0;
   const preflightSlugs =
     command === 'scout-scan' && browserScanOpt !== 'skip'
       ? await computePreflightSlugs(args)
@@ -2701,7 +3659,7 @@ async function startRunInternal(command, args, opts = {}) {
     BROWSER_SCAN_INSTALLED &&
     preflightSlugs.length > 0
   ) {
-    runBrowserScanPreflight(run, preflightSlugs, browserScanOpt === 'force')
+    runBrowserScanPreflight(run, preflightSlugs, browserScanOpt === 'force', preflightDays)
       .catch((err) => {
         pushRunOutput(run, `\n[browser-scan preflight] error: ${err.message} — continuing without it\n`);
       })
@@ -2741,38 +3699,51 @@ async function computePreflightSlugs(args) {
 // Streams stdout/stderr into the parent run so the user sees progress.
 // Resolves when every needed slug has finished (or been skipped). Never
 // rejects — failures are logged into the run output.
-async function runBrowserScanPreflight(run, slugs, force = false) {
+async function runBrowserScanPreflight(run, slugs, force = false, days = 0) {
+  const windowLine = days > 0 ? ` (date window: last ${days} day${days === 1 ? '' : 's'})` : '';
   pushRunOutput(
     run,
-    `[browser-scan] Preflight starting for ${slugs.length} subject${slugs.length === 1 ? '' : 's'}: ${slugs.join(', ')}\n`,
+    `[browser-scan] Preflight starting for ${slugs.length} subject${slugs.length === 1 ? '' : 's'}${windowLine}: ${slugs.join(', ')}\n`,
   );
   const probe = await probeCdpPort(9222);
   if (!probe.up) {
-    pushRunOutput(
-      run,
-      `[browser-scan] No browser is running on CDP port 9222 — skipping preflight.\n` +
-      `[browser-scan]   Open the Run view's "🌐 Browser scan" panel and click "Open browser & sign in" to enable Layer-0 coverage.\n` +
-      `[browser-scan]   Or run: node tools/browser-scan/launch-edge.mjs (one-time login per platform).\n` +
-      `[browser-scan] Continuing with API/RSS layers only.\n`,
-    );
-    return;
+    // No browser on the CDP port. Rather than skipping the whole Layer-0
+    // pass and making the user hand-run launch-edge.mjs every time, try
+    // to auto-launch the dedicated CDP-profile browser. That profile keeps
+    // the signed-in cookies from the one-time sign-in, so the relaunch is
+    // silent (no re-login) as long as the session is still valid.
+    const relaunched = await ensureBrowserForPreflight(run, 9222);
+    if (!relaunched.up) {
+      pushRunOutput(
+        run,
+        `[browser-scan] No browser is running on CDP port 9222 and auto-launch did not come up in time — skipping preflight.\n` +
+        `[browser-scan]   If you have never signed in, run: node tools/browser-scan/launch-edge.mjs (one-time login per platform).\n` +
+        `[browser-scan]   Then sign in to X / LinkedIn / Reddit once; future runs relaunch the browser automatically.\n` +
+        `[browser-scan] Continuing with API/RSS layers only.\n`,
+      );
+      return;
+    }
+    probe.up = true;
+    probe.browser = relaunched.browser;
   }
   pushRunOutput(run, `[browser-scan] Attached to ${probe.browser || 'browser'} on CDP port 9222.\n`);
 
-  const sidecarRoot = path.join(REPORTS_DIR, '.browser-scan');
   const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
   for (const slug of slugs) {
-    // Freshness check unless forced.
+    // Freshness check unless forced. Consult both the new and legacy
+    // sidecar dirs and use the freshest mtime across either.
     if (!force) {
       let freshest = 0;
-      try {
-        const files = await fs.readdir(path.join(sidecarRoot, slug));
-        for (const f of files) {
-          if (!/^\d{4}-\d{2}-\d{2}-\d{4}-(x|linkedin|reddit)\.json$/.test(f)) continue;
-          const stat = await fs.stat(path.join(sidecarRoot, slug, f));
-          if (stat.mtimeMs > freshest) freshest = stat.mtimeMs;
-        }
-      } catch { /* no dir yet → freshest stays 0 */ }
+      for (const slugDir of browserScanReadDirs(slug)) {
+        try {
+          const files = await fs.readdir(slugDir);
+          for (const f of files) {
+            if (!/^\d{4}-\d{2}-\d{2}-\d{4}-(x|linkedin|reddit|google)\.json$/.test(f)) continue;
+            const stat = await fs.stat(path.join(slugDir, f));
+            if (stat.mtimeMs > freshest) freshest = stat.mtimeMs;
+          }
+        } catch { /* no dir yet → skip */ }
+      }
       if (freshest && Date.now() - freshest < SIX_HOURS_MS) {
         const ageMin = Math.floor((Date.now() - freshest) / 60000);
         pushRunOutput(
@@ -2782,13 +3753,14 @@ async function runBrowserScanPreflight(run, slugs, force = false) {
         continue;
       }
     }
-    pushRunOutput(run, `[browser-scan] ${slug}: scanning X / LinkedIn / Reddit…\n`);
+    pushRunOutput(
+      run,
+      `[browser-scan] ${slug}: scanning X / LinkedIn / Reddit / Google News${days > 0 ? ` (last ${days}d)` : ''}…\n`,
+    );
+    const scanArgs = [path.join(BROWSER_SCAN_DIR, 'index.mjs'), 'scan', '--slug', slug];
+    if (days > 0) scanArgs.push('--days', String(days));
     await new Promise((resolve) => {
-      const child = spawn(
-        process.execPath,
-        [path.join(BROWSER_SCAN_DIR, 'index.mjs'), 'scan', '--slug', slug],
-        { cwd: REPO_ROOT, env: process.env },
-      );
+      const child = spawn(process.execPath, scanArgs, { cwd: REPO_ROOT, env: process.env });
       // Track on run so a stop request can kill the preflight too.
       run.child = child;
       child.stdout.on('data', (d) => pushRunOutput(run, d.toString()));
@@ -3143,7 +4115,55 @@ async function probeCdpPort(port) {
   }
 }
 
-// GET /api/browser-scan/info — capabilities + which Chromium-family
+// Auto-launch the dedicated CDP-profile browser for a /scout-scan
+// preflight when nothing is listening on the CDP port. This is what
+// removes the per-run "go run launch-edge.mjs yourself" friction: the
+// dedicated profile persists the signed-in cookies from the one-time
+// sign-in, so relaunching it restores the X / LinkedIn / Reddit sessions
+// without any human step. We only attempt this if that profile actually
+// exists on disk (i.e. the user has signed in at least once); otherwise
+// launching would just pop empty login pages with no session to reuse.
+// Returns the post-launch probe result. Never throws.
+async function ensureBrowserForPreflight(run, port) {
+  if (!BROWSER_SCAN_INSTALLED) return { up: false };
+  const hasProfile =
+    fsExistsSync(BROWSER_PROFILE_DIR) || fsExistsSync(LEGACY_BROWSER_PROFILE_DIR);
+  if (!hasProfile) {
+    pushRunOutput(
+      run,
+      `[browser-scan] No signed-in browser profile found yet — auto-launch needs a one-time sign-in first.\n`,
+    );
+    return { up: false };
+  }
+  pushRunOutput(
+    run,
+    `[browser-scan] No browser on CDP port ${port} — auto-launching the signed-in profile…\n`,
+  );
+  try {
+    const launcher = path.join(BROWSER_SCAN_DIR, 'launch-edge.mjs');
+    const child = spawn(process.execPath, [launcher, '--port', String(port)], {
+      cwd: REPO_ROOT,
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.unref();
+  } catch (err) {
+    pushRunOutput(run, `[browser-scan] Auto-launch failed to spawn: ${err.message}\n`);
+    return { up: false };
+  }
+  // Poll the CDP port until the browser is ready (up to ~30s).
+  const deadline = Date.now() + 30000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 1500));
+    const probe = await probeCdpPort(port);
+    if (probe.up) {
+      pushRunOutput(run, `[browser-scan] Browser is up on CDP port ${port}.\n`);
+      return probe;
+    }
+  }
+  return { up: false };
+}
+
 // browsers are installed on this machine.
 app.get('/api/browser-scan/info', async (_req, res) => {
   if (!BROWSER_SCAN_INSTALLED) {
@@ -3176,20 +4196,22 @@ app.get('/api/browser-scan/status', async (req, res) => {
   if (!BROWSER_SCAN_INSTALLED) return res.json({ installed: false });
   const port = Number(req.query.port || 9222);
   const cdp = await probeCdpPort(port);
-  // List sidecars per slug under reports/.browser-scan/{slug}/
-  const sidecarRoot = path.join(REPORTS_DIR, '.browser-scan');
+  // List sidecars per slug across new (.local/state/browser-scan) and
+  // legacy (reports/.browser-scan) dirs. Newer stamp wins per platform.
+  const sidecarRoots = [BROWSER_SCAN_SIDECAR_DIR, LEGACY_BROWSER_SCAN_DIR];
   const bySlug = {};
-  try {
-    const slugs = await fs.readdir(sidecarRoot);
+  for (const sidecarRoot of sidecarRoots) {
+    let slugs = [];
+    try { slugs = await fs.readdir(sidecarRoot); } catch { continue; }
     for (const slug of slugs) {
       if (!isValidSlug(slug)) continue;
       const slugDir = path.join(sidecarRoot, slug);
       let files = [];
       try { files = await fs.readdir(slugDir); } catch { continue; }
-      const platforms = {};
+      const platforms = bySlug[slug] || {};
       for (const f of files) {
         if (!f.endsWith('.json')) continue;
-        const m = f.match(/^(\d{4}-\d{2}-\d{2}-\d{4})-(x|linkedin|reddit)\.json$/);
+        const m = f.match(/^(\d{4}-\d{2}-\d{2}-\d{4})-(x|linkedin|reddit|google)\.json$/);
         if (!m) continue;
         const platform = m[2];
         const stamp = m[1];
@@ -3202,12 +4224,80 @@ app.get('/api/browser-scan/status', async (req, res) => {
       }
       bySlug[slug] = platforms;
     }
-  } catch { /* no sidecar dir yet */ }
+  }
   res.json({
     installed: true,
     port,
     cdp,
     sidecarsBySlug: bySlug,
+  });
+});
+
+// GET /api/browser-scan/pending?slug=X — are there browser-scan sidecars
+// captured *after* the latest report for this slug (i.e. sign-in-scan posts
+// that no /scout-scan run has folded into a report yet)? Powers the
+// dashboard "captured but not ingested" hint so fresh social chatter doesn't
+// silently look stale on the Community-signals card. Social platforms only
+// (x / linkedin / reddit) — google sidecars are content-only and never feed
+// that card. No CDP probe: this is a pure filesystem comparison.
+app.get('/api/browser-scan/pending', async (req, res) => {
+  if (!BROWSER_SCAN_INSTALLED) return res.json({ installed: false, pending: false, platforms: [] });
+  const slug = String(req.query.slug || '').trim();
+  if (!isValidSlug(slug)) return res.json({ installed: true, pending: false, platforms: [] });
+
+  // Newest report stamp for this slug. Reports are {stamp}-{slug}-content.md.
+  let latestReportStamp = '';
+  try {
+    const reports = await listMarkdownFiles(REPORTS_DIR);
+    for (const r of reports) {
+      const m = r.name.match(/^(\d{4}-\d{2}-\d{2}-\d{4})-(.+)-content\.md$/);
+      if (m && m[2] === slug && m[1] > latestReportStamp) latestReportStamp = m[1];
+    }
+  } catch { /* no reports dir yet → every sidecar counts as pending */ }
+
+  // Newest sidecar per social platform across canonical + legacy dirs.
+  const SOCIAL = ['x', 'linkedin', 'reddit'];
+  const newest = {}; // platform -> { stamp, dir, file }
+  for (const root of [BROWSER_SCAN_SIDECAR_DIR, LEGACY_BROWSER_SCAN_DIR]) {
+    const slugDir = path.join(root, slug);
+    let files = [];
+    try { files = await fs.readdir(slugDir); } catch { continue; }
+    for (const f of files) {
+      const m = f.match(/^(\d{4}-\d{2}-\d{2}-\d{4})-(x|linkedin|reddit)\.json$/);
+      if (!m) continue;
+      const [, stamp, platform] = m;
+      if (!newest[platform] || stamp > newest[platform].stamp) {
+        newest[platform] = { stamp, dir: slugDir, file: f };
+      }
+    }
+  }
+
+  // A platform is "pending" when its newest sidecar postdates the latest
+  // report. Count items by reading the sidecar array.
+  const platforms = [];
+  let totalItems = 0;
+  let newestSidecarStamp = '';
+  for (const platform of SOCIAL) {
+    const s = newest[platform];
+    if (!s) continue;
+    if (s.stamp > newestSidecarStamp) newestSidecarStamp = s.stamp;
+    if (latestReportStamp && s.stamp <= latestReportStamp) continue; // already ingested
+    let count = 0;
+    try {
+      const arr = JSON.parse(await fs.readFile(path.join(s.dir, s.file), 'utf8'));
+      count = Array.isArray(arr) ? arr.length : 0;
+    } catch { /* unreadable sidecar — surface it with count 0 */ }
+    platforms.push({ platform, stamp: s.stamp, count });
+    totalItems += count;
+  }
+
+  res.json({
+    installed: true,
+    pending: totalItems > 0,
+    latestReportStamp,
+    newestSidecarStamp,
+    platforms,
+    totalItems,
   });
 });
 
@@ -3273,6 +4363,17 @@ app.post('/api/browser-scan/auth-check', async (req, res) => {
     if (line && line.startsWith('{')) {
       try {
         const parsed = JSON.parse(line);
+        // Defense-in-depth: Playwright error messages echoed in `error`
+        // / `raw` can include WS URLs, headers, or other tool output —
+        // run them through the same redactor used for streamed logs.
+        if (parsed && typeof parsed.error === 'string') parsed.error = redactSecrets(parsed.error);
+        if (parsed && parsed.platforms && typeof parsed.platforms === 'object') {
+          for (const k of Object.keys(parsed.platforms)) {
+            const p = parsed.platforms[k];
+            if (p && typeof p.raw === 'string') p.raw = redactSecrets(p.raw);
+            if (p && typeof p.finalUrl === 'string') p.finalUrl = redactSecrets(p.finalUrl);
+          }
+        }
         return res.json(parsed);
       } catch { /* fall through */ }
     }
@@ -3280,13 +4381,13 @@ app.post('/api/browser-scan/auth-check', async (req, res) => {
       ok: false,
       error: 'parse-failed',
       exitCode: code,
-      stderr: err.slice(-1000),
-      stdout: out.slice(-1000),
+      stderr: redactSecrets(err.slice(-1000)),
+      stdout: redactSecrets(out.slice(-1000)),
     });
   });
   child.on('error', (e) => {
     clearTimeout(timeout);
-    res.status(500).json({ ok: false, error: 'spawn-failed', message: e.message });
+    res.status(500).json({ ok: false, error: 'spawn-failed', message: redactSecrets(e.message) });
   });
 });
 
@@ -3295,8 +4396,12 @@ app.post('/api/browser-scan/auth-check', async (req, res) => {
 // surface used by other commands.
 app.post('/api/browser-scan/scan', async (req, res) => {
   if (!BROWSER_SCAN_INSTALLED) return res.status(404).json({ error: 'browser-scan not installed' });
-  const { slug, platforms, port } = req.body || {};
+  const { slug, platforms, port, days } = req.body || {};
   if (!slug || !isValidSlug(slug)) return res.status(400).json({ error: 'valid slug required' });
+  // Whether to fold the fresh sidecars into a report once the scan finishes.
+  // Default true so "run completes → data is ingested" is the standard
+  // behavior; pass { ingest: false } for a pure sidecar refresh.
+  const wantIngest = (req.body && req.body.ingest) !== false;
   // Make sure CDP is reachable before spawning — friendlier error than the
   // child failing 8 seconds in.
   const probe = await probeCdpPort(Number(port || 9222));
@@ -3309,8 +4414,13 @@ app.post('/api/browser-scan/scan', async (req, res) => {
   const args = [path.join(BROWSER_SCAN_DIR, 'index.mjs'), 'scan', '--slug', slug];
   if (port) { args.push('--port', String(Number(port))); }
   if (Array.isArray(platforms) && platforms.length) {
-    const valid = platforms.filter((p) => ['x', 'linkedin', 'reddit'].includes(p));
+    const valid = platforms.filter((p) => ['x', 'linkedin', 'reddit', 'google'].includes(p));
     if (valid.length) args.push('--platforms', valid.join(','));
+  }
+  // Optional date-range scope. Clamp to a sane 1..365 day window.
+  const daysNum = Number(days);
+  if (Number.isFinite(daysNum) && daysNum >= 1) {
+    args.push('--days', String(Math.min(365, Math.floor(daysNum))));
   }
   // Reuse the existing run plumbing so the operations queue + output
   // streaming Just Work.
@@ -3332,11 +4442,147 @@ app.post('/api/browser-scan/scan', async (req, res) => {
     child,
   };
   runs.set(id, run);
+  // Capture the spawn time so the close handler can tell whether THIS run
+  // wrote fresh social sidecars (used to gate auto-ingest — see below).
+  const runStartMs = Date.now();
   child.stdout.on('data', (d) => pushRunOutput(run, d.toString()));
   child.stderr.on('data', (d) => pushRunOutput(run, d.toString()));
-  child.on('close', (code) => { run.child = null; closeRun(run, code === 0 ? 'success' : `exited ${code}`); });
+  child.on('close', async (code) => {
+    run.child = null;
+    closeRun(run, code === 0 ? 'success' : `exited ${code}`);
+    if (!wantIngest) return;
+    // Gate auto-ingest on "did this run write fresh X/LinkedIn/Reddit
+    // sidecars?", NOT on the exit code. The browser-scan tool routinely
+    // exits non-zero on a Google News timeout *after* successfully writing
+    // all three social sidecars, so keying off code===0 would strand 100+
+    // good posts (exactly the bug the user hit). A hard failure (CDP down)
+    // writes no sidecars, so this check still correctly skips ingest.
+    let freshSocial = 0;
+    try {
+      for (const dir of browserScanReadDirs(slug)) {
+        let files = [];
+        try { files = await fs.readdir(dir); } catch { continue; }
+        for (const f of files) {
+          if (!/-(x|linkedin|reddit)\.json$/.test(f)) continue;
+          try {
+            const st = await fs.stat(path.join(dir, f));
+            // -2s slack for clock granularity between spawn and first write.
+            if (st.mtimeMs >= runStartMs - 2000) freshSocial += 1;
+          } catch { /* ignore unreadable */ }
+        }
+      }
+    } catch { /* fall through → treated as no fresh sidecars */ }
+    if (freshSocial === 0) {
+      if (code !== 0) {
+        pushRunOutput(run, `\n[scout-web] Browser scan exited ${code} and wrote no fresh social sidecars — skipping auto-ingest. Check the log above (often a sign-in/CDP issue).\n`);
+      }
+      return;
+    }
+    if (code !== 0) {
+      pushRunOutput(run, `\n[scout-web] Browser scan reported exit ${code} but wrote ${freshSocial} fresh social sidecar(s) (commonly a Google News timeout after the social platforms succeeded) — ingesting anyway.\n`);
+    }
+    // Default behavior: a completed browser scan should leave its posts
+    // ingested into a report, not stranded in sidecars. Chain a /scout-scan
+    // agent run scoped to this slug (browserScan: 'skip' — we just scanned)
+    // so the fresh X/LinkedIn/Reddit posts land in a report's Conversations
+    // & Mentions section. Requires a configured runner; without one we leave
+    // the dashboard's pending-sidecar hint to nudge manual ingestion.
+    let runner = '';
+    try { ({ runner } = await getRunner()); } catch { /* treat as unconfigured */ }
+    if (!runner) {
+      pushRunOutput(run, `\n[scout-web] Browser scan done. No agent runner is configured, so the posts stay in sidecars — open the dashboard and click "Run a scan to ingest", or run /scout-scan, to fold them into a report.\n`);
+      return;
+    }
+    pushRunOutput(run, `\n[scout-web] Browser scan done — auto-starting /scout-scan for "${slug}" to ingest the fresh posts into a report (no re-scan).\n`);
+    try {
+      const chained = await startRunInternal('scout-scan', { slug }, { options: { browserScan: 'skip' } });
+      if (chained && chained.id) {
+        pushRunOutput(run, `[scout-web] Ingest run started → ${chained.id}. Watch it in the Operations drawer.\n`);
+      } else if (chained && chained.error) {
+        pushRunOutput(run, `[scout-web] Could not auto-start the ingest run: ${chained.error.error || 'unknown error'}\n`);
+      }
+    } catch (err) {
+      pushRunOutput(run, `[scout-web] Could not auto-start the ingest run: ${err.message}\n`);
+    }
+  });
   child.on('error', (err) => { pushRunOutput(run, `[browser-scan] ${err.message}\n`); run.child = null; closeRun(run, 'error'); });
-  res.json({ ok: true, id, command });
+  res.json({ ok: true, id, command, willIngest: wantIngest });
+});
+
+// --- In-browser analytics endpoints --------------------------------
+// Same artifacts the /scout-seo agent command produces, but computed in
+// pure Node from data already on disk so the Reports view can run with one
+// click. No LLM, no subprocess. See tools/lib/analytics.mjs for the engine.
+
+app.post('/api/analytics/seo', express.json(), async (req, res) => {
+  try {
+    const { urls, slug } = req.body || {};
+    if (!Array.isArray(urls) || urls.length === 0) {
+      return res.status(400).json({ error: 'urls array is required' });
+    }
+    // Cap to 5 URLs per call so a stray paste can't fan out into a
+    // long blocking fetch storm.
+    const targets = urls.slice(0, 5).map((u) => String(u).trim()).filter(Boolean);
+    const pages = await Promise.all(
+      targets.map(async (url) => {
+        try {
+          const r = await fetch(url, {
+            headers: { 'user-agent': 'Mozilla/5.0 (compatible; ContentScout/1.0; +https://github.com/jagordon/content-scout)' },
+            redirect: 'follow',
+          });
+          if (!r.ok) return { url, error: `HTTP ${r.status}` };
+          return { url, html: await r.text() };
+        } catch (e) {
+          return { url, error: String(e.message || e) };
+        }
+      })
+    );
+    // Optional LLM rewrite pass. Folds the /scout-seo "Suggested rewrites"
+    // (title, meta description, alternative H1s, opening paragraph, JSON-LD)
+    // into this audit when a provider is configured. Best-effort and serial:
+    // any failure degrades to a note and the deterministic audit still
+    // returns. Default provider reuses the configured agent runner. See
+    // tools/web-ui/lib/seo-rewrite.js.
+    const rewritesByUrl = {};
+    let rewriteProvider = null;
+    const wantRewrites = (req.body || {}).rewrites !== false;
+    const env = await readEnvObject();
+    const provider = getSeoRewriteProvider(env);
+    if (wantRewrites && provider !== 'none') {
+      rewriteProvider = provider;
+      const productName = await resolveProductName(slug || '');
+      const { runner } = await getRunner();
+      const { keywords, audience, goal } = req.body || {};
+      for (const p of pages) {
+        if (!p.html) continue;
+        try {
+          const snapshot = extractSeoSnapshot(p.html, p.url);
+          const excerpt = htmlToText(p.html).slice(0, 1500);
+          rewritesByUrl[p.url] = await generateSeoRewrites(
+            {
+              url: p.url,
+              snapshot,
+              excerpt,
+              productName,
+              keywords: String(keywords || '').slice(0, 200),
+              audience: String(audience || '').slice(0, 200),
+              goal: String(goal || '').slice(0, 200),
+            },
+            env,
+            { runner, cwd: REPO_ROOT },
+          );
+        } catch (e) {
+          rewritesByUrl[p.url] = { provider, error: String(e.message || e) };
+        }
+      }
+    }
+    const result = runSeoAudit({ pages, slug: isValidSlug(slug) ? slug : '', rewritesByUrl });
+    await fs.writeFile(path.join(REPORTS_DIR, result.fileName), result.markdown, 'utf8');
+    const rewriteCount = Object.values(rewritesByUrl).filter((r) => hasAnyRewrite(r)).length;
+    res.json({ ok: true, fileName: result.fileName, data: result.data, rewriteProvider, rewriteCount });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
 });
 
 app.listen(PORT, HOST, async () => {
@@ -3352,9 +4598,9 @@ app.listen(PORT, HOST, async () => {
   // or a typo). scout-config-*.prompt.md is excluded — those are user configs.
   const expectedPrompts = [
     'scout-onboard.prompt.md', 'scout-scan.prompt.md', 'scout-post.prompt.md',
-    'scout-calendar.prompt.md', 'scout-gaps.prompt.md', 'scout-trends.prompt.md',
+    'scout-calendar.prompt.md',
     'scout-creators.prompt.md', 'scout-doctor.prompt.md', 'scout-keys.prompt.md',
-    'scout-replay.prompt.md', 'scout-seo.prompt.md', 'scout-reddit-import.prompt.md',
+    'scout-seo.prompt.md', 'scout-reddit-import.prompt.md',
     'scout-alt.prompt.md', 'scout-vision.prompt.md',
   ];
   let diskFiles = [];
@@ -3367,4 +4613,10 @@ app.listen(PORT, HOST, async () => {
   if (unreferenced.length) {
     console.warn(`[warn] unreferenced prompt files (${unreferenced.length}) — on disk but not wired into the UI: ${unreferenced.join(', ')}`);
   }
+  // Prime the report index in the background so the first dashboard load is
+  // served warm. Building it lazily on the first /api/conversations call is
+  // what made a freshly-started server feel slow on the very first open.
+  // Fire-and-forget — failures here are non-fatal and will simply rebuild on
+  // demand.
+  getIndex().catch(() => { /* will rebuild on first request */ });
 });

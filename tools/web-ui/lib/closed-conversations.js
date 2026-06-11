@@ -1,8 +1,10 @@
 // Persistent "closed / dismissed" state for Conversations & mentions.
 //
-// Storage lives at <repo>/reports/.closed-conversations.json so both the
-// web UI and the CLI helper (tools/conversations-cli.mjs) share the same
-// truth. Schema:
+// Storage lives at <repo>/.local/state/closed-conversations.json so both
+// the web UI and the local helper command (tools/conversations-cli.mjs)
+// share the same truth. Reads transparently fall back to the legacy
+// path <repo>/reports/.closed-conversations.json when the new file does
+// not yet exist — first write naturally migrates it. Schema:
 //
 //   {
 //     "version": 1,
@@ -25,7 +27,14 @@
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import {
+  CLOSED_CONVERSATIONS_FILE,
+  resolveStateRead,
+  resolveStateWrite,
+} from '../../lib/paths.mjs';
 
+// Legacy name kept for any external imports — new code should use the
+// resolver functions in paths.mjs.
 export const CLOSED_FILE_NAME = '.closed-conversations.json';
 
 export const ALLOWED_REASONS = Object.freeze([
@@ -70,7 +79,8 @@ export function convoKey(c) {
 }
 
 export async function loadClosed(reportsDir) {
-  const file = path.join(reportsDir, CLOSED_FILE_NAME);
+  const file = await resolveStateRead(CLOSED_CONVERSATIONS_FILE, reportsDir);
+  if (!file) return emptyState();
   try {
     const raw = await fs.readFile(file, 'utf8');
     const data = JSON.parse(raw);
@@ -91,9 +101,8 @@ export async function loadClosed(reportsDir) {
   }
 }
 
-export async function saveClosed(reportsDir, state) {
-  const file = path.join(reportsDir, CLOSED_FILE_NAME);
-  await fs.mkdir(reportsDir, { recursive: true });
+export async function saveClosed(_reportsDir, state) {
+  const file = await resolveStateWrite(CLOSED_CONVERSATIONS_FILE);
   const out = {
     version: 1,
     items: state && state.items && typeof state.items === 'object' ? state.items : {},

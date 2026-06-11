@@ -1,6 +1,6 @@
 ---
 name: Content Scout
-description: Discover, catalog, and promote public content about a product, technology, OSS project, or tool. Use when the user says "scout scan", "scout onboard", "scout post", "scout calendar", "scout gaps", "scout trends", or asks to find/track/share content about their product.
+description: Discover, catalog, and promote public content about a product, technology, OSS project, or tool. Use when the user says "scout scan", "scout onboard", "scout post", "scout calendar", or asks to find/track/share content about their product.
 ---
 
 # Content Scout (skill shim)
@@ -11,7 +11,7 @@ The single source of truth is [.github/agents/content-scout.agent.md](../../../.
 ## How to use
 
 1. Read [.github/agents/content-scout.agent.md](../../../.github/agents/content-scout.agent.md) for full operating instructions (sources, quality filters, report templates, social post standards, subagent architecture). Ignore its YAML frontmatter — that's for VS Code agent mode.
-2. Read the active product config from `.github/prompts/scout-config-*.prompt.md`. If none exists, run onboarding first.
+2. Read the active product config from `.local/configs/scout-config-*.md` first. If none exists there, fall back to legacy `.github/prompts/scout-config-*.prompt.md`. If neither exists, run onboarding first.
 3. Check `.env` at the repo root for API keys before scanning. Skip sources whose keys are missing.
 
 ## Commands
@@ -22,8 +22,6 @@ The single source of truth is [.github/agents/content-scout.agent.md](../../../.
 | scout scan | `.github/prompts/scout-scan.prompt.md` | Search sources, filter, generate report |
 | scout post | `.github/prompts/scout-post.prompt.md` | Generate social posts from URL or report item |
 | scout calendar | `.github/prompts/scout-calendar.prompt.md` | Weekly posting schedule |
-| scout gaps | `.github/prompts/scout-gaps.prompt.md` | Topics with no recent coverage |
-| scout trends | `.github/prompts/scout-trends.prompt.md` | Month-over-month comparison |
 
 Ignore VS Code frontmatter and `${{input:...}}` placeholders in those prompt files — gather inputs conversationally.
 
@@ -33,7 +31,6 @@ Ignore VS Code frontmatter and `${{input:...}}` placeholders in those prompt fil
 - Social posts (bulk from report): `social-posts/{YYYY-MM-DD-HHmm}-{slug}-social-posts.md`
 - Social posts (solo / one-off from a single URL): `social-posts/{YYYY-MM-DD-HHmm}-{slug}-solo-{url-slug}.md` where `{url-slug}` = host + last path segment, lowercased, hyphenated, max 40 chars (fallback `solo-link`)
 - Calendars: `social-posts/{YYYY-MM-DD-HHmm}-{slug}-posting-calendar.md`
-- Trends: `reports/{YYYY-MM-DD-HHmm}-{slug}-trends.md`
 - Dedup tracker: `reports/.seen-links.json`
 
 ## Key rules

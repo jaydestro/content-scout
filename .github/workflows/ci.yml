@@ -22,8 +22,6 @@ jobs:
           test -f .github/prompts/scout-scan.prompt.md
           test -f .github/prompts/scout-post.prompt.md
           test -f .github/prompts/scout-calendar.prompt.md
-          test -f .github/prompts/scout-gaps.prompt.md
-          test -f .github/prompts/scout-trends.prompt.md
 
   test:
     name: Web UI unit tests
@@ -39,6 +37,10 @@ jobs:
 
       - name: Install web UI dependencies
         working-directory: tools/web-ui
+        run: npm install --no-audit --no-fund
+
+      - name: Install thumbnail renderer dependencies
+        working-directory: tools/render-thumbnails
         run: npm install --no-audit --no-fund
 
       - name: Syntax check

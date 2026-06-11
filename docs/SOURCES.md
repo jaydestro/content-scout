@@ -29,6 +29,10 @@ Select all or pick individually during onboarding.
 
 In addition to the 6 named blog platforms above, the agent also checks **Blogspot** and **WordPress** blogs when they appear in search results. These aren't separate selectable sources — they're part of the general community blog scanning.
 
+### Open-Web Blog Discovery
+
+The 6 named platforms above are scanned by RSS/tag, which only finds blogs *hosted on those platforms*. To catch **self-hosted and vendor blogs** (e.g., `benday.com/blog`, `savilltech.com`, `build5nines.com`), every scan also runs an **unrestricted Brave web search** for each product term (no `site:` filter), discards hosts already covered by a dedicated layer, and treats the remaining results as candidate blog posts (date-gated, relevancy-checked, scored). Requires `BRAVE_SEARCH_API_KEY` in `.env` (falls back to legacy Google PSE for pre-2026 projects). Authors listed in the config watchlist with a known blog domain additionally get a targeted `site:{domain}` query.
+
 ---
 
 ## Custom Sources

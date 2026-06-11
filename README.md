@@ -4,9 +4,9 @@
 
 # Content Scout
 
-A content research agent that discovers, catalogs, and promotes public content about your product, technology, open-source project, or tool across the developer ecosystem. Scans 14+ public sources, filters for quality, generates reports with topic tags and trends, and drafts ready-to-post social media content — all configured through a single onboarding conversation.
+A content research agent that discovers, catalogs, and promotes public content about your product, technology, open-source project, or tool across the developer ecosystem. Scans 14+ public sources, filters for quality, generates reports with topic tags, and drafts ready-to-post social media content — all configured through a single onboarding conversation.
 
-Run it **interactively in your editor** (VS Code, Claude Code, Cursor, and more) **or from a browser** with the built-in Web UI. Both paths produce the same `scout-config-{slug}.prompt.md` files in `.github/prompts/` and the same reports in `reports/`.
+Run it **interactively in your editor** (VS Code, Claude Code, Cursor, and more) **or from a browser** with the built-in Web UI. The agent handles all standard content work; the web UI adds dashboards, bulk operations, and visual triage. See [docs/SURFACES.md](docs/SURFACES.md) for which surface to use when.
 
 ## Quick start
 
@@ -29,7 +29,7 @@ Open <http://localhost:4477>. Walks you through a 9-step onboarding wizard, save
 
 ### Editor / chat
 
-Open the repo in your AI tool and run `/scout-onboard` (VS Code) or say "scout onboard" (Claude Code, Cursor, Windsurf, Cline, Copilot CLI). See [docs/EDITORS.md](docs/EDITORS.md) for per-tool startup, slash-command list, and troubleshooting.
+Open the repo in your AI chat tool and run `/scout-onboard` (VS Code) or say "scout onboard" (Claude Code, Cursor, Windsurf, Cline, Copilot terminal chat). See [docs/EDITORS.md](docs/EDITORS.md) for per-tool startup, slash-command list, and troubleshooting.
 
 ## Commands
 
@@ -39,10 +39,8 @@ Open the repo in your AI tool and run `/scout-onboard` (VS Code) or say "scout o
 | `/scout-scan` | Scan for content — specify a topic slug or scan all |
 | `/scout-post` | Generate social posts from a URL or report item |
 | `/scout-calendar` | Create a weekly posting schedule |
-| `/scout-gaps` | Show topics with no recent coverage |
-| `/scout-trends` | Compare trends across months |
 
-Plus `/scout-creators`, `/scout-doctor`, `/scout-keys`, `/scout-replay`, `/scout-seo`, `/scout-reddit-import`, `/scout-alt`, `/scout-vision` — see [docs/EDITORS.md](docs/EDITORS.md).
+Plus `/scout-creators`, `/scout-doctor`, `/scout-keys`, `/scout-seo`, `/scout-reddit-import`, `/scout-alt`, `/scout-vision` — see [docs/EDITORS.md](docs/EDITORS.md).
 
 ## What it scans
 
@@ -54,6 +52,12 @@ Plus `/scout-creators`, `/scout-doctor`, `/scout-keys`, `/scout-replay`, `/scout
 - **Logged-in browser (recommended for X / LinkedIn / Reddit):** [tools/browser-scan/](tools/browser-scan) attaches to your real browser (Edge / Chrome / Brave / Vivaldi / Arc / Opera — auto-detects your OS default) over the Chrome DevTools Protocol, so logged-in scrapes work with no anti-bot trips. Either click **🌐 Browser scan (Layer 0)** in the [web UI's Run view](#web-ui-browser-dashboard), or run `node tools/browser-scan/launch-edge.mjs` once and `node tools/browser-scan/index.mjs scan --slug {slug}` before each `scout scan`. The resulting JSON sidecars become **Layer 0** for those three platforms.
 
 All API keys are optional — without them, the agent skips those sources. Keys live in `.env` (not in config files). See [docs/API-KEYS.md](docs/API-KEYS.md) and [docs/SOURCES.md](docs/SOURCES.md).
+
+### Humanizer skill (recommended, used by default)
+
+Content Scout vendors the [humanizer](https://github.com/blader/humanizer) skill (MIT) at [.claude/skills/humanizer/SKILL.md](.claude/skills/humanizer/SKILL.md) and runs every generated social post through it before saving. The skill strips the common tells of AI-generated copy — promotional adjectives, AI-vocabulary words ("delve", "underscore", "showcase"), significance inflation, em-dash overuse, negative parallelisms, and chatbot openers like "Excited to share…". Posts read like a practitioner wrote them, not like an LLM autocompleted a marketing brief.
+
+No setup is required — the skill is part of the repo and loads automatically with `/scout-post` and `/scout-scan`. If your editor lists user-level skills separately and prefers them over repo-vendored ones, install the upstream skill from `https://github.com/blader/humanizer` and the same patterns will apply.
 
 ## Roles
 
