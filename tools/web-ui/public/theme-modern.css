@@ -2137,6 +2137,18 @@ details.conv-week .conv-week-body .conv-row:last-child { margin-bottom: 0; }
 .dash-sent-pills .pill-mix { border-color: rgba(234,179,8,0.6); }
 .dash-sent-pills .pill-neg { border-color: rgba(239,68,68,0.6); }
 .dash-sent-pills .pill-unk { border-color: rgba(148,163,184,0.35); opacity: 0.85; }
+.dash-sent-pills .pill-clickable {
+  cursor: pointer; color: inherit; font: inherit;
+  transition: background 0.12s, transform 0.08s, box-shadow 0.12s;
+}
+.dash-sent-pills .pill-clickable:hover {
+  background: var(--surface-3, #232739); transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+.dash-sent-pills .pill-clickable:active { transform: translateY(0); }
+.dash-sent-pills .pill-clickable:focus-visible {
+  outline: 2px solid var(--accent, #818cf8); outline-offset: 2px;
+}
 .tone-dot {
   display: inline-block;
   width: 0.55rem;

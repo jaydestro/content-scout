@@ -195,6 +195,45 @@
     }
   }
 
+  // Jump from a dashboard sentiment pill to the Conversations view, pre-filtered
+  // to that sentiment. Mirrors the dashboard card's scope (community-only, last
+  // 30 days, open rows) so the pill count and the filtered list line up. Every
+  // control is persisted so the view's own localStorage restore can't revert it.
+  async function _filterConversationsBySentiment(sentiment) {
+    const navBtn = document.querySelector('nav button[data-view="conversations"]');
+    if (navBtn) navBtn.click();
+    const setControl = (id, value) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (el.type === 'checkbox') el.checked = !!value;
+      else el.value = value;
+      try {
+        localStorage.setItem('cs.conv.' + id, el.type === 'checkbox' ? (value ? '1' : '0') : String(value));
+      } catch {}
+    };
+    // Reset to the All tab so neither the Conversations nor Mentions sub-filter
+    // hides a matching row.
+    _activeTab = 'all';
+    try { localStorage.setItem('cs.conv.activeTab', 'all'); } catch {}
+    document.querySelectorAll('.conv-tab').forEach((b) => {
+      const on = b.dataset.convTab === 'all';
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    setControl('conv-q', '');
+    setControl('conv-sentiment', sentiment || '');
+    setControl('conv-platform', '');
+    setControl('conv-timeframe', '30');
+    setControl('conv-date-from', '');
+    setControl('conv-date-to', '');
+    if (typeof _syncConvDateRange === 'function') _syncConvDateRange();
+    setControl('conv-jobs', 'hide');
+    setControl('conv-needs-reply', false);
+    setControl('conv-team-mode', 'community');
+    setControl('conv-show', 'open');
+    try { await loadConversations(); } catch {}
+  }
+
   const REASON_LABELS = {
     'not-relevant': 'Not relevant',
     'contacted': 'Contacted',
@@ -1924,12 +1963,16 @@
       if (summary) {
         // Hide buckets that are empty so "0 mixed" doesn't waste a slot when
         // the classifier (intentionally restrictive) finds no items there.
+        // Each pill is a button that jumps to Conversations filtered to that
+        // sentiment, so the dashboard count is a one-click path to the rows.
         const pills = [];
-        if (totals.positive) pills.push(`<span class="pill pill-pos" title="Advocates"><span class="tone-dot tone-positive"></span>${totals.positive} advocate${totals.positive === 1 ? '' : 's'}</span>`);
-        if (totals.neutral)  pills.push(`<span class="pill pill-neu" title="Neutral"><span class="tone-dot tone-neutral"></span>${totals.neutral} neutral</span>`);
-        if (totals.mixed)    pills.push(`<span class="pill pill-mix" title="Mixed — worth a thoughtful reply"><span class="tone-dot tone-mixed"></span>${totals.mixed} mixed</span>`);
-        if (totals.negative) pills.push(`<span class="pill pill-neg" title="Critical — respond first"><span class="tone-dot tone-negative"></span>${totals.negative} critical</span>`);
-        if (totals.unknown)  pills.push(`<span class="pill pill-unk" title="Unknown — not enough product stance to score"><span class="tone-dot tone-unknown"></span>${totals.unknown} unclassified</span>`);
+        const pill = (sentiment, cls, label, title) =>
+          `<button type="button" class="pill ${cls} pill-clickable" data-sentiment="${sentiment}" title="${title} — click to view in Conversations">${label}</button>`;
+        if (totals.positive) pills.push(pill('positive', 'pill-pos', `<span class="tone-dot tone-positive"></span>${totals.positive} advocate${totals.positive === 1 ? '' : 's'}`, 'Advocates'));
+        if (totals.neutral)  pills.push(pill('neutral', 'pill-neu', `<span class="tone-dot tone-neutral"></span>${totals.neutral} neutral`, 'Neutral'));
+        if (totals.mixed)    pills.push(pill('mixed', 'pill-mix', `<span class="tone-dot tone-mixed"></span>${totals.mixed} mixed`, 'Mixed — worth a thoughtful reply'));
+        if (totals.negative) pills.push(pill('negative', 'pill-neg', `<span class="tone-dot tone-negative"></span>${totals.negative} critical`, 'Critical — respond first'));
+        if (totals.unknown)  pills.push(pill('unknown', 'pill-unk', `<span class="tone-dot tone-unknown"></span>${totals.unknown} unclassified`, 'Unknown — not enough product stance to score'));
         summary.innerHTML = all.length
           ? `<div class="dash-signal-strip">
               <div class="dash-signal-metric"><strong>${all.length}</strong><span>conversations</span></div>
@@ -1937,8 +1980,11 @@
               <div class="dash-signal-metric"><strong>${olderCount}</strong><span>older archived</span></div>
               <div class="dash-signal-metric dash-fresh-metric dash-fresh-${scanFresh.tier}" title="Most recent scan ${scanFresh.tier === 'unknown' ? 'date unknown' : scanFresh.label}${scanFresh.tier === 'stale' || scanFresh.tier === 'aging' ? ' — run a scan to refresh' : ''}"><strong>${scanFresh.rel || '—'}</strong><span>last scan</span></div>
             </div>
-            <div class="dash-sent-pills">${pills.join('')}</div>`
+            <div class="dash-sent-pills" role="group" aria-label="Filter conversations by sentiment">${pills.join('')}</div>`
           : `<p class="hint">No conversations tracked yet. Run a scan to surface community chatter.</p>`;
+        summary.querySelectorAll('.pill-clickable').forEach((btn) => {
+          btn.addEventListener('click', () => _filterConversationsBySentiment(btn.dataset.sentiment));
+        });
       }
 
       if (!all.length) {
