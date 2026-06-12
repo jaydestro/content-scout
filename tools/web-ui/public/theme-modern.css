@@ -2126,7 +2126,7 @@ details.conv-week .conv-week-body .conv-row:last-child { margin-bottom: 0; }
 }
 .dash-signal-metric strong { display: block; font-size: 1.2rem; line-height: 1.05; }
 .dash-signal-metric span { display: block; margin-top: 0.15rem; color: var(--muted, #94a3b8); font-size: 0.78rem; }
-.dash-sent-pills { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.dash-sent-pills { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
 .dash-sent-pills .pill {
   display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.25rem 0.6rem;
   border-radius: 999px; font-size: 0.85rem; font-weight: 500;
@@ -2419,7 +2419,6 @@ details.conv-week .conv-week-body .conv-row:last-child { margin-bottom: 0; }
 .dash-src:last-child { border-bottom: none; }
 .dash-src-skipped { margin-top: 0.5rem; }
 .badge.badge-warn { background: rgba(234,179,8,0.2); color: #facc15; padding: 0 0.4rem; border-radius: 4px; font-size: 0.75rem; }
-.dash-social-summary { margin: 0.35rem 0 0.6rem; display: flex; flex-wrap: wrap; gap: 0.3rem; }
 
 
 /* ==============================================================
