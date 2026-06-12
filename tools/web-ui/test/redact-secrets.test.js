@@ -39,6 +39,30 @@ describe('redactSecrets', () => {
     assert.ok(!out.includes('hunter22hunter22'));
   });
 
+  it('redacts lowercase password and api-key assignments', () => {
+    const out = redactSecrets('password: hunter22hunter22 api-key=abc1234567890');
+    assert.ok(!out.includes('hunter22hunter22'));
+    assert.ok(!out.includes('abc1234567890'));
+    assert.match(out, /password:\s*\[REDACTED/);
+    assert.match(out, /api-key=\[REDACTED/);
+  });
+
+  it('redacts secret values in query strings', () => {
+    const out = redactSecrets('https://example.test/search?api_key=abc1234567890&count=20&token=tok1234567890');
+    assert.ok(!out.includes('abc1234567890'));
+    assert.ok(!out.includes('tok1234567890'));
+    assert.match(out, /api_key=\[REDACTED/);
+    assert.match(out, /token=\[REDACTED/);
+  });
+
+  it('redacts natural-language password/token phrases', () => {
+    const out = redactSecrets('The app password is xxxx-yyyy-zzzz-wwww and token was abcdefghijklmnop');
+    assert.ok(!out.includes('xxxx-yyyy-zzzz-wwww'));
+    assert.ok(!out.includes('abcdefghijklmnop'));
+    assert.match(out, /password is \[REDACTED\]/i);
+    assert.match(out, /token was \[REDACTED\]/i);
+  });
+
   it('leaves non-secret text alone', () => {
     const out = redactSecrets('Just regular log output, nothing sensitive here.');
     assert.equal(out, 'Just regular log output, nothing sensitive here.');
