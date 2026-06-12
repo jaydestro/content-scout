@@ -433,7 +433,7 @@ Say "none" to skip this group entirely. Otherwise ask each item **one at a time*
 **Skip this group if the role has social posts off and the user didn't request them.**
 
 Say "none" to skip any of these. Defaults will be used.
-- Which **platforms** should we generate posts for? Select from: **LinkedIn**, **X**, **Bluesky**, **YouTube Community**. *(Pick one or more, or say "none" to skip social post generation entirely.)*
+- Which **platforms** should we generate posts for? Select from: **LinkedIn**, **X**, **Bluesky**, **TikTok**, **YouTube Community**. *(Pick one or more, or say "none" to skip social post generation entirely.)*
 - For each selected platform, what is the **account handle or URL**? *(optional — say "none" if you don't want to link your account)*
 
 #### Brand & Thumbnail Identity
@@ -475,6 +475,7 @@ If social posts are enabled, ask these questions. Say "use defaults" to skip to 
   - LinkedIn: 800-1500 chars, hook in first 200 chars
   - X: concise but substantive (aim for full tweet, not threads)
   - Bluesky: up to 300 chars
+  - TikTok: short video caption + on-screen hook + brief spoken-script outline (not an image post)
   - YouTube Community: concise, conversational
 - "Any rules about **emoji usage**? (default: 0-2 max)"
 - "Any rules about **hashtag usage**? (default: 1-2 at end)"
@@ -665,6 +666,7 @@ description: "Content Scout configuration for {Product Name}"
 | LinkedIn | {yes/no} | {handle or "none"} |
 | X | {yes/no} | {handle or "none"} |
 | Bluesky | {yes/no} | {handle or "none"} |
+| TikTok | {yes/no} | {handle or "none"} |
 | YouTube Community | {yes/no} | {channel or "none"} |
 
 ## Brand Assets
@@ -694,6 +696,7 @@ description: "Content Scout configuration for {Product Name}"
   - LinkedIn: 1200x1200 (square) or 1200x628 (landscape)
   - X: 1600x900
   - Bluesky: 2000x1000
+  - TikTok: 1080x1920 (vertical cover, only when requested)
   - YouTube Community: 1200x675
 
 ## Social Post Standards

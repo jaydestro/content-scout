@@ -1,12 +1,16 @@
 # Content Scout — Browser Scan (Edge + Playwright over CDP)
 
 A logged-in, real-browser scanner for **X / Twitter**, **LinkedIn**,
-**Reddit**, and **Google** (News + Web Search). The scanner attaches to
-**your real Edge window over the Chrome DevTools Protocol** — it does
+**Reddit**, **Google** (News + Web Search), and **developer content sites**
+(Microsoft Tech Community, DZone, C# Corner, Hashnode). The scanner attaches
+to **your real Edge window over the Chrome DevTools Protocol** — it does
 **not** open its own browser or use a synthetic Playwright profile.
 
 Why CDP attach? X (and increasingly LinkedIn) flags fresh Playwright
 profiles as bots and refuses to let you log in — even with stealth flags.
+The same real-browser session also unblocks the developer content sites the
+API/RSS layers can't reach: Microsoft Tech Community's sign-in wall, DZone's
+anti-bot 403, C# Corner's 500-ing RSS, and Hashnode's dead tag-RSS (404).
 Attaching to a normal Edge window you launched yourself sidesteps the
 detection entirely: you sign in like a human, and the scanner just borrows
 the session.
@@ -28,20 +32,35 @@ node tools/browser-scan/launch-edge.mjs
 
 This auto-detects your **OS default browser** and launches it with
 `--remote-debugging-port=9222` and a **dedicated CDP profile** (under
-`tools/browser-scan/.cdp-profile/`, gitignored). It opens three login tabs:
+`tools/browser-scan/.cdp-profile/`, gitignored). It opens login / landing
+tabs:
 
 - https://x.com/login
 - https://www.linkedin.com/login
 - https://www.reddit.com/login/
+- https://news.google.com/
+- https://techcommunity.microsoft.com/
 
 Sign in to each one as you normally would (passkeys, 2FA, anything works —
-it's a real browser). **Leave it running** between scans; the session
-sticks. You only need to re-sign-in if a platform invalidates the
-session (typically every few weeks).
+it's a real browser). Microsoft Tech Community content is behind a sign-in
+wall, so signing in there lets the content-sites scanner read it; Google
+News, DZone, C# Corner, and Hashnode work without a login. **Leave it
+running** between scans; the session sticks. You only need to re-sign-in if
+a platform invalidates the session (typically every few weeks).
 
 > Override the auto-detected browser with `--browser "Google Chrome"` (or
 > any other Chromium-family name). Run `--list` to see what's installed
 > and supported.
+
+> **Prefer Edge for the dedicated profile.** The web UI's auto-launch
+> defaults this dedicated CDP profile to Microsoft Edge so scans never
+> attach to (or wake) your everyday default browser — a heavily-loaded
+> default Chrome is the most common cause of "connected but couldn't read
+> tabs" CDP hangs. To force a specific browser everywhere (manual launches
+> and the UI auto-launch), set the `SCOUT_BROWSER` env var before starting
+> the web UI, e.g. `SCOUT_BROWSER="Microsoft Edge"`. It's a soft preference:
+> if that browser isn't installed, the launcher falls back to your OS
+> default. An explicit `--browser` flag still wins over `SCOUT_BROWSER`.
 
 > Why a dedicated CDP profile and not your day-to-day Edge?
 > Edge will not enable remote debugging on a profile that's already in use
@@ -157,21 +176,49 @@ natural URL-dedup:
    editorial / press coverage. Items carry `platform: "google-news"`,
    `source: "google-news-browser"`, `subSource: "google-news"`, and a
    structured `post_date`.
-2. **Google Web Search** (`www.google.com/search?q=…&tbs=cdr:1,cd_min:…,cd_max:…`) —
-   surfaces blog posts, docs, repo READMEs, and anything else the
-   organic SERP indexes. Runs a **general** (non-`site:`-restricted) web
-   search of each configured search term. Items carry `platform:
-   "google-web"`, `source: "google-web-browser"`, `subSource:
-   "google-web"`. The SERP rarely exposes per-result dates, so
-   `post_date` is usually `null` — instead the pass pins Google's
-   **custom date range** (`tbs=cdr:1,cd_min:M/D/YYYY,cd_max:M/D/YYYY`)
-   to the exact scan window, so results are bounded to the range you
-   asked for rather than a coarse hour/day/week/month/year bucket. The
-   window is the rolling `--days` lookback by default, or the exact
-   `--since`/`--until` range when those flags are passed.
+2. **Google Web Search** (`www.google.com/search`) — surfaces blog posts,
+  docs, repo READMEs, and anything else the organic SERP indexes. Runs a
+  **general** (non-`site:`-restricted) web search of each configured search
+  term. Items carry `platform: "google-web"`, `source:
+  "google-web-browser"`, `subSource: "google-web"`. The scanner runs two
+  web passes and dedupes by URL:
+  - exact scan window: `tbs=cdr:1,cd_min:M/D/YYYY,cd_max:M/D/YYYY`
+  - broad recent fallback: `tbs=qdr:y`, matching the manual browser search
+    pattern like `https://www.google.com/search?q=%22cosmos+db+agent+kit%22&tbs=qdr:y`
+
+  The SERP rarely exposes per-result dates, so `post_date` is usually
+  `null`; the report pipeline still fetches/date-gates candidates before
+  accepting them. Each web item includes `search_scope` (`custom-range` or
+  `recent-year`) and `google_tbs` so downstream diagnostics can tell which
+  pass surfaced it.
 
 A CAPTCHA in one pass only stops that pass; items already collected
 (from either pass) are still written to the sidecar.
+
+### Developer content sites (one sidecar, four sub-sources)
+
+The `content-sites` platform scrapes four developer-content sources the
+normal API/RSS scan layers can't reach, driving each site's own search page
+for every configured search term. Results merge into a single
+`*-content-sites.json` sidecar, deduped by URL, with blog-shaped items
+(no engagement, empty `body` — title + publisher + permalink only). Each
+item carries `platform` / `subSource` / `source` naming its origin:
+
+| Sub-source | `platform` / `subSource` | `source` | Why the browser is needed |
+|---|---|---|---|
+| Microsoft Tech Community | `techcommunity` | `techcommunity-browser` | Sign-in wall blocks anonymous content |
+| DZone | `dzone` | `dzone-browser` | Anti-bot 403 on anonymous requests |
+| C# Corner | `csharpcorner` | `csharpcorner-browser` | RSS feeds return 500 |
+| Hashnode | `hashnode` | `hashnode-browser` | Tag-RSS endpoints return 404 |
+
+`post_date` is usually `null` (listing/search pages rarely expose reliable
+per-item dates); the report pipeline fetches and date-gates each candidate
+before accepting it. Per-site failure is graceful — a sign-in wall (Tech
+Community), captcha, or zero results writes a `debug-{site}-*.html`
+snapshot and skips that site without sinking the rest of the scan. Tech
+Community needs you signed in (see setup); the other three need only a real
+browser. Hashnode posts on fully custom domains can't be pattern-matched
+here — the open-web Brave layer already covers those.
 
 ## Rate-limit hygiene
 
@@ -186,6 +233,18 @@ A CAPTCHA in one pass only stops that pass; items already collected
 **"Could not connect to Edge over CDP at http://127.0.0.1:9222"**
 Edge isn't running with the debug port enabled. Run `node index.mjs launch`
 first and leave Edge open while you scan.
+
+**Sign-in check / scan logs show `<ws connected>` then "Timeout 30000ms exceeded" (`cdp-unreachable`)**
+The CDP WebSocket connected fine, but Playwright then timed out *reading the
+browser's tabs*. That happens when the browser has put the idle login tabs
+to sleep (Edge "sleeping tabs" / renderer backgrounding) or you have too
+many heavy tabs open, so a tab's debugging target stops answering. Fix it
+by clicking the CDP browser window to bring it to the foreground (which
+wakes sleeping tabs), closing extra tabs so only the login tabs remain, or
+relaunching with `node tools/browser-scan/launch-edge.mjs` — the launcher
+now starts the browser with tab-sleep, renderer-backgrounding, and
+occlusion freezing disabled, so a window left open between scans stays
+attachable.
 
 **"Edge is reachable but exposes no browser contexts"**
 The Edge window has zero tabs open. Open any tab and re-run.

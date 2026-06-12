@@ -4,6 +4,46 @@ All notable changes to Content Scout are tracked here.
 
 This project uses a product changelog version stream until formal release tags are cut. Minor feature releases use `0.x.0`; major fix bundles also receive their own `0.x.0` entry so every important fix has a durable version number.
 
+## [0.24.0] - 2026-06-11
+
+Browser-scan coverage for the four content sources the API/RSS layers can't reach.
+
+### Versioned Features and Fixes
+
+| Version | Type | Area | Change |
+| --- | --- | --- | --- |
+| 0.24.0 | Minor feature | Browser scan / content sites | New `content-sites` platform scrapes Microsoft Tech Community, DZone, C# Corner, and Hashnode from the logged-in / real browser, fixing the login wall, anti-bot 403, RSS 500, and tag-RSS 404 that made these sources skip on the API/RSS path. Each site's own search page is driven per configured term; results merge into one `*-content-sites.json` Layer 0 sidecar (blog-shaped items, `subSource` per site) that `/scout-scan` ingests into the content sections. `launch-edge.mjs` now opens a Tech Community sign-in tab, and per-site failures (login wall / captcha / no results) skip gracefully with a debug snapshot. |
+
+## [0.23.0] - 2026-06-11
+
+CDP attach reliability fix for the browser-scan sign-in check and scans.
+
+### Versioned Features and Fixes
+
+| Version | Type | Area | Change |
+| --- | --- | --- | --- |
+| 0.23.0 | Major fix | Browser scan / CDP attach | The launcher now disables tab sleeping, renderer backgrounding, timer throttling, and occlusion freezing so a browser left open between scans keeps its tabs attachable. The UI preflight auto-launch now defaults the dedicated CDP profile to **Microsoft Edge** (override with the `SCOUT_BROWSER` env var; soft-falls back to the OS default if Edge isn't installed) so it never attaches to or wakes the user's everyday default browser — a heavily-loaded default Chrome was the usual trigger for the hang. `attachEdge` is shared by the sign-in check, retries once when the CDP WebSocket connects but tab enumeration times out (the first attach wakes frozen/sleeping renderers, so the retry usually succeeds), accepts a `SCOUT_CDP_TIMEOUT_MS` override for heavily-loaded browsers, and emits an actionable message (relaunch a clean dedicated profile, or close extra tabs) instead of the misleading `cdp-unreachable` "browser not running" hint. |
+
+## [0.22.0] - 2026-06-11
+
+Google browser-sidecar coverage release.
+
+### Versioned Features and Fixes
+
+| Version | Type | Area | Change |
+| --- | --- | --- | --- |
+| 0.22.0 | Minor feature | Browser scan / Google sidecar | Google Web browser scans now run a broad recent-results fallback using `tbs=qdr:y` after the exact custom date-range search, dedupe by URL, and annotate results with `search_scope` / `google_tbs` so the sidecar catches newly indexed posts like manual Google searches do. |
+
+## [0.21.0] - 2026-06-11
+
+Security fix for browser-run output redaction.
+
+### Versioned Features and Fixes
+
+| Version | Type | Area | Change |
+| --- | --- | --- | --- |
+| 0.21.0 | Major fix | Web UI / Run logs | Completed run output, SSE replay, and bulk-run summaries now pass through secret redaction before being shown in the browser, and the redactor catches lowercase password/api-key fields, query-string secrets, and natural-language token/password phrases. |
+
 ## [0.20.0] - 2026-06-11
 
 Integration release for the local web UI, browser-scan, dashboard freshness, and report-ingestion work merged through PR #15.

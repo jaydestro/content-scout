@@ -99,13 +99,20 @@
       return;
     }
 
-    // Populate browser dropdown — Chromium-family only.
+    // Populate browser dropdown — Chromium-family only. Preselect Edge when
+    // it's installed so launches use a dedicated, isolated profile instead
+    // of attaching to the user's everyday default browser (a heavily-loaded
+    // default Chrome is the usual cause of CDP "couldn't read tabs" hangs).
     if (sel) {
+      const browsers = info.browsers || [];
+      const edgeInstalled = browsers.some((b) => b.kind === 'chromium' && b.installed && /edge/i.test(b.name));
       const opts = [`<option value="">Auto-detect (default browser)</option>`];
-      for (const b of info.browsers || []) {
+      for (const b of browsers) {
         if (b.kind !== 'chromium') continue;
+        const isEdge = /edge/i.test(b.name);
+        const selected = edgeInstalled && isEdge && b.installed ? ' selected' : '';
         opts.push(
-          `<option value="${esc(b.name)}" ${b.installed ? '' : 'disabled'}>${esc(b.name)}${b.installed ? '' : ' (not installed)'}</option>`,
+          `<option value="${esc(b.name)}"${selected} ${b.installed ? '' : 'disabled'}>${esc(b.name)}${b.installed ? '' : ' (not installed)'}</option>`,
         );
       }
       sel.innerHTML = opts.join('');

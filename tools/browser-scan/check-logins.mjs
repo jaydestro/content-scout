@@ -7,7 +7,7 @@
 // For each platform it opens (or focuses) the relevant authenticated URL
 // and reports whether Edge ended up on a login wall vs the real page.
 
-import { chromium } from 'playwright';
+import { attachEdge } from './lib/browser.mjs';
 
 const flags = { port: 9222, json: false };
 for (let i = 2; i < process.argv.length; i++) {
@@ -64,27 +64,23 @@ const PROBES = [
 ];
 
 let browser;
+let ctx;
 try {
-  // 30s timeout matches lib/browser.mjs. Playwright's connectOverCDP does
-  // target enumeration after the WS handshake; with many open tabs that
-  // post-connect step routinely exceeds 5s.
-  browser = await chromium.connectOverCDP(`http://127.0.0.1:${flags.port}`, { timeout: 30000 });
+  // attachEdge owns the connect + retry-free target-enumeration handling
+  // and emits an actionable message when the WS handshake succeeds but
+  // tab enumeration times out (sleeping/frozen/overloaded tabs). 30s
+  // timeout matches lib/browser.mjs.
+  const handle = await attachEdge({ port: flags.port });
+  browser = handle.browser;
+  ctx = handle.context;
 } catch (e) {
+  const msg = String(e && e.message ? e.message : e);
   if (flags.json) {
-    console.log(JSON.stringify({ ok: false, error: `cdp-unreachable: ${e.message}`, port: flags.port }));
+    console.log(JSON.stringify({ ok: false, error: `cdp-unreachable: ${msg}`, port: flags.port }));
     process.exit(2);
   }
-  console.error(`Could not attach to Edge on port ${flags.port}: ${e.message}`);
+  console.error(`Could not attach to Edge on port ${flags.port}: ${msg}`);
   console.error('Run `node tools/browser-scan/launch-edge.mjs` first.');
-  process.exit(1);
-}
-const ctx = browser.contexts()[0];
-if (!ctx) {
-  if (flags.json) {
-    console.log(JSON.stringify({ ok: false, error: 'no-context' }));
-    process.exit(2);
-  }
-  console.error('Edge has no contexts. Open a tab and re-run.');
   process.exit(1);
 }
 

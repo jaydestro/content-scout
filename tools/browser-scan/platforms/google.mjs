@@ -1,9 +1,12 @@
 // Google — logged-in browser scraper for two surfaces:
 //   1. Google News (`news.google.com/search`) — structured publication /
 //      date metadata; emits items with `platform: "google-news"`.
-//   2. Google Web Search (`www.google.com/search?tbs=qdr:…`) — classic
-//      SERP, parsed snippet-style; emits items with `platform:
-//      "google-web"`.
+//   2. Google Web Search (`www.google.com/search`) — classic SERP,
+//      parsed snippet-style; emits items with `platform: "google-web"`.
+//      We run both an exact custom date-range pass (`tbs=cdr:…`) and a
+//      broad recent-results fallback (`tbs=qdr:y`) so the sidecar still
+//      catches newly indexed posts when Google's custom range returns a
+//      sparse / oddly personalized result set.
 //
 // Both passes share the same logged-in CDP browser context (same page
 // when possible) so the user's session keeps Google's anti-bot
@@ -85,6 +88,8 @@ const WEB_RESULT_SELECTORS = [
   'div[data-hveid] h3',
 ];
 
+const GOOGLE_WEB_RECENT_TBS = 'qdr:y';
+
 const CAPTCHA_SELECTORS = [
   '#captcha-form',
   'form#captcha-form',
@@ -148,8 +153,33 @@ export async function scanGoogle(browser, ctx) {
   // different subdomains but Google still rate-limits on the session.
   await sleep(5000);
 
-  // ---- Pass 2: Google Web Search ----
-  await scanGoogleWebPass(page, { searchTerms, sinceMs, untilMs, maxPerTerm, outDir, cdr, items });
+  // ---- Pass 2: Google Web Search, exact scan window ----
+  await scanGoogleWebPass(page, {
+    searchTerms,
+    sinceMs,
+    untilMs,
+    maxPerTerm,
+    outDir,
+    tbs: cdr,
+    scope: 'custom-range',
+    items,
+  });
+
+  // ---- Pass 3: Google Web Search, broad recent fallback ----
+  // This mirrors the manual browser query users naturally run, e.g.
+  // https://www.google.com/search?q=%22cosmos+db+agent+kit%22&tbs=qdr:y
+  // It is deliberately broader than the scan window. The sidecar dedupes by
+  // URL, and the normal report pipeline still fetches/date-gates candidates.
+  await scanGoogleWebPass(page, {
+    searchTerms,
+    sinceMs: null,
+    untilMs: null,
+    maxPerTerm,
+    outDir,
+    tbs: GOOGLE_WEB_RECENT_TBS,
+    scope: 'recent-year',
+    items,
+  });
 
   if (ownsPage) await page.close();
   return [...items.values()];
@@ -196,31 +226,31 @@ async function scanGoogleNewsPass(page, { searchTerms, sinceMs, maxPerTerm, outD
   }
 }
 
-async function scanGoogleWebPass(page, { searchTerms, sinceMs, untilMs, maxPerTerm, outDir, cdr, items }) {
+async function scanGoogleWebPass(page, { searchTerms, sinceMs, untilMs, maxPerTerm, outDir, tbs, scope, items }) {
   for (const term of searchTerms) {
     const query = buildSearchQuery(term, 'google-news'); // same shaping rules apply
     if (!query) continue;
-    // Use Google's custom date range (`tbs=cdr:1,cd_min:…,cd_max:…`) so the
-    // SERP is bounded to exactly the window we asked for — e.g.
-    // https://www.google.com/search?q=%22azure+cosmos+db%22&tbs=cdr:1,cd_min:5/1/2026,cd_max:5/31/2026
-    const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&tbs=${encodeURIComponent(cdr)}&hl=en-US&gl=US&num=20`;
+    // Use either Google's custom date range (`tbs=cdr:1,cd_min:…,cd_max:…`)
+    // or its broad recent-results shortcut (`tbs=qdr:y`). Both are real
+    // browser SERPs, not an API call.
+    const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&tbs=${encodeURIComponent(tbs)}&hl=en-US&gl=US&num=20`;
 
     try {
       await page.goto(url, { waitUntil: 'domcontentloaded' });
     } catch (e) {
-      console.warn(`[browser-scan] google-web: navigation failed for "${term}": ${e.message}`);
+      console.warn(`[browser-scan] google-web/${scope}: navigation failed for "${term}": ${e.message}`);
       continue;
     }
 
     const state = await waitForResultsOrCaptcha(page, WEB_RESULT_SELECTORS, 15000);
     if (state === 'captcha') {
-      console.warn(`[browser-scan] google-web: CAPTCHA challenge for "${term}" — stopping web pass (sign in to google.com once, then retry).`);
-      await dumpDebug(page, outDir, term, 'captcha-web');
+      console.warn(`[browser-scan] google-web/${scope}: CAPTCHA challenge for "${term}" — stopping web pass (sign in to google.com once, then retry).`);
+      await dumpDebug(page, outDir, term, `captcha-web-${scope}`);
       break;
     }
     if (state === 'timeout') {
-      console.warn(`[browser-scan] google-web: no results rendered for "${term}" (timeout)`);
-      await dumpDebug(page, outDir, term, 'timeout-web');
+      console.warn(`[browser-scan] google-web/${scope}: no results rendered for "${term}" (timeout)`);
+      await dumpDebug(page, outDir, term, `timeout-web-${scope}`);
       await sleep(3000);
       continue;
     }
@@ -241,6 +271,8 @@ async function scanGoogleWebPass(page, { searchTerms, sinceMs, untilMs, maxPerTe
         }
       }
       item.search_term = term;
+      item.search_scope = scope;
+      item.google_tbs = tbs;
       items.set(item.url, item);
       collected++;
       if (collected >= maxPerTerm) break;
