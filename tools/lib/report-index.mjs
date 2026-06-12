@@ -101,15 +101,23 @@ function parseNumberedConversationBlock(lines, startIdx) {
   for (const raw of body) {
     const l = raw.trim();
     if (!l) continue;
-    // Italic byline: *Author · Date* (date is the last `·`-separated chunk).
+    // Italic byline: *Author · Date* — or, in some reports, the post URL is
+    // appended: *Author · Date · https://…*. Pull the URL out first so it is
+    // not mistaken for the date (and so the platform can be derived from the
+    // real host), then treat the last remaining `·` chunk as the date.
     if (!author && /^\*[^*].*\*\s*$/.test(l)) {
-      const inner = l.replace(/^\*|\*$/g, '').trim();
-      const parts = inner.split(/\s+·\s+/);
+      let inner = l.replace(/^\*|\*$/g, '').trim();
+      const urlInByline = inner.match(/https?:\/\/\S+/);
+      if (urlInByline) {
+        if (!url) url = urlInByline[0].replace(/[)\].,;]+$/, '');
+        inner = inner.replace(urlInByline[0], '');
+      }
+      const parts = inner.split(/\s+·\s+/).map((s) => s.trim()).filter(Boolean);
       if (parts.length >= 2) {
-        date = parts[parts.length - 1].trim();
-        author = parts.slice(0, -1).join(' · ').trim();
+        date = parts[parts.length - 1];
+        author = parts.slice(0, -1).join(' · ');
       } else {
-        author = inner;
+        author = parts[0] || '';
       }
       continue;
     }
@@ -135,7 +143,10 @@ function parseNumberedConversationBlock(lines, startIdx) {
 
   const sentiment = normalizeSentiment(sentimentMark || tagLineSentiment);
   const summary = summaryParts.join(' ').replace(/\s+/g, ' ').trim() || title;
-  const platform = platformTag || 'Unknown';
+  // The post's URL is the ground truth for which platform it lives on. A
+  // mislabeled bracket tag (e.g. `[LinkedIn]` on an x.com permalink) must
+  // never win over the host, or the post shows under the wrong platform.
+  const platform = platformFromUrl(url) || platformTag || 'Unknown';
 
   return {
     nextIdx: end,
@@ -156,7 +167,24 @@ function parseNumberedConversationBlock(lines, startIdx) {
   };
 }
 
-function isProductAuthorName(name) {
+// Canonical platform label derived purely from a post URL's host. Returns
+// '' for unrecognized / non-social hosts so callers can fall back to a
+// labeled platform. The host is authoritative: when it disagrees with a
+// label, trust the host (a LinkedIn-tagged x.com link is an X post).
+export function platformFromUrl(url) {
+  const u = String(url || '').toLowerCase();
+  if (!u) return '';
+  if (/reddit\.com|redd\.it/.test(u)) return 'Reddit';
+  if (/bsky\.app|bluesky/.test(u)) return 'Bluesky';
+  if (/linkedin\.com/.test(u)) return 'LinkedIn';
+  if (/(^|\/\/|\.)x\.com(\/|$)|twitter\.com/.test(u)) return 'X';
+  if (/news\.ycombinator\.com/.test(u)) return 'Hacker News';
+  if (/stackoverflow\.com|stackexchange\.com/.test(u)) return 'Stack Overflow';
+  if (/youtube\.com|youtu\.be/.test(u)) return 'YouTube';
+  return '';
+}
+
+export function isProductAuthorName(name) {
   const text = String(name || '').trim();
   if (!text) return false;
   if (/\bmicrosoft\s+(mvp|most valuable professional|certified trainer)\b/i.test(text)) return false;
@@ -168,9 +196,62 @@ function productTeamNameSet(names) {
   return new Set((Array.isArray(names) ? names : []).map(normalizeName).filter(Boolean));
 }
 
+// Reduce any scraped/handle spelling ("@kokkisajee", "u/sajee_mvp",
+// "/in/sajeetharan", "company/azure-cosmos-db/") to the bare lowercased
+// handle used as a team-member alias key.
+function normalizeHandleToken(h) {
+  return String(h == null ? '' : h)
+    .trim()
+    .replace(/^@+/, '')
+    .replace(/^u\//i, '')
+    .replace(/^\/?(in|company)\//i, '')
+    .replace(/\/+$/, '')
+    .toLowerCase();
+}
+
+// Pull the author handle out of a social post URL so a row whose author
+// column holds only a display name (or nothing) can still be matched to a
+// configured team-member handle.
+export function handleFromUrl(url) {
+  const u = String(url || '');
+  let m;
+  if ((m = u.match(/(?:x\.com|twitter\.com)\/([A-Za-z0-9_]+)/i)) && !/\/(status|i|search|hashtag)$/i.test(m[1])) return m[1];
+  if ((m = u.match(/reddit\.com\/u(?:ser)?\/([A-Za-z0-9_-]+)/i))) return m[1];
+  if ((m = u.match(/linkedin\.com\/in\/([A-Za-z0-9_%-]+)/i))) return m[1];
+  if ((m = u.match(/linkedin\.com\/posts\/([A-Za-z0-9_-]+?)_/i))) return m[1];
+  if ((m = u.match(/bsky\.app\/profile\/([A-Za-z0-9_.-]+)/i))) return m[1];
+  return '';
+}
+
+function productTeamHandleSet(handles) {
+  if (handles instanceof Set) return handles;
+  return new Set((Array.isArray(handles) ? handles : []).map(normalizeHandleToken).filter(Boolean));
+}
+
+// Decide whether an author is a product/company person (employee), so their
+// posts about our own product never count as external community sentiment.
+// Three matchers, in order: the brand-name regex, the configured display-name
+// set, and the configured per-platform handle aliases. Handle matching is
+// what catches reports that store only a bare handle (e.g. markdown rows where
+// the author column is "kokkisajee") or a single-word display name that does
+// not match the full configured name.
 function isProductAuthor(authorName, options = {}) {
+  if (isProductAuthorName(authorName)) return true;
   const normalized = normalizeName(authorName);
-  return isProductAuthorName(authorName) || (!!normalized && productTeamNameSet(options.productTeamNames).has(normalized));
+  if (normalized && productTeamNameSet(options.productTeamNames).has(normalized)) return true;
+  const handleSet = productTeamHandleSet(options.productTeamHandles);
+  if (handleSet.size) {
+    const candidates = [];
+    const explicit = normalizeHandleToken(options.authorHandle);
+    if (explicit) candidates.push(explicit);
+    // The author column itself is often a bare handle in markdown reports.
+    // Only treat a space-free author string as a handle to avoid matching a
+    // multi-word display name against a coincidental alias.
+    const authorStr = String(authorName || '').trim();
+    if (authorStr && !/\s/.test(authorStr)) candidates.push(normalizeHandleToken(authorStr));
+    if (candidates.some((h) => h && handleSet.has(h))) return true;
+  }
+  return false;
 }
 
 function extractNamesFromBlock(block) {
@@ -202,6 +283,40 @@ export function parseProductTeamNamesFromConfig(raw) {
     }
   }
   return names;
+}
+
+// Pull the per-platform handle aliases out of a config's people sections.
+// A line like `- Sajeetharan Sinnathurai (reddit: sajee_mvp, x: kokkisajee)`
+// yields the bare handles `sajee_mvp` and `kokkisajee`. Returns a Set of
+// normalized handles so callers can match an author handle against it.
+function extractHandlesFromBlock(block, into) {
+  for (const rawLine of String(block || '').split(/\r?\n/)) {
+    const line = rawLine.replace(/^[-*\s]+/, '').trim();
+    if (!line) continue;
+    for (const parens of line.match(/\(([^)]*)\)/g) || []) {
+      const inner = parens.slice(1, -1);
+      const pairRe = /([a-z][a-z0-9 ./-]*?)\s*:\s*([^,;)]+)/gi;
+      let m;
+      while ((m = pairRe.exec(inner))) {
+        const h = normalizeHandleToken(m[2]);
+        if (h) into.add(h);
+      }
+    }
+  }
+}
+
+export function parseProductTeamHandlesFromConfig(raw) {
+  const text = String(raw || '').replace(/<!--[\s\S]*?-->/g, '');
+  const handles = new Set();
+  for (const heading of ['Product Team Members', 'Operator Identity']) {
+    const re = new RegExp(
+      `(?:^|\\r?\\n)\\s*#{1,6}\\s*${heading}[^\\n]*\\r?\\n([\\s\\S]*?)(?=\\r?\\n\\s*#{1,6}\\s|\\r?\\n-{3,}\\s*\\r?\\n|$)`,
+      'i'
+    );
+    const match = text.match(re);
+    if (match) extractHandlesFromBlock(match[1], handles);
+  }
+  return handles;
 }
 
 function splitMarkdownTableRow(row) {
@@ -380,7 +495,10 @@ export function parseReportFromJson(rawOrObj, fileName, options = {}) {
       const community = (it.group || '').toLowerCase();
       const isProduct =
         /^(official|product|first[\s-]?party|microsoft|brand|company)$/.test(community) ||
-        isProductAuthor(authorName, options);
+        isProductAuthor(authorName, {
+          ...options,
+          authorHandle: (it.author && it.author.handle) || handleFromUrl(url),
+        });
       const engagement = it.engagement
         ? Object.entries(it.engagement)
             .filter(([, v]) => v != null && v !== '')
@@ -389,7 +507,7 @@ export function parseReportFromJson(rawOrObj, fileName, options = {}) {
         : '';
       conversations.push({
         date,
-        platform: platform || 'Unknown',
+        platform: platformFromUrl(url) || platform || 'Unknown',
         author: authorName,
         summary: title,
         sentiment,
@@ -427,25 +545,22 @@ export function parseReportFromJson(rawOrObj, fileName, options = {}) {
           .map(([k, v]) => `${k}:${v}`)
           .join(' ')
       : '';
-  const platformFromUrl = (url) => {
-    const u = String(url || '').toLowerCase();
-    if (/(^|\/\/|\.)x\.com|twitter\.com/.test(u)) return 'x';
-    if (/bsky\.app|bluesky/.test(u)) return 'bluesky';
-    if (/linkedin\.com/.test(u)) return 'linkedin';
-    if (/reddit\.com/.test(u)) return 'reddit';
-    return '';
-  };
 
   for (const c of Array.isArray(data.conversations) ? data.conversations : []) {
     const url = c.url || '';
     const authorName =
       (c.author && (c.author.display_name || c.author.handle)) || c.account || '';
+    // URL host wins over a labeled platform so a mistagged permalink can't
+    // surface the post under the wrong platform.
     const platform =
-      (c.author && c.author.platform) || platformFromUrl(url) || c.provenance?.source || 'Unknown';
+      platformFromUrl(url) || (c.author && c.author.platform) || c.provenance?.source || 'Unknown';
     const community = (c.group || '').toLowerCase();
     const isProduct =
       /^(official|product|first[\s-]?party|microsoft|brand|company)$/.test(community) ||
-      isProductAuthor(authorName, options);
+      isProductAuthor(authorName, {
+        ...options,
+        authorHandle: (c.author && c.author.handle) || handleFromUrl(url),
+      });
     conversations.push({
       date: c.date || '',
       platform: platform || 'Unknown',
@@ -469,7 +584,7 @@ export function parseReportFromJson(rawOrObj, fileName, options = {}) {
     conversations.push({
       date: t.date || '',
       platform:
-        (t.author && t.author.platform) || platformFromUrl(url) || t.provenance?.source || 'Unknown',
+        platformFromUrl(url) || (t.author && t.author.platform) || t.provenance?.source || 'Unknown',
       author: authorName,
       summary: (t.summary || t.title || '').toString().trim(),
       sentiment: normalizeSentiment(t.sentiment),
@@ -532,7 +647,10 @@ export function parseReport(raw, fileName, options = {}) {
         const e = parsed.entry;
         if (isConversationSection(currentSection)) {
           sentimentTotals[e.sentiment] = (sentimentTotals[e.sentiment] || 0) + 1;
-          const isProduct = isProductAuthor(e.author, options);
+          const isProduct = isProductAuthor(e.author, {
+            ...options,
+            authorHandle: handleFromUrl(e.url),
+          });
           conversations.push({
             date: e.date,
             platform: e.platform,
@@ -623,10 +741,13 @@ export function parseReport(raw, fileName, options = {}) {
         const community = (communityCell || '').replace(/[`*_]/g, '').trim().toLowerCase();
         const isProduct =
           /^(official|product|first[\s-]?party|microsoft|brand|company)$/.test(community) ||
-          isProductAuthor(authorCell, options);
+          isProductAuthor(authorCell, {
+            ...options,
+            authorHandle: handleFromUrl(url),
+          });
         conversations.push({
           date: dateCell,
-          platform: sourceCell || 'Unknown',
+          platform: platformFromUrl(url) || sourceCell || 'Unknown',
           author: authorCell || '',
           summary: summaryCell || title,
           sentiment,
@@ -833,11 +954,26 @@ function enrichConversationsWithBodies(parsed, bodyMap) {
 export async function loadReport(reportsDir, fileName) {
   const slugMatch = fileName.match(/^\d{4}-\d{2}-\d{2}-\d{4}-(.+)-content\.md$/);
   const slug = slugMatch ? slugMatch[1] : '';
-  const configPath = slug ? path.join(path.dirname(reportsDir), '.github', 'prompts', `scout-config-${slug}.prompt.md`) : '';
+  // Config resolution mirrors the web server: the standard home is
+  // .local/configs/scout-config-{slug}.md; the legacy home was
+  // .github/prompts/scout-config-{slug}.prompt.md. Prefer the standard one so
+  // edits there (the file the UI writes) actually drive author classification.
+  const repoRoot = path.dirname(reportsDir);
+  const configCandidates = slug
+    ? [
+        path.join(repoRoot, '.local', 'configs', `scout-config-${slug}.md`),
+        path.join(repoRoot, '.github', 'prompts', `scout-config-${slug}.prompt.md`),
+      ]
+    : [];
   let parseOptions = {};
-  if (configPath) {
+  for (const configPath of configCandidates) {
     try {
-      parseOptions = { productTeamNames: parseProductTeamNamesFromConfig(await fs.readFile(configPath, 'utf8')) };
+      const cfg = await fs.readFile(configPath, 'utf8');
+      parseOptions = {
+        productTeamNames: parseProductTeamNamesFromConfig(cfg),
+        productTeamHandles: parseProductTeamHandlesFromConfig(cfg),
+      };
+      break;
     } catch {}
   }
   const [browserBodyMap, cachedBodyMap, overrides] = await Promise.all([
