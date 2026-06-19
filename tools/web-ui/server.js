@@ -161,21 +161,36 @@ const MODEL_FLAG = {
   gemini: '--model',
 };
 
-// Curated, stable suggestions surfaced in the UI dropdown. Free-text is always
-// allowed (the UI offers an "Other…" entry) so volatile/preview model ids we
-// don't want to hard-code still work. Claude exposes stable aliases; the other
-// CLIs rename model ids often, so we leave their suggestion lists empty and
-// rely on free-text.
+// Curated suggestions surfaced in the UI dropdown. Each entry carries a short
+// label plus `reasoning` and `context` metadata so the picker can show what
+// each model is good at and how much it can hold. Free-text is always allowed
+// (the UI offers an "Other…" entry) so volatile/preview model ids we don't
+// hard-code still work, and "Agent default" leaves the CLI's built-in choice.
+// CLIs rename model ids often, so treat these as guidance — if a run errors on
+// an unknown id, switch to "Other…" or "Agent default".
 const MODEL_SUGGESTIONS = {
   claude: [
-    { id: 'haiku', label: 'Haiku — fastest, cheapest' },
-    { id: 'sonnet', label: 'Sonnet — balanced' },
-    { id: 'opus', label: 'Opus — most capable' },
+    { id: 'haiku', label: 'Haiku', reasoning: 'Fast, light reasoning', context: '200K' },
+    { id: 'sonnet', label: 'Sonnet', reasoning: 'Balanced, extended thinking', context: '200K' },
+    { id: 'opus', label: 'Opus', reasoning: 'Deepest reasoning', context: '200K' },
   ],
-  copilot: [],
-  codex: [],
-  cursor: [],
-  gemini: [],
+  copilot: [
+    { id: 'gpt-5', label: 'GPT-5', reasoning: 'Strong general reasoning', context: '128K' },
+    { id: 'claude-sonnet-4.5', label: 'Claude Sonnet 4.5', reasoning: 'Balanced, extended thinking', context: '200K' },
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', reasoning: 'Strong reasoning, huge context', context: '1M' },
+  ],
+  codex: [
+    { id: 'gpt-5-codex', label: 'GPT-5 Codex', reasoning: 'Agentic coding reasoning', context: '128K' },
+    { id: 'o4-mini', label: 'o4-mini', reasoning: 'Fast reasoning', context: '128K' },
+  ],
+  cursor: [
+    { id: 'sonnet-4.5', label: 'Sonnet 4.5', reasoning: 'Balanced, extended thinking', context: '200K' },
+    { id: 'gpt-5', label: 'GPT-5', reasoning: 'Strong general reasoning', context: '128K' },
+  ],
+  gemini: [
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', reasoning: 'Deep reasoning, huge context', context: '1M' },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', reasoning: 'Fast, light reasoning', context: '1M' },
+  ],
 };
 
 // Model ids are inserted into a shell command (spawned with shell:true), so we
