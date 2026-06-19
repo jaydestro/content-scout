@@ -3096,6 +3096,100 @@ app.get('/api/check-url', async (req, res) => {
   res.json({ ...result, cached: false });
 });
 
+// Normalize a social handle: strip @, leading u//in//company/, and extract the
+// handle/slug from a pasted full URL. Returns a bare handle/slug per platform.
+function normalizeSocialHandle(platform, raw) {
+  let s = String(raw || '').trim();
+  if (!s) return '';
+  if (/^https?:\/\//i.test(s)) {
+    try {
+      const u = new URL(s);
+      const segs = u.pathname.split('/').filter(Boolean);
+      if (platform === 'bluesky') {
+        // bsky.app/profile/<handle> → handle; custom-domain handle → hostname
+        s = (/(^|\.)bsky\.app$/i.test(u.hostname) && segs[0] === 'profile') ? (segs[1] || '') : u.hostname;
+      } else if (platform === 'linkedin') {
+        // keep company/<slug> | in/<slug> | school/<slug>
+        s = segs.length >= 2 ? `${segs[0]}/${segs[1]}` : (segs[0] || '');
+      } else if (platform === 'youtube') {
+        s = segs[0] || ''; // @handle | channel/<id> | c/<name> | user/<name>
+        if ((segs[0] === 'channel' || segs[0] === 'c' || segs[0] === 'user') && segs[1]) s = `${segs[0]}/${segs[1]}`;
+      } else {
+        s = segs[0] || u.hostname; // x/twitter → first path segment
+      }
+    } catch { /* fall through to bare cleanup */ }
+  }
+  return s.replace(/^@+/, '').replace(/^\/+|\/+$/g, '');
+}
+
+// Verify an official social handle resolves to a real account. Bluesky uses the
+// public AT-Protocol getProfile API (fully reliable). LinkedIn/X/YouTube fall
+// back to a URL liveness probe; X is flagged inconclusive because its logged-out
+// SPA serves the same shell for any path.
+async function verifySocial(platform, rawHandle) {
+  const h = normalizeSocialHandle(platform, rawHandle);
+  if (!h) return { ok: false, normalized: '', reason: 'empty' };
+
+  if (platform === 'bluesky') {
+    const actor = h.replace(/^@/, '');
+    const api = `https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(actor)}`;
+    try {
+      const r = await fetch(api, { headers: { accept: 'application/json' } });
+      if (r.ok) {
+        const j = await r.json().catch(() => ({}));
+        const handle = j.handle || actor;
+        return {
+          ok: true,
+          normalized: handle,
+          url: `https://bsky.app/profile/${handle}`,
+          displayName: j.displayName || '',
+          followers: typeof j.followersCount === 'number' ? j.followersCount : undefined,
+        };
+      }
+      return { ok: false, normalized: actor, status: r.status, reason: 'not-found' };
+    } catch (err) {
+      return { ok: false, normalized: actor, reason: String(err && err.message || err) };
+    }
+  }
+
+  let url;
+  let inconclusive;
+  let note;
+  if (platform === 'linkedin') {
+    const slug = h.includes('/') ? h : `company/${h}`;
+    url = `https://www.linkedin.com/${slug}/`;
+  } else if (platform === 'x') {
+    url = `https://x.com/${h.replace(/^@/, '')}`;
+    inconclusive = true;
+    note = 'X serves the same app shell for any path when logged out — a reachable result does not prove the handle exists. Open the profile in a browser to confirm.';
+  } else if (platform === 'youtube') {
+    url = /^(channel|c|user)\//.test(h) ? `https://www.youtube.com/${h}` : `https://www.youtube.com/@${h}`;
+  } else {
+    return { ok: false, normalized: h, reason: 'unknown-platform' };
+  }
+
+  const probe = await probeUrl(url);
+  return { ok: probe.ok, normalized: h, url, status: probe.status, inconclusive, note };
+}
+
+// Verify an official social account during onboarding (linkedin/x/bluesky/youtube).
+app.get('/api/verify-social', async (req, res) => {
+  const platform = String(req.query.platform || '').toLowerCase();
+  const handle = String(req.query.handle || '').trim();
+  const allowed = ['linkedin', 'x', 'bluesky', 'youtube'];
+  if (!allowed.includes(platform)) {
+    return res.status(400).json({ error: `platform: one of ${allowed.join(' / ')}` });
+  }
+  if (!handle) return res.status(400).json({ error: 'handle: required' });
+  if (handle.length > 200) return res.status(400).json({ error: 'handle: too long' });
+  try {
+    const result = await verifySocial(platform, handle);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: String(err && err.message || err) });
+  }
+});
+
 app.get('/api/conversations/closed', async (_req, res) => {
   try {
     const closed = await loadClosed(REPORTS_DIR);

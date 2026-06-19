@@ -115,6 +115,33 @@ Present recommendations conversationally, not as a checklist dump. One at a time
 
 ---
 
+## Verifying Social Accounts
+
+Whenever the user gives an **official social handle** — in Group 3 (Official Channels), Group 6 (Social Post Platforms), the Operator Identity step, or Product Team Members — **normalize it, verify it resolves to a real account, and only then save it.** Never write an unverified handle into the config.
+
+### Normalize first
+
+- Strip leading `@`, `u/`, `/in/`, `/company/`, and trailing slashes.
+- Accept a full URL and extract just the handle/slug (e.g., `https://www.linkedin.com/company/azure-cosmos-db/` → `azure-cosmos-db`).
+- Lowercase where the platform is case-insensitive (Bluesky handles, LinkedIn slugs, YouTube handles). Preserve X handle casing as typed, but match case-insensitively.
+
+### Verify each platform (no-auth recipes)
+
+| Platform | How to verify | Pass = | Notes |
+|----------|---------------|--------|-------|
+| **Bluesky** | `Invoke-RestMethod "https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=<handle>"` | HTTP 200 + a `displayName` that matches the product | Handle may be `name.bsky.social` **or** a custom domain (e.g., `azurecosmosdb.com`). HTTP 400 = does not resolve → re-ask. Use a terminal `Invoke-RestMethod`, **not** `fetch_webpage` (it URL-encodes the `=` and breaks the XRPC call). |
+| **LinkedIn** | Fetch `https://www.linkedin.com/company/<slug>/` (or `/in/<slug>` for a person) | Page resolves (200 / redirect to the company page) | A 404 means the slug is wrong. LinkedIn gates details behind auth — confirm the slug **resolves**, don't try to scrape follower counts. |
+| **X / Twitter** | Fetch `https://x.com/<handle>` | A profile page (not a generic login/404 wall) | Anonymous X often shows a login wall, so verification can be inconclusive. If you can't confirm, show what you found and ask the user to confirm before saving — don't guess. |
+| **YouTube** | If a YouTube Data API key is in `.env`, call the `channels`/`search` endpoint by handle; otherwise fetch `https://www.youtube.com/@<handle>` | Channel page resolves with a matching channel name | Accept `@handle`, a channel URL, or a channel ID. |
+
+### On result
+
+- **Verified:** confirm back to the user ("✓ Found *Azure Cosmos DB* on Bluesky at `azurecosmosdb.com`") and save the normalized handle.
+- **Not found / mismatch:** do **not** save. Tell the user exactly what you tried and the result, then ask them to re-enter the handle or explicitly say "save anyway".
+- **Inconclusive (e.g., X login wall):** show what you saw and ask the user to confirm the handle before saving.
+
+---
+
 ## Natural Language Role Mapping
 
 Users don't have to pick from the role table. They can describe their role in natural language, and the agent maps it to the right configuration.
@@ -297,8 +324,8 @@ Ask these fields **one at a time**, waiting for each answer:
 We need to exclude your team's own content so we only find community/external content. **Ask each item one at a time. User can say "none" or "skip" to any individual item.**
 
 1. **Official blog URL** or blog tag page? *(say "none" to skip)*
-2. **Official YouTube channel** name or URL? *(say "none" to skip)*
-3. **Official social handles** — ask each platform separately: LinkedIn? X/Twitter? Bluesky? *(say "none" per platform)*
+2. **Official YouTube channel** name, `@handle`, or URL? *(say "none" to skip)* — normalize and **verify** it resolves (see [Verifying Social Accounts](#verifying-social-accounts)) before saving.
+3. **Official social handles** — ask each platform **separately, one per turn**: LinkedIn? X/Twitter? Bluesky? *(say "none" per platform)* For each handle the user gives, normalize it and **verify it resolves to a real account** using the [Verifying Social Accounts](#verifying-social-accounts) recipes before writing it to the config. If verification fails, tell the user what you found and re-ask — don't save an unverified handle.
 4. Any **GitHub orgs or repos** to exclude? (e.g., "Azure/azure-cosmos-dotnet-v3") *(say "none" to skip)*
 5. Any **other domains or authors** to exclude? *(say "none" to skip)*
 6. Any specific **verified product team members / co-workers** whose content should be tracked separately in a "Team Member Mentions" section and excluded from community triage? Provide names plus any platform handles you know (e.g., `James Codella (github: jcodella, x: jcodella, linkedin: jamescodella)`). Name-only entries are allowed, but handles are required for automatic no-triage matching. Do not include MVPs, MCTs, partners, or community speakers unless you have verified they work for the company. *(say "none" to skip)*
@@ -434,7 +461,7 @@ Say "none" to skip this group entirely. Otherwise ask each item **one at a time*
 
 Say "none" to skip any of these. Defaults will be used.
 - Which **platforms** should we generate posts for? Select from: **LinkedIn**, **X**, **Bluesky**, **TikTok**, **YouTube Community**. *(Pick one or more, or say "none" to skip social post generation entirely.)*
-- For each selected platform, what is the **account handle or URL**? *(optional — say "none" if you don't want to link your account)*
+- For each selected platform, what is the **account handle or URL** you post from? Ask **one platform per turn**. *(optional — say "none" if you don't want to link your account)* Normalize each handle and **verify it resolves to a real account** using the [Verifying Social Accounts](#verifying-social-accounts) recipes before saving it. If the official brand account was already verified in Group 3, offer it as the default for that platform so the user can reuse it with one word. Note that the posting account can legitimately differ from the official brand account (e.g., a personal/operator account) — only verify whichever handle the user actually provides.
 
 #### Brand & Thumbnail Identity
 Collect brand identity details so thumbnails accurately represent the product. Say "none" to skip any item.

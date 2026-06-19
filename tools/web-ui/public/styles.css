@@ -818,6 +818,15 @@ code, pre { overflow-wrap: anywhere; }
 .social-accts-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.5rem;
 }
+.soc-acct-row {
+  display: flex; gap: 0.35rem; align-items: center;
+}
+.soc-acct-row input { flex: 1 1 auto; min-width: 0; }
+.soc-verify-btn { flex: 0 0 auto; white-space: nowrap; }
+.soc-verify-status:empty { display: none; }
+.soc-verify-status[data-state="ok"] { color: var(--ok, #16a34a); }
+.soc-verify-status[data-state="bad"] { color: var(--danger, #dc2626); }
+.soc-verify-status[data-state="warn"] { color: var(--warn, #b45309); }
 
 /* Add-one-at-a-time list (used by official social accounts). */
 .chip-list {
