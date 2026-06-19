@@ -306,8 +306,9 @@
               </fieldset>
               <fieldset class="cfg-group">
                 <legend>Output <button type="button" class="link-btn bulk-select" data-target=".cfg-output" data-action="all">Select all</button> <span class="sep">·</span> <button type="button" class="link-btn bulk-select" data-target=".cfg-output" data-action="none">Clear</button></legend>
-                <label class="field-inline"><input data-field="social" class="cfg-output" type="checkbox" checked /><span>Auto-generate social posts after scans</span></label>
-                <label class="field-inline"><input data-field="calendar" class="cfg-output" type="checkbox" /><span>Generate a weekly posting calendar</span></label>
+                <label class="field-inline"><input data-field="social" class="cfg-output" type="checkbox" checked /><span>Enable social posts (drafted on demand, not during scans)</span></label>
+                <label class="field-inline"><input data-field="calendar" class="cfg-output" type="checkbox" /><span>Enable weekly posting calendar (on demand)</span></label>
+                <p class="hint">Scans write a report only. Social posts &amp; thumbnails are generated when you ask — use <strong>Generate posts</strong> (<code>/scout-post</code>) in the Social view, or say so in your scan request.</p>
               </fieldset>
               <fieldset class="cfg-group">
                 <legend>Social post accounts</legend>

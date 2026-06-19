@@ -469,11 +469,13 @@ function closeRun(run, status) {
     // manual refresh. Fire-and-forget; failures simply rebuild on demand.
     getIndex().catch(() => { /* will rebuild on demand */ });
   }
-  // Auto-render thumbnails for any run that produces a social-posts/*.md
-  // (scout-post bulk + solo, plus scout-scan when posts are auto-generated).
-  // Fire-and-forget so the SSE close above isn't delayed. Honor the
-  // per-run `options.skipThumbnails` flag set when the user chose
-  // "Thumbnail style: Off" in the Run form.
+  // Auto-render thumbnails for any run that produced a social-posts/*.md.
+  // scout-post always writes one. scout-scan only writes one when the user
+  // explicitly asked for social posts (opt-in) — a plain scan is report-only,
+  // so autoRenderThumbnails freshness-gates on run.startedAt and no-ops when
+  // this run didn't produce a new social-posts file. Fire-and-forget so the
+  // SSE close above isn't delayed. Honor the per-run `options.skipThumbnails`
+  // flag set when the user chose "Thumbnail style: Off" in the Run form.
   if (status === 'success' && (run.cmdName === 'scout-post' || run.cmdName === 'scout-scan')) {
     if (run.options && run.options.skipThumbnails) {
       pushRunOutput(run, `\n[scout-web] Skipping auto-thumbnail render (Thumbnail style: Off).\n`);
@@ -489,6 +491,30 @@ function closeRun(run, status) {
   // available for ad-hoc lookups.
 }
 
+// Find the most-recently-modified social-posts/*.md file (bulk, solo, or
+// calendar). Returns { name, mtimeMs } or null. Used to freshness-gate the
+// auto-thumbnail render so a report-only scan doesn't re-render an old batch.
+async function newestSocialPostFile() {
+  const dir = path.join(REPO_ROOT, 'social-posts');
+  let entries;
+  try {
+    entries = await fs.readdir(dir);
+  } catch {
+    return null;
+  }
+  let best = null;
+  for (const name of entries) {
+    if (!name.endsWith('.md')) continue;
+    try {
+      const st = await fs.stat(path.join(dir, name));
+      if (!best || st.mtimeMs > best.mtimeMs) best = { name, mtimeMs: st.mtimeMs };
+    } catch {
+      /* ignore unreadable entry */
+    }
+  }
+  return best;
+}
+
 // Spawn `node tools/render-thumbnails/index.js` to produce LinkedIn (1200x1200)
 // + X (1600x900) PNGs for every `**Thumbnail spec:**` block in the newest
 // social-posts markdown file. Output is appended to the originating run log
@@ -499,6 +525,16 @@ async function autoRenderThumbnails(run) {
     await fs.access(renderer);
   } catch {
     return; // renderer not installed — silently skip
+  }
+  // Only render when THIS run actually produced (or updated) a social-posts
+  // markdown file. Social posts are opt-in for /scout-scan now: a plain scan
+  // writes the report only, leaving social-posts/ untouched, so we must not
+  // re-render an older batch. scout-post (and an opt-in scan that generated
+  // posts) writes a fresh file, so newest.mtime >= run.startedAt holds there.
+  const newest = await newestSocialPostFile();
+  if (!newest) return;
+  if (run.startedAt && newest.mtimeMs < Date.parse(run.startedAt) - 1000) {
+    return; // nothing new in social-posts/ from this run
   }
   pushRunOutput(run, `\n[scout-web] Auto-rendering thumbnails (LinkedIn 1200x1200 + X 1600x900) from the newest social-posts/*.md…\n`);
   const child = spawn(process.execPath, [renderer], {

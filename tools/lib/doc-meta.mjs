@@ -47,13 +47,30 @@ function extractTitle(raw, subject) {
   if (m) {
     // Strip noisy boilerplate prefixes ("Content Scout Report: ", etc.) so
     // the meaningful part of the title shows in the narrow rail.
-    return m[1]
+    return cleanInlineMarkdown(m[1]
       .replace(/^content\s+scout\s+report\s*[:\-—]\s*/i, '')
       .replace(/^scout\s+report\s*[:\-—]\s*/i, '')
-      .trim();
+      .trim());
   }
   if (subject) return subject.replace(/-/g, ' ');
   return '';
+}
+
+// Remove markdown-only syntax so list rows stay readable plain text.
+function cleanInlineMarkdown(text) {
+  return String(text || '')
+    .replace(/```[^\n]*\n?/g, ' ')             // opening fences (``` / ```text)
+    .replace(/```/g, ' ')                       // closing fences
+    .replace(/^\s*>\s?/gm, '')                // blockquote markers
+    .replace(/^\s*#{1,6}\s+/gm, '')           // heading markers
+    .replace(/^\s*[-*]\s+/gm, '')             // bullet markers
+    .replace(/^\s*\d+\.\s+/gm, '')          // numbered list markers
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1') // images -> alt text
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')  // links -> text
+    .replace(/`([^`]+)`/g, '$1')                // inline code
+    .replace(/[*_~]{1,3}([^*_~]+)[*_~]{1,3}/g, '$1') // bold/italic/strike
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 // Find the first useful paragraph — the explicit "## Summary" block if it
@@ -80,15 +97,7 @@ function extractSummary(raw) {
     ) || '';
   }
   // Strip markdown noise → clean one-liner suitable for a list row.
-  const clean = body
-    .replace(/\r/g, '')
-    .replace(/^\s*[-*]\s+/gm, '')          // bullet markers
-    .replace(/^\s*\d+\.\s+/gm, '')         // numbered list markers
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')// links → text
-    .replace(/`([^`]+)`/g, '$1')           // inline code
-    .replace(/[*_]{1,3}([^*_]+)[*_]{1,3}/g, '$1') // bold/italic
-    .replace(/\s+/g, ' ')
-    .trim();
+  const clean = cleanInlineMarkdown(body.replace(/\r/g, ''));
   if (!clean) return '';
   // Trim to first sentence-ish, capped at ~220 chars so it fits in the rail.
   const sentenceEnd = clean.search(/(?<=[.!?])\s/);

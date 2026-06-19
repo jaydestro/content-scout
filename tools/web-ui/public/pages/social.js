@@ -1,8 +1,39 @@
 import { $, api, escape } from '../lib/core.js';
 import { wireListFilter, renderDocListItem, renderDocBody } from '../lib/doc-list.js';
 
-export async function loadSocial() {
+const SOCIAL_REFRESH_MS = 12000;
+let socialRefreshTimer = null;
+let socialFilterWired = false;
+let lastSocialSignature = '';
+
+function isSocialViewActive() {
+  const panel = document.getElementById('view-social');
+  return !!panel && panel.classList.contains('active') && !document.hidden;
+}
+
+function ensureSocialAutoRefresh() {
+  if (socialRefreshTimer) return;
+  socialRefreshTimer = setInterval(() => {
+    if (!isSocialViewActive()) return;
+    loadSocial({ silent: true }).catch(() => {});
+  }, SOCIAL_REFRESH_MS);
+}
+
+export async function loadSocial({ silent = false } = {}) {
   const { social } = await api('/api/reports');
+  const signature = (social || []).map((r) => `${r.name}:${r.mtime}`).join('|');
+  ensureSocialAutoRefresh();
+  if (signature === lastSocialSignature) {
+    if (!silent) window.dispatchEvent(new CustomEvent('scout:social-loaded'));
+    return;
+  }
+  lastSocialSignature = signature;
+
+  const prevSelected =
+    $('social-list')?.querySelector('li.selected')?.dataset.name ||
+    $('social-body')?.dataset.name ||
+    '';
+
   $('social-list').innerHTML = social
     .map((report) => renderDocListItem(report).replace('/view/reports/', '/view/social/'))
     .join('') || '<li class="hint">No social posts yet.</li>';
@@ -18,9 +49,21 @@ export async function loadSocial() {
     });
   });
   const body = $('social-body');
+  const selected = prevSelected
+    ? $('social-list').querySelector(`li[data-name="${CSS.escape(prevSelected)}"]`)
+    : null;
   const first = $('social-list').querySelector('li[data-name]');
-  if (first && body && !body.dataset.name) first.click();
-  wireListFilter({ inputId: 'social-filter', listId: 'social-list', kind: 'social-posts' });
+  if (selected) {
+    selected.classList.add('selected');
+    if (!body || body.dataset.name !== prevSelected) selected.click();
+  } else if (first && body && !body.dataset.name) {
+    first.click();
+  }
+  if (!socialFilterWired) {
+    wireListFilter({ inputId: 'social-filter', listId: 'social-list', kind: 'social-posts' });
+    socialFilterWired = true;
+  }
+  if (!silent) window.dispatchEvent(new CustomEvent('scout:social-loaded'));
 }
 
 function enhanceSocialBody(root) {
