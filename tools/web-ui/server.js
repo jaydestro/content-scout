@@ -147,6 +147,59 @@ const AGENT_PRESETS = {
   },
 };
 
+// --- Model selection ----------------------------------------------
+// Optional per-session model override. The runner is a shell command string;
+// when a model is chosen we inject "<flag> <model>" right after the binary name
+// (first token) so it lands before any subcommand (e.g. `codex exec`). Only
+// agents listed here support a model switch; custom runners are left untouched
+// (the user fully controls their own string).
+const MODEL_FLAG = {
+  claude: '--model',
+  copilot: '--model',
+  codex: '--model',
+  cursor: '--model',
+  gemini: '--model',
+};
+
+// Curated, stable suggestions surfaced in the UI dropdown. Free-text is always
+// allowed (the UI offers an "Other…" entry) so volatile/preview model ids we
+// don't want to hard-code still work. Claude exposes stable aliases; the other
+// CLIs rename model ids often, so we leave their suggestion lists empty and
+// rely on free-text.
+const MODEL_SUGGESTIONS = {
+  claude: [
+    { id: 'haiku', label: 'Haiku — fastest, cheapest' },
+    { id: 'sonnet', label: 'Sonnet — balanced' },
+    { id: 'opus', label: 'Opus — most capable' },
+  ],
+  copilot: [],
+  codex: [],
+  cursor: [],
+  gemini: [],
+};
+
+// Model ids are inserted into a shell command (spawned with shell:true), so we
+// allow only a conservative character set to prevent argument/command
+// injection. Anything outside this set disables injection rather than risking a
+// malformed or abusable command.
+const MODEL_SAFE_RE = /^[A-Za-z0-9._:@/-]+$/;
+
+function injectModel(runner, agent, model) {
+  if (!runner || !model) return runner;
+  const flag = MODEL_FLAG[agent];
+  if (!flag) return runner;                       // agent doesn't support a model switch
+  if (!MODEL_SAFE_RE.test(model)) return runner;  // reject unsafe ids
+  // Don't double-inject if the runner string already carries the flag.
+  const flagRe = new RegExp(`(^|\\s)${flag.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}([=\\s]|$)`);
+  if (flagRe.test(runner)) return runner;
+  const trimmed = runner.replace(/^\s+/, '');
+  const sp = trimmed.indexOf(' ');
+  if (sp === -1) return `${trimmed} ${flag} ${model}`;
+  const bin = trimmed.slice(0, sp);
+  const rest = trimmed.slice(sp + 1);
+  return `${bin} ${flag} ${model} ${rest}`;
+}
+
 // --- Settings persistence -----------------------------------------
 // Settings live at .local/state/web-settings.json. Reads fall back to the
 // legacy tools/web-ui/.scout-web-settings.json so the first run after the
@@ -159,7 +212,7 @@ async function loadSettings() {
     try {
       raw = await fs.readFile(SETTINGS_FILE, 'utf8');
     } catch {
-      return { agent: null, runner: '' };
+      return { agent: null, runner: '', model: '' };
     }
   }
   try {
@@ -167,9 +220,10 @@ async function loadSettings() {
     return {
       agent: typeof data.agent === 'string' ? data.agent : null,
       runner: typeof data.runner === 'string' ? data.runner : '',
+      model: typeof data.model === 'string' ? data.model : '',
     };
   } catch {
-    return { agent: null, runner: '' };
+    return { agent: null, runner: '', model: '' };
   }
 }
 
@@ -178,13 +232,17 @@ async function saveSettings(settings) {
   await fs.writeFile(SETTINGS_FILE_NEW, JSON.stringify(settings, null, 2) + '\n', 'utf8');
 }
 
-// Effective runner: env var wins, then saved settings.
+// Effective runner: env var wins, then saved settings (with optional model
+// injected). The env runner is used verbatim — never model-injected — because
+// the operator set it explicitly.
 async function getRunner() {
   if (typeof process.env.SCOUT_RUNNER === 'string' && process.env.SCOUT_RUNNER.length > 0) {
-    return { runner: process.env.SCOUT_RUNNER, source: 'env' };
+    return { runner: process.env.SCOUT_RUNNER, source: 'env', model: '' };
   }
   const s = await loadSettings();
-  return { runner: s.runner || '', source: s.runner ? 'settings' : 'none' };
+  let runner = s.runner || '';
+  if (runner && s.model) runner = injectModel(runner, s.agent, s.model);
+  return { runner, source: s.runner ? 'settings' : 'none', model: s.model || '' };
 }
 
 const app = express();
@@ -864,6 +922,10 @@ app.get('/api/status', async (_req, res) => {
     runnerConfigured: !!runnerInfo.runner,
     runnerLocked: runnerInfo.source === 'env',
     agent: settings.agent,
+    model: settings.model || null,
+    modelSupported: !!MODEL_FLAG[settings.agent] && runnerInfo.source !== 'env',
+    modelFlag: MODEL_FLAG[settings.agent] || null,
+    modelOptions: MODEL_SUGGESTIONS[settings.agent] || [],
     hasConfigs: configs.length > 0,
     configCount: configs.length,
     externalActivity,
@@ -875,6 +937,8 @@ app.get('/api/agents', (_req, res) => {
   res.json({
     agents: Object.values(AGENT_PRESETS).map(({ id, label, runner, install, note }) => ({
       id, label, runner, install, note,
+      modelFlag: MODEL_FLAG[id] || null,
+      modelSuggestions: MODEL_SUGGESTIONS[id] || [],
     })),
   });
 });
@@ -884,7 +948,7 @@ app.get('/api/settings', async (_req, res) => {
 });
 
 app.post('/api/settings', async (req, res) => {
-  const { agent, runner } = req.body || {};
+  const { agent, runner, model } = req.body || {};
   if (typeof agent !== 'string') {
     return res.status(400).json({ error: 'agent required' });
   }
@@ -899,9 +963,20 @@ app.post('/api/settings', async (req, res) => {
   } else {
     return res.status(400).json({ error: `unknown agent: ${agent}` });
   }
+  // Optional per-session model override. Sanitize against the same safe set used
+  // for injection, and only persist it for agents that actually support a model
+  // switch (custom runners and `none` ignore it).
+  let cleanModel = '';
+  if (typeof model === 'string' && model.trim()) {
+    const mt = model.trim();
+    if (mt.length > 100 || !MODEL_SAFE_RE.test(mt)) {
+      return res.status(400).json({ error: 'invalid model id (allowed: letters, digits and . _ : @ / -)' });
+    }
+    cleanModel = MODEL_FLAG[agent] ? mt : '';
+  }
   try {
-    await saveSettings({ agent, runner: effectiveRunner });
-    res.json({ ok: true, agent, runner: effectiveRunner });
+    await saveSettings({ agent, runner: effectiveRunner, model: cleanModel });
+    res.json({ ok: true, agent, runner: effectiveRunner, model: cleanModel });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
   }

@@ -128,6 +128,19 @@
                 </label>
                 <p class="hint">Use <code>{prompt}</code> as the placeholder for the Scout command.</p>
               </div>
+              <div id="agent-model-wrap" hidden>
+                <label>
+                  Model <span class="hint">(optional — overrides the agent's default model for runs started from the web UI)</span>
+                  <select id="agent-model-select">
+                    <option value="">Agent default</option>
+                  </select>
+                </label>
+                <label id="agent-model-custom-wrap" hidden>
+                  Custom model id
+                  <input id="agent-model-custom" type="text" placeholder="e.g. claude-sonnet-4-5" autocomplete="off" spellcheck="false" />
+                </label>
+                <p id="agent-model-hint" class="hint"></p>
+              </div>
               <p id="agent-status" class="hint" aria-live="polite"></p>
               <p id="agent-locked-note" class="hint" hidden>
                 <strong>Note:</strong> <code>SCOUT_RUNNER</code> env var is set — it overrides any choice saved here.
@@ -1480,9 +1493,14 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
           <textarea id="bulk-urls-text" rows="6" placeholder="https://example.com/post-one&#10;https://example.com/post-two"></textarea>
         </label>
         <label class="field">
-          <span>…or upload a .txt or .csv</span>
-          <input id="bulk-urls-file" type="file" accept=".txt,.csv,text/plain,text/csv" />
-          <span class="hint">CSV must include a <code>url</code> column. An optional <code>notes</code> column lets you guide each post (tone, audience, angle). <a href="/api/templates/urls.csv" download>Download template</a>.</span>
+          <span>…or drop / upload a .txt or .csv</span>
+          <div id="bulk-urls-dropzone" class="bulk-dropzone" tabindex="0" role="button" aria-label="Drop a .txt or .csv file, or click to select one">
+            <input id="bulk-urls-file" type="file" accept=".txt,.csv,text/plain,text/csv" hidden />
+            <div class="bulk-dropzone-empty">
+              <strong>Drop a .txt or .csv here, or click to choose</strong>
+              <span class="hint">Plain text = one URL per line. CSV must include a <code>url</code> column. An optional <code>notes</code> column lets you guide each post (tone, audience, angle). <a href="/api/templates/urls.csv" download>Download template</a>.</span>
+            </div>
+          </div>
         </label>
         <div id="bulk-urls-preview" class="bulk-urls-preview hint">No URLs detected yet.</div>
         <footer class="bulk-dialog-foot">

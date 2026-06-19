@@ -130,6 +130,18 @@ The web UI and chat/headless runner may append a tuner block to the input in thi
 
 Apply each tuner literally. Defaults if a tuner is absent: tone=conversational, platforms=linkedin,x, length=tease, emoji=light, hashtags=no, mention-authors=no, link-in-comments=no, variants=3, thumbnails=auto.
 
+### Generation speed (do this to keep `/scout-post` fast)
+
+Draft fast — a social post is short copy, not an essay. Concretely:
+
+1. **One fetch, max.** Fetch the source URL at most once, and only when you actually need details you don't already have. If the user supplied copy/context, or the link isn't live, do **not** fetch at all. Never re-fetch per variant.
+2. **Draft all variants in a single pass.** Produce every LinkedIn, X, Bluesky, and Reddit variant together in one generation step from the cached config + source notes. Do not deliberate platform-by-platform or research between variants — the angles differ, the underlying facts don't.
+3. **Don't pad.** Honor the `length` tuner (default `tease` = 1–2 sentences). If you're writing a third explanatory paragraph, stop and trust the link.
+4. **Thumbnails are opt-in.** Skip the `**Thumbnail spec:**` block unless it clearly adds value (see Thumbnail spec rules). Rendering is the slowest step — never emit specs by default.
+5. **Humanizer runs once, in parallel batch** (see Humanizer pass) — not per variant.
+
+These are latency rules only; they never relax the brand-naming guardrail, tuner contract, or humanizer rigor.
+
 ### Length guidance
 
 A social post is **not** a summary of the article — it's a hook that gets people to click. The linked content does the explaining. Do not over-describe.
