@@ -25,12 +25,15 @@
     <link rel="stylesheet" href="theme-polish.css" />
     <!-- Additive polish layer: skeletons, focus rings, responsive fixes, motion. -->
     <link rel="stylesheet" href="theme-refresh.css" />
-    <!-- Presentation-grade polish (loaded last, wins specificity ties). -->
-    <link rel="stylesheet" href="theme-presentation.css" />
     <!-- Density & organization pass: dashboard tabs, nav grouping, responsive. -->
     <link rel="stylesheet" href="theme-compact.css" />
-    <!-- Production-grade visual layer (loads LAST). See docs/DESIGN-SYSTEM.md. -->
+    <!-- Production-grade visual layer. See docs/DESIGN-SYSTEM.md. -->
     <link rel="stylesheet" href="theme-production.css" />
+    <!-- Long-tail polish supplement (loads LAST). Pins a calm radius scale
+         and neutralizes the demo brand gradient, then adds the components
+         production leaves unstyled: tables, inputs, tags, empty states,
+         skeletons, scrollbars, and focus rings. -->
+    <link rel="stylesheet" href="theme-scout.css" />
     <script>
       // Apply saved theme before first paint to avoid FOUC.
       (function () {
