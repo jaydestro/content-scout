@@ -838,6 +838,19 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
               <option value="custom">Custom prompt (advanced)</option>
             </select>
           </label>
+          <div id="run-model-wrap" class="run-model" hidden>
+            <label>
+              Model <span class="hint">(applies to every run — change any time)</span>
+              <select id="run-model-select">
+                <option value="">Agent default</option>
+              </select>
+            </label>
+            <label id="run-model-custom-wrap" hidden>
+              Custom model id
+              <input id="run-model-custom" type="text" placeholder="e.g. claude-sonnet-4-5" autocomplete="off" spellcheck="false" />
+            </label>
+            <span id="run-model-status" class="hint" aria-live="polite"></span>
+          </div>
           <div id="run-custom-prompt-summary" class="run-custom-prompt-summary" hidden>
             <div>
               <span class="hint">Custom prompt:</span>

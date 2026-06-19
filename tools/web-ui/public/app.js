@@ -71,6 +71,7 @@ async function loadStatus() {
     pill.title = 'Open Setup to pick an agent.';
     pill.classList.add('warn');
   }
+  renderRunModelPicker();
   return s;
 }
 
@@ -2491,6 +2492,82 @@ function openCustomPromptDialog() {
   else dlg.setAttribute('open', '');
   setTimeout(() => ta.focus(), 0);
 }
+// --- Run-view model picker -----------------------------------------
+// Mirrors the Setup wizard picker, but lives on the Scan view so a user who's
+// already set up can change the model without going back into Setup. Reads the
+// model fields off cachedStatus (populated by /api/status) and persists via the
+// same /api/settings endpoint.
+function renderRunModelPicker() {
+  const wrap = $('run-model-wrap');
+  const select = $('run-model-select');
+  const customWrap = $('run-model-custom-wrap');
+  const customInput = $('run-model-custom');
+  if (!wrap || !select || !customWrap || !customInput || !cachedStatus) return;
+  // Don't clobber an in-progress edit while the 10s status poll re-renders.
+  if (document.activeElement === select || document.activeElement === customInput) return;
+
+  const supported = !!cachedStatus.modelSupported;
+  wrap.hidden = !supported;
+  if (!supported) return;
+
+  const options = cachedStatus.modelOptions || [];
+  const model = (cachedStatus.model || '').trim();
+  const matches = options.some((o) => o.id === model);
+  select.innerHTML =
+    '<option value="">Agent default</option>' +
+    options.map((o) => `<option value="${escape(o.id)}">${escape(o.label || o.id)}</option>`).join('') +
+    '<option value="__custom__">Other… (type a model id)</option>';
+  if (!model) {
+    select.value = '';
+    customWrap.hidden = true;
+    customInput.value = '';
+  } else if (matches) {
+    select.value = model;
+    customWrap.hidden = true;
+    customInput.value = '';
+  } else {
+    select.value = '__custom__';
+    customWrap.hidden = false;
+    customInput.value = model;
+  }
+  const locked = !!cachedStatus.runnerLocked;
+  select.disabled = locked;
+  customInput.disabled = locked;
+}
+
+async function saveRunModel(model) {
+  if (!cachedStatus || !cachedStatus.agent) return;
+  if (cachedStatus.runnerLocked) return;
+  const status = $('run-model-status');
+  if (status) status.textContent = 'saving…';
+  try {
+    await api('/api/settings', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agent: cachedStatus.agent, model }),
+    });
+    await loadStatus(); // refreshes cachedStatus.model and re-renders the picker
+    if (status) status.textContent = model ? `model: ${model} ✓` : 'using agent default ✓';
+  } catch (err) {
+    if (status) status.textContent = `error: ${err.message}`;
+  }
+}
+
+$('run-model-select')?.addEventListener('change', () => {
+  const select = $('run-model-select');
+  $('run-model-custom-wrap').hidden = select.value !== '__custom__';
+  if (select.value === '__custom__') {
+    $('run-model-custom')?.focus();
+  } else {
+    saveRunModel(select.value);
+  }
+});
+$('run-model-custom')?.addEventListener('blur', () => {
+  if ($('run-model-select')?.value === '__custom__') {
+    saveRunModel(($('run-model-custom')?.value || '').trim());
+  }
+});
+
 $('run-command').addEventListener('change', (e) => {
   const custom = e.target.value === 'custom';
   // "Additional context" textarea is for non-custom commands; the modal
