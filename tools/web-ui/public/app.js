@@ -84,6 +84,7 @@ setInterval(() => {
 
 // --- Setup ---------------------------------------------------------
 let agentChoice = null;
+let agentMetaById = {};
 async function loadSetup() {
   const [{ agents }, settings, status] = await Promise.all([
     api('/api/agents'),
@@ -92,6 +93,7 @@ async function loadSetup() {
   ]);
   cachedStatus = status;
   agentChoice = settings.agent || status.agent || null;
+  agentMetaById = Object.fromEntries(agents.map((a) => [a.id, a]));
 
   const locked = status.runnerLocked;
   $('agent-locked-note').hidden = !locked;
@@ -116,6 +118,9 @@ async function loadSetup() {
       document.querySelectorAll('.agent-option').forEach((lbl) => {
         lbl.classList.toggle('selected', lbl.querySelector('input').value === r.value);
       });
+      // Reset the model when switching agents — a model id valid for one CLI
+      // (e.g. claude's "opus") isn't valid for another (e.g. gemini).
+      renderModelPicker(r.value, '', locked);
       saveAgentChoice();
     });
   });
@@ -127,6 +132,7 @@ async function loadSetup() {
   }
   $('agent-custom-wrap').hidden = agentChoice !== 'custom';
   if (settings.agent === 'custom') $('agent-custom-runner').value = settings.runner || '';
+  renderModelPicker(agentChoice, settings.model || '', locked);
 
   // Section 2 status
   $('setup-config-status').innerHTML = status.hasConfigs
@@ -373,6 +379,66 @@ async function testEnvRow(btn, scopeId) {
   }
 }
 
+// Render the optional per-agent Model picker. Only agents that expose a
+// model flag (claude/copilot/codex/cursor/gemini) show it; custom runners and
+// the in-editor "none" option hide it. Suggestions come from /api/agents; an
+// "Other…" entry always allows a free-text model id.
+function renderModelPicker(agentId, savedModel, locked) {
+  const wrap = $('agent-model-wrap');
+  const select = $('agent-model-select');
+  const customWrap = $('agent-model-custom-wrap');
+  const customInput = $('agent-model-custom');
+  const hint = $('agent-model-hint');
+  if (!wrap || !select) return;
+  const meta = agentMetaById[agentId];
+  const supported = !!(meta && meta.modelFlag);
+  wrap.hidden = !supported;
+  if (!supported) return;
+
+  const suggestions = (meta.modelSuggestions || []);
+  const model = (savedModel || '').trim();
+  const matchesSuggestion = suggestions.some((s) => s.id === model);
+  select.innerHTML =
+    '<option value="">Agent default</option>' +
+    suggestions.map((s) => `<option value="${escape(s.id)}">${escape(s.label || s.id)}</option>`).join('') +
+    '<option value="__custom__">Other… (type a model id)</option>';
+  if (!model) {
+    select.value = '';
+    customWrap.hidden = true;
+    customInput.value = '';
+  } else if (matchesSuggestion) {
+    select.value = model;
+    customWrap.hidden = true;
+    customInput.value = '';
+  } else {
+    select.value = '__custom__';
+    customWrap.hidden = false;
+    customInput.value = model;
+  }
+  select.disabled = !!locked;
+  customInput.disabled = !!locked;
+  hint.textContent = suggestions.length
+    ? 'Leave on “Agent default” to use the CLI’s built-in model.'
+    : 'Pick “Other…” and enter the exact model id your CLI accepts. Leave on “Agent default” to use the CLI’s built-in model.';
+
+  select.onchange = () => {
+    customWrap.hidden = select.value !== '__custom__';
+    if (select.value !== '__custom__') saveAgentChoice();
+  };
+  customInput.onblur = () => {
+    if (select.value === '__custom__') saveAgentChoice();
+  };
+}
+
+// Resolve the currently chosen model id from the picker ('' = agent default).
+function currentModel() {
+  const wrap = $('agent-model-wrap');
+  const select = $('agent-model-select');
+  if (!wrap || wrap.hidden || !select) return '';
+  if (select.value === '__custom__') return ($('agent-model-custom')?.value || '').trim();
+  return select.value || '';
+}
+
 // Persist the agent choice automatically whenever it changes — no Save button.
 let agentSaveToken = 0;
 async function saveAgentChoice() {
@@ -387,6 +453,7 @@ async function saveAgentChoice() {
     }
     body.runner = runner;
   }
+  body.model = currentModel();
   const token = ++agentSaveToken;
   $('agent-status').textContent = 'saving…';
   try {

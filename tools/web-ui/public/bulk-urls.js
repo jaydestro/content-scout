@@ -24,6 +24,7 @@
     const submitBtn = $('bulk-urls-submit');
     const textarea = $('bulk-urls-text');
     const fileInput = $('bulk-urls-file');
+    const dropzone = $('bulk-urls-dropzone');
     const preview = $('bulk-urls-preview');
     const cmdHint = $('bulk-urls-cmd-hint');
     const dialogCmd = $('bulk-urls-command');
@@ -234,20 +235,74 @@
     }
     textarea.addEventListener('input', recompute);
 
-    fileInput.addEventListener('change', async () => {
-      const f = fileInput.files && fileInput.files[0];
-      if (!f) return;
-      try {
-        const txt = await f.text();
-        const sep = textarea.value && !textarea.value.endsWith('\n') ? '\n' : '';
-        textarea.value = (textarea.value || '') + sep + txt;
-        recompute();
-      } catch (err) {
-        preview.textContent = `Could not read file: ${err.message}`;
-      } finally {
-        fileInput.value = '';
+    // Append raw text (from a dropped/picked file or a text drop) to the
+    // textarea, then re-parse. Shared by the file input and the dropzone.
+    function appendText(txt) {
+      if (!txt) return;
+      const sep = textarea.value && !textarea.value.endsWith('\n') ? '\n' : '';
+      textarea.value = (textarea.value || '') + sep + txt;
+      recompute();
+    }
+
+    async function ingestFiles(files) {
+      for (const f of files) {
+        // Only read text-ish files; skip binaries silently.
+        const okType = /^text\//.test(f.type) || /\.(txt|csv)$/i.test(f.name);
+        if (!okType) continue;
+        try {
+          appendText(await f.text());
+        } catch (err) {
+          preview.textContent = `Could not read ${f.name}: ${err.message}`;
+        }
       }
+    }
+
+    fileInput.addEventListener('change', async () => {
+      const files = fileInput.files ? [...fileInput.files] : [];
+      if (!files.length) return;
+      await ingestFiles(files);
+      fileInput.value = '';
     });
+
+    // --- Drag-and-drop --------------------------------------------------
+    // Mirrors the alt-text dropzone: click/keyboard to pick, drag to drop a
+    // file, or drop selected text straight in.
+    if (dropzone) {
+      dropzone.addEventListener('click', (e) => {
+        if (e.target.closest('a')) return; // let the template download link work
+        fileInput.click();
+      });
+      dropzone.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          fileInput.click();
+        }
+      });
+      ['dragenter', 'dragover'].forEach((ev) => {
+        dropzone.addEventListener(ev, (e) => {
+          e.preventDefault(); e.stopPropagation();
+          dropzone.classList.add('dragover');
+        });
+      });
+      ['dragleave', 'drop'].forEach((ev) => {
+        dropzone.addEventListener(ev, (e) => {
+          e.preventDefault(); e.stopPropagation();
+          dropzone.classList.remove('dragover');
+        });
+      });
+      dropzone.addEventListener('drop', async (e) => {
+        const dt = e.dataTransfer;
+        if (!dt) return;
+        const files = dt.files ? [...dt.files] : [];
+        if (files.length) {
+          await ingestFiles(files);
+          return;
+        }
+        // No file — accept dropped text (e.g. a list of URLs).
+        const text = dt.getData('text');
+        if (text) appendText(text);
+      });
+    }
 
     function openDialog(opts = {}) {
       // When the caller pins a command (e.g. "Bulk URLs…" from the Social
