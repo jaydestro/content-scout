@@ -384,6 +384,14 @@ async function testEnvRow(btn, scopeId) {
 // model flag (claude/copilot/codex/cursor/gemini) show it; custom runners and
 // the in-editor "none" option hide it. Suggestions come from /api/agents; an
 // "Other…" entry always allows a free-text model id.
+function formatModelOption(o) {
+  const label = o.label || o.id;
+  const bits = [];
+  if (o.context) bits.push(`${o.context} ctx`);
+  if (o.reasoning) bits.push(o.reasoning);
+  return bits.length ? `${label} — ${bits.join(' · ')}` : label;
+}
+
 function renderModelPicker(agentId, savedModel, locked) {
   const wrap = $('agent-model-wrap');
   const select = $('agent-model-select');
@@ -400,8 +408,8 @@ function renderModelPicker(agentId, savedModel, locked) {
   const model = (savedModel || '').trim();
   const matchesSuggestion = suggestions.some((s) => s.id === model);
   select.innerHTML =
-    '<option value="">Agent default</option>' +
-    suggestions.map((s) => `<option value="${escape(s.id)}">${escape(s.label || s.id)}</option>`).join('') +
+    '<option value="">Agent default (let the CLI choose)</option>' +
+    suggestions.map((s) => `<option value="${escape(s.id)}">${escape(formatModelOption(s))}</option>`).join('') +
     '<option value="__custom__">Other… (type a model id)</option>';
   if (!model) {
     select.value = '';
@@ -2514,8 +2522,8 @@ function renderRunModelPicker() {
   const model = (cachedStatus.model || '').trim();
   const matches = options.some((o) => o.id === model);
   select.innerHTML =
-    '<option value="">Agent default</option>' +
-    options.map((o) => `<option value="${escape(o.id)}">${escape(o.label || o.id)}</option>`).join('') +
+    '<option value="">Agent default (let the CLI choose)</option>' +
+    options.map((o) => `<option value="${escape(o.id)}">${escape(formatModelOption(o))}</option>`).join('') +
     '<option value="__custom__">Other… (type a model id)</option>';
   if (!model) {
     select.value = '';
