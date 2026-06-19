@@ -1,0 +1,769 @@
+/* ============================================================================
+   theme-redesign.css — Content Scout "Nocturne" redesign (loads LAST)
+   ----------------------------------------------------------------------------
+   A premium, shadcn/Linear-inspired overhaul. Keeps 100% of the existing
+   markup + JS hooks (every #id, .class, [data-view], [data-goto] preserved).
+
+   Approach:
+     1. Redefine the token system → new violet + teal identity, both themes.
+     2. Restructure the shell into a glassmorphic full-height left sidebar.
+     3. New nav language: icon-chip items, gradient "active pill" (no left bar),
+        and the ⌘K command palette promoted to a search field at the top.
+     4. Soft, layered depth on cards, stats, buttons, tabs, master/detail.
+
+   Layout-critical props use !important only where earlier layers hard-pin a
+   conflicting value.
+   ========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   1. DESIGN TOKENS — "Nocturne" violet + teal
+   ------------------------------------------------------------------------- */
+
+/* Dark (default). Scoped to html[data-theme] so it beats the production layer
+   that pins tokens at that same specificity; load order then wins. */
+html[data-theme] {
+  --bg:            #09090d;   /* zinc-950 with a violet whisper */
+  --bg-2:          #101015;
+  --panel:         #141419;   /* card */
+  --panel-2:       #1a1a21;
+  --panel-3:       #23232c;
+  --panel-4:       #2e2e39;
+  --border:        #26262f;
+  --border-strong: #3a3a47;
+
+  --text:          #f2f2f6;
+  --muted:         #9a9aa7;
+  --muted-2:       #c9c9d4;
+
+  --accent:        #8b5cf6;   /* violet-500 — primary */
+  --accent-hover:  #a78bfa;
+  --accent-strong: #7c3aed;
+  --accent-soft:   rgba(139, 92, 246, 0.14);
+  --accent-ring:   rgba(139, 92, 246, 0.45);
+  --accent-2:      #2dd4bf;   /* teal-400 — secondary / data */
+  --accent-2-hover:#5eead4;
+  --hi:            #f472b6;   /* pink-400 — highlight */
+  --hi-soft:       rgba(244, 114, 182, 0.16);
+  --danger:        #fb7185;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.5);
+  --shadow-md: 0 8px 26px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.4);
+  --shadow-lg: 0 28px 64px rgba(0,0,0,0.6), 0 10px 24px rgba(0,0,0,0.45);
+  --ring: 0 0 0 3px rgba(139,92,246,0.32);
+
+  --brand-gradient: linear-gradient(135deg, #8b5cf6 0%, #d946ef 100%);
+  --gradient-accent: linear-gradient(135deg, #8b5cf6 0%, #6366f1 50%, #2dd4bf 130%);
+
+  /* Glass surfaces for the sidebar */
+  --glass:      rgba(18, 18, 23, 0.66);
+  --glass-line: rgba(255, 255, 255, 0.06);
+
+  --sidebar-w: 252px;
+}
+
+/* Light — same violet/teal identity, airy surfaces */
+html[data-theme="light"] {
+  --bg:            #f4f4f7;
+  --bg-2:          #ececf1;
+  --panel:         #ffffff;
+  --panel-2:       #f7f7fa;
+  --panel-3:       #eeeef3;
+  --panel-4:       #e2e2ea;
+  --border:        #e3e3ea;
+  --border-strong: #c7c7d2;
+
+  --text:          #18181b;
+  --muted:         #6a6a76;
+  --muted-2:       #3a3a44;
+
+  --accent:        #7c3aed;
+  --accent-hover:  #6d28d9;
+  --accent-strong: #5b21b6;
+  --accent-soft:   rgba(124, 58, 237, 0.10);
+  --accent-ring:   rgba(124, 58, 237, 0.30);
+  --accent-2:      #0d9488;
+  --accent-2-hover:#0f766e;
+  --hi:            #db2777;
+  --hi-soft:       rgba(219, 39, 119, 0.10);
+  --danger:        #e11d48;
+
+  --shadow-sm: 0 1px 2px rgba(24,24,27,0.06);
+  --shadow-md: 0 10px 30px rgba(24,24,27,0.10), 0 2px 6px rgba(24,24,27,0.06);
+  --shadow-lg: 0 28px 70px rgba(24,24,27,0.16), 0 10px 26px rgba(24,24,27,0.08);
+  --ring: 0 0 0 3px rgba(124,58,237,0.26);
+
+  --brand-gradient: linear-gradient(135deg, #7c3aed 0%, #c026d3 100%);
+  --gradient-accent: linear-gradient(135deg, #7c3aed 0%, #6366f1 50%, #0d9488 130%);
+
+  --glass:      rgba(255, 255, 255, 0.72);
+  --glass-line: rgba(24, 24, 27, 0.06);
+}
+
+/* ---------------------------------------------------------------------------
+   2. APP SHELL — glassmorphic left sidebar (CSS-only restructure)
+   ------------------------------------------------------------------------- */
+
+html, body { min-height: 100vh; }
+
+html[data-theme] body {
+  display: grid !important;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) !important;
+  align-items: start;
+  background:
+    radial-gradient(ellipse 50% 40% at 0% 0%, var(--accent-soft), transparent 60%),
+    radial-gradient(ellipse 44% 38% at 100% 4%, var(--hi-soft), transparent 58%),
+    radial-gradient(ellipse 60% 50% at 100% 100%, rgba(45,212,191,0.07), transparent 60%),
+    var(--bg) !important;
+}
+
+.skip-link { position: absolute !important; }
+
+/* ---- Sidebar (glass) -------------------------------------------------- */
+html[data-theme] .site-header {
+  position: sticky !important;
+  top: 0;
+  z-index: 50;
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100vh;
+  max-height: 100vh;
+  padding: 0;
+  overflow: hidden;
+  background: var(--glass) !important;
+  border: 0 !important;
+  border-right: 1px solid var(--border) !important;
+  box-shadow: 1px 0 0 var(--glass-line), 22px 0 60px -40px rgba(0,0,0,0.7) !important;
+  backdrop-filter: blur(22px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(140%) !important;
+}
+
+/* Brand block */
+html[data-theme] .site-header .banner {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 1.15rem 1.05rem 0.95rem !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--glass-line) !important;
+}
+html[data-theme] .site-header .banner-logo {
+  width: 38px !important;
+  min-width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  filter: drop-shadow(0 6px 14px rgba(139,92,246,0.35));
+}
+html[data-theme] .site-header .banner-title {
+  font-size: 1.16rem !important;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  background: var(--brand-gradient) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  color: transparent !important;
+}
+html[data-theme] .site-header .banner-tagline {
+  display: block;
+  font-size: 0.68rem;
+  line-height: 1.3;
+  color: var(--muted) !important;
+}
+
+/* Rail body */
+html[data-theme] .site-header .header-bar {
+  flex: 1 1 auto !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 0 !important;
+  min-height: 0;
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+/* Primary nav: vertical, scrollable */
+html[data-theme] .site-header nav[aria-label="Primary"] {
+  flex: 1 1 auto;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 3px !important;
+  padding: 0.85rem 0.7rem !important;
+  margin: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ---- New nav item language: icon-chip + gradient active pill ---------- */
+html[data-theme] .site-header nav[aria-label="Primary"] button {
+  position: relative;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 0.65rem !important;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.35rem 0.5rem !important;
+  border: 1px solid transparent !important;
+  border-radius: var(--radius-md) !important;
+  background: transparent !important;
+  color: var(--muted) !important;
+  font-size: 0.9rem !important;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-base) var(--ease-out);
+}
+html[data-theme] .site-header nav[aria-label="Primary"] button .icon {
+  box-sizing: border-box;
+  width: 32px !important;
+  height: 32px !important;
+  flex: 0 0 auto;
+  padding: 7px;
+  border-radius: 10px;
+  background: var(--panel-3);
+  color: var(--muted-2);
+  transition: background var(--dur-base) var(--ease-out),
+              color var(--dur-base) var(--ease-out),
+              box-shadow var(--dur-base) var(--ease-out);
+}
+html[data-theme] .site-header nav[aria-label="Primary"] button .nav-label {
+  display: inline !important;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+html[data-theme] .site-header nav[aria-label="Primary"] button:hover {
+  background: var(--panel-2) !important;
+  color: var(--text) !important;
+}
+html[data-theme] .site-header nav[aria-label="Primary"] button:hover .icon {
+  color: var(--text);
+  background: var(--panel-4);
+}
+html[data-theme] .site-header nav[aria-label="Primary"] button.active {
+  background: var(--accent-soft) !important;
+  color: var(--text) !important;
+  border-color: transparent !important;
+  box-shadow: inset 0 0 0 1px var(--accent-ring) !important;
+}
+html[data-theme] .site-header nav[aria-label="Primary"] button.active::before { display: none !important; }
+html[data-theme] .site-header nav[aria-label="Primary"] button.active .icon {
+  background: var(--brand-gradient) !important;
+  color: #fff !important;
+  box-shadow: 0 6px 16px -4px var(--accent-ring);
+}
+
+/* Command palette → promoted to a "search field" at the very top */
+html[data-theme] .site-header nav[aria-label="Primary"] button#kbd-hint {
+  order: -2;
+  margin-bottom: 0.4rem;
+  min-height: 40px;
+  justify-content: space-between !important;
+  gap: 0.5rem !important;
+  background: var(--panel-2) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-md) !important;
+  color: var(--muted) !important;
+  box-shadow: none !important;
+}
+html[data-theme] .site-header nav[aria-label="Primary"] button#kbd-hint:hover {
+  border-color: var(--accent) !important;
+  color: var(--text) !important;
+}
+html[data-theme] .site-header nav[aria-label="Primary"] button#kbd-hint .icon {
+  width: 18px !important;
+  height: 18px !important;
+  padding: 0 !important;
+  background: none !important;
+  color: inherit;
+  box-shadow: none !important;
+}
+html[data-theme] .site-header nav[aria-label="Primary"] button#kbd-hint .kbd-hint-keys {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: auto;
+}
+html[data-theme] .site-header nav[aria-label="Primary"] button#kbd-hint kbd {
+  font: 600 0.62rem/1 'JetBrains Mono', ui-monospace, monospace;
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: var(--panel-4);
+  color: var(--muted-2);
+  border: 1px solid var(--border);
+}
+/* The old inline separator no longer fits the layout */
+html[data-theme] .site-header nav[aria-label="Primary"] .nav-sep { display: none !important; }
+
+/* Help nudged to the end of the list */
+html[data-theme] .site-header nav[aria-label="Primary"] button.help-nav-btn { order: 5; }
+
+/* Actions pinned to bottom */
+html[data-theme] .site-header .header-actions {
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 0.5rem !important;
+  margin-top: auto !important;
+  padding: 0.75rem 0.7rem 1rem !important;
+  border-top: 1px solid var(--glass-line);
+}
+html[data-theme] .site-header .header-actions .theme-toggle {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 0.55rem;
+  padding: 0.55rem 0.7rem !important;
+  border-radius: var(--radius-md) !important;
+  border: 1px solid var(--border) !important;
+  background: var(--panel-2) !important;
+}
+html[data-theme] .site-header .header-actions .theme-toggle:hover {
+  border-color: var(--accent) !important;
+}
+html[data-theme] .site-header .header-actions .theme-toggle .theme-toggle-label {
+  display: inline !important;
+}
+html[data-theme] .site-header .header-actions #status-pill { align-self: flex-start; }
+html[data-theme] .site-header .header-actions #status-pill:empty { display: none; }
+
+/* ---- Main content column --------------------------------------------- */
+html[data-theme] #main-content {
+  min-width: 0;
+  min-height: 100vh;
+  padding: clamp(1.25rem, 2.6vw, 2.75rem) clamp(1.25rem, 3vw, 3rem) 4rem !important;
+}
+html[data-theme] #main-content .view {
+  max-width: 1200px;
+  margin-inline: auto;
+}
+html[data-theme] #main-content .view > h2:first-child,
+html[data-theme] #main-content .view-header > h2 {
+  font-size: clamp(1.5rem, 2.4vw, 2rem) !important;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* Tasteful view entrance */
+@media (prefers-reduced-motion: no-preference) {
+  html[data-theme] .view.active { animation: scoutViewIn 320ms var(--ease-out) both; }
+  @keyframes scoutViewIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: none; }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   3. COMPONENT POLISH
+   ------------------------------------------------------------------------- */
+
+/* Cards */
+html[data-theme] .card {
+  background: var(--panel) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-sm) !important;
+  transition: transform var(--dur-base) var(--ease-out),
+              box-shadow var(--dur-base) var(--ease-out),
+              border-color var(--dur-base) var(--ease-out);
+}
+html[data-theme] .card:hover {
+  border-color: var(--border-strong) !important;
+  box-shadow: var(--shadow-md) !important;
+}
+
+/* Dashboard hero */
+html[data-theme] .dash-hero {
+  position: relative;
+  border-radius: var(--radius-xl) !important;
+  border: 1px solid var(--border) !important;
+  padding: clamp(1.35rem, 2.5vw, 2.1rem) !important;
+  background:
+    radial-gradient(ellipse 70% 130% at 0% 0%, var(--accent-soft), transparent 60%),
+    radial-gradient(ellipse 60% 130% at 100% 100%, var(--hi-soft), transparent 60%),
+    var(--panel) !important;
+  box-shadow: var(--shadow-sm) !important;
+  overflow: hidden;
+}
+html[data-theme] .dash-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--gradient-accent);
+}
+html[data-theme] .dash-hero h2 {
+  font-size: clamp(1.5rem, 2.6vw, 2.1rem) !important;
+  letter-spacing: -0.02em;
+  background: linear-gradient(120deg, var(--text), var(--muted-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Section headers — accent tick */
+html[data-theme] .dash-section-head {
+  position: relative;
+  padding-left: 0.85rem;
+  font-size: 0.76rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.09em !important;
+  text-transform: uppercase;
+  color: var(--muted) !important;
+}
+html[data-theme] .dash-section-head::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 50%;
+  transform: translateY(-50%);
+  width: 4px; height: 1em;
+  border-radius: 2px;
+  background: var(--brand-gradient);
+}
+
+/* Stat tiles */
+html[data-theme] .dash-stats .stat,
+html[data-theme] .stat {
+  position: relative;
+  background: var(--panel) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-lg) !important;
+  padding: 1.1rem 1.2rem !important;
+  overflow: hidden;
+  transition: transform var(--dur-base) var(--ease-out),
+              box-shadow var(--dur-base) var(--ease-out),
+              border-color var(--dur-base) var(--ease-out);
+}
+html[data-theme] .dash-stats .stat::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--gradient-accent);
+  opacity: 0.9;
+}
+html[data-theme] .dash-stats .stat:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-strong) !important;
+  box-shadow: var(--shadow-md) !important;
+}
+html[data-theme] .stat-num {
+  font-size: clamp(1.6rem, 2.6vw, 2.1rem) !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em;
+  background: var(--brand-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: var(--accent);
+}
+html[data-theme] .stat-label {
+  font-size: 0.72rem !important;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted) !important;
+}
+
+/* Primary buttons — violet gradient */
+html[data-theme] button.btn-primary,
+html[data-theme] button.primary,
+html[data-theme] .dash-hero-actions .btn-primary,
+html[data-theme] .view-header button.primary {
+  border: 0 !important;
+  color: #fff !important;
+  background: var(--brand-gradient) !important;
+  box-shadow: 0 8px 20px -7px var(--accent-strong), inset 0 1px 0 rgba(255,255,255,0.2) !important;
+  transition: transform var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-base) var(--ease-out),
+              filter var(--dur-fast) var(--ease-out);
+}
+html[data-theme] button.btn-primary:hover,
+html[data-theme] button.primary:hover,
+html[data-theme] .dash-hero-actions .btn-primary:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.07);
+  box-shadow: 0 12px 28px -7px var(--accent-strong), inset 0 1px 0 rgba(255,255,255,0.22) !important;
+}
+
+/* Master/detail split */
+html[data-theme] .split > aside {
+  background: var(--panel) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-lg) !important;
+}
+html[data-theme] .split > aside ul > li {
+  border-radius: var(--radius-sm);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+html[data-theme] .split > aside ul > li:hover { background: var(--panel-2); }
+
+/* Tab bars — active = violet fill */
+html[data-theme] .reports-tabs button.active,
+html[data-theme] .cfg-mode-tabs .cfg-tab.active {
+  color: #fff !important;
+  background: var(--accent) !important;
+  border-color: transparent !important;
+  box-shadow: 0 6px 14px -5px var(--accent-strong) !important;
+}
+
+/* Inputs — focus ring in the new accent */
+html[data-theme] input:not([type="checkbox"]):not([type="radio"]):focus-visible,
+html[data-theme] textarea:focus-visible,
+html[data-theme] select:focus-visible {
+  outline: none;
+  border-color: var(--accent) !important;
+  box-shadow: var(--ring) !important;
+}
+
+/* Pills */
+html[data-theme] .pill { border-radius: 999px !important; }
+
+/* Empty banners */
+html[data-theme] .empty-banner {
+  border: 1px dashed var(--border-strong) !important;
+  border-radius: var(--radius-lg) !important;
+  background: var(--panel) !important;
+}
+
+/* Slim themed scrollbars */
+html[data-theme] #main-content,
+html[data-theme] .site-header nav[aria-label="Primary"] {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+html[data-theme] #main-content::-webkit-scrollbar,
+html[data-theme] .site-header nav[aria-label="Primary"]::-webkit-scrollbar {
+  width: 10px; height: 10px;
+}
+html[data-theme] #main-content::-webkit-scrollbar-thumb,
+html[data-theme] .site-header nav[aria-label="Primary"]::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+/* ---------------------------------------------------------------------------
+   3b. REPORTS / MARKDOWN — readable long-form document styling
+   The reports + tools viewers render markdown into article.markdown. The old
+   treatment was dense and cramped; this restores a comfortable reading
+   measure, clear heading hierarchy, and legible tables.
+   ------------------------------------------------------------------------- */
+
+/* Document surface */
+html[data-theme] #reports-body.markdown,
+html[data-theme] #tools-body.markdown {
+  background: var(--panel) !important;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: clamp(1.3rem, 2.4vw, 2.5rem) clamp(1.3rem, 2.8vw, 2.9rem) !important;
+  font-size: 0.975rem;
+  line-height: 1.75;
+  color: var(--muted-2) !important;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Reading measure — keep prose comfortable, let tables/code/images breathe */
+html[data-theme] #reports-body.markdown > *,
+html[data-theme] #tools-body.markdown > * { max-width: 78ch; }
+html[data-theme] #reports-body.markdown > h1,
+html[data-theme] #reports-body.markdown > h2,
+html[data-theme] #reports-body.markdown > hr,
+html[data-theme] #reports-body.markdown > table,
+html[data-theme] #reports-body.markdown > pre,
+html[data-theme] #reports-body.markdown > blockquote,
+html[data-theme] #reports-body.markdown > img,
+html[data-theme] #tools-body.markdown > h1,
+html[data-theme] #tools-body.markdown > h2,
+html[data-theme] #tools-body.markdown > hr,
+html[data-theme] #tools-body.markdown > table,
+html[data-theme] #tools-body.markdown > pre,
+html[data-theme] #tools-body.markdown > blockquote,
+html[data-theme] #tools-body.markdown > img { max-width: 100%; }
+
+/* Headings — clear, distinct hierarchy */
+html[data-theme] .markdown h1 {
+  font-size: clamp(1.55rem, 2.6vw, 2.05rem);
+  font-weight: 700; letter-spacing: -0.02em; line-height: 1.2;
+  margin: 0 0 0.55em !important;
+  color: var(--text) !important;
+}
+html[data-theme] .markdown h2 {
+  font-size: 1.3rem; font-weight: 700; letter-spacing: -0.01em;
+  color: var(--text) !important;
+  margin: 2em 0 0.7em !important;
+  padding-bottom: 0.35em;
+  border-bottom: 1px solid var(--border);
+}
+html[data-theme] .markdown h3 {
+  font-size: 1.08rem; font-weight: 650;
+  color: var(--text) !important;
+  margin: 1.6em 0 0.5em !important;
+}
+html[data-theme] .markdown h4 {
+  font-size: 0.95rem; font-weight: 650;
+  color: var(--muted-2) !important;
+  margin: 1.3em 0 0.4em !important;
+}
+html[data-theme] .markdown p { margin: 0 0 1em; color: var(--muted-2); }
+html[data-theme] .markdown strong { color: var(--text); font-weight: 650; }
+
+/* Links */
+html[data-theme] .markdown a {
+  color: var(--accent-hover) !important;
+  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  text-underline-offset: 3px;
+}
+html[data-theme] .markdown a:hover { text-decoration-color: var(--accent); }
+
+/* Lists */
+html[data-theme] .markdown ul,
+html[data-theme] .markdown ol { margin: 0 0 1em; padding-left: 1.45em; }
+html[data-theme] .markdown li { margin: 0.32em 0; }
+html[data-theme] .markdown li::marker { color: var(--accent); }
+
+/* Horizontal rule */
+html[data-theme] .markdown hr {
+  border: 0; height: 1px; margin: 2em 0;
+  background: var(--border);
+}
+
+/* Blockquote */
+html[data-theme] .markdown blockquote {
+  margin: 1.2em 0; padding: 0.5em 1.1em;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  color: var(--muted-2);
+}
+
+/* Inline code */
+html[data-theme] .markdown :not(pre) > code {
+  background: var(--accent-soft) !important;
+  color: var(--accent-hover) !important;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  padding: 0.08em 0.4em; border-radius: 6px;
+  font-size: 0.86em;
+}
+
+/* Tables — the main readability fix: framed, banded, scrollable */
+html[data-theme] .markdown table {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 1.3em 0 1.6em;
+  font-size: 0.9rem;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+html[data-theme] .markdown thead th {
+  background: var(--panel-3);
+  color: var(--text) !important;
+  font-weight: 650;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border-strong) !important;
+}
+html[data-theme] .markdown th,
+html[data-theme] .markdown td {
+  border: 0 !important;
+  border-bottom: 1px solid var(--border) !important;
+  padding: 0.62em 0.95em !important;
+  vertical-align: top;
+}
+html[data-theme] .markdown tbody tr:nth-child(even) td { background: var(--panel-2); }
+html[data-theme] .markdown tbody tr:hover td { background: var(--accent-soft); }
+html[data-theme] .markdown tbody tr:last-child td { border-bottom: 0 !important; }
+
+/* Code blocks — spacing inside the doc */
+html[data-theme] .markdown pre {
+  margin: 1.3em 0 1.6em;
+  border-radius: var(--radius-md) !important;
+}
+
+/* In-doc section nav — match the new pill language */
+html[data-theme] #view-reports .reports-section-nav {
+  background: transparent !important;
+  border-bottom: 1px solid var(--border) !important;
+}
+html[data-theme] #view-reports .reports-section-nav button {
+  background: var(--panel-2) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--muted) !important;
+  border-radius: 999px !important;
+}
+html[data-theme] #view-reports .reports-section-nav button:hover {
+  color: var(--text) !important;
+  border-color: var(--border-strong) !important;
+}
+html[data-theme] #view-reports .reports-section-nav button.active {
+  background: var(--accent) !important;
+  border-color: transparent !important;
+  color: #fff !important;
+  box-shadow: 0 6px 14px -5px var(--accent-strong) !important;
+}
+
+/* ---------------------------------------------------------------------------
+   4. RESPONSIVE — collapse the sidebar into a compact icon top bar
+   ------------------------------------------------------------------------- */
+@media (max-width: 900px) {
+  html[data-theme] body { grid-template-columns: 1fr !important; }
+
+  html[data-theme] .site-header {
+    position: sticky !important;
+    top: 0;
+    height: auto !important;
+    max-height: none !important;
+    flex-direction: column !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--border) !important;
+    overflow: visible;
+  }
+  html[data-theme] .site-header .banner { padding: 0.7rem 0.9rem !important; }
+  html[data-theme] .site-header .header-bar { flex-direction: column !important; }
+
+  html[data-theme] .site-header nav[aria-label="Primary"] {
+    flex-direction: row !important;
+    flex-wrap: nowrap;
+    gap: 4px !important;
+    overflow-x: auto;
+    padding: 0.5rem 0.6rem !important;
+  }
+  html[data-theme] .site-header nav[aria-label="Primary"] button {
+    width: auto;
+    flex: 0 0 auto;
+    min-height: 40px;
+    padding: 0.3rem !important;
+  }
+  /* Icon-only in the compact bar to fit more (labels stay for a11y) */
+  html[data-theme] .site-header nav[aria-label="Primary"] button .nav-label { display: none !important; }
+  html[data-theme] .site-header nav[aria-label="Primary"] button#kbd-hint {
+    order: 0;
+    margin-bottom: 0;
+  }
+  html[data-theme] .site-header nav[aria-label="Primary"] button#kbd-hint .kbd-hint-keys { display: none; }
+  html[data-theme] .site-header nav[aria-label="Primary"] button.help-nav-btn { order: 0; }
+
+  html[data-theme] .site-header .header-actions {
+    flex-direction: row !important;
+    align-items: center !important;
+    margin-top: 0 !important;
+    border-top: 1px solid var(--glass-line);
+  }
+  html[data-theme] .site-header .header-actions .theme-toggle { width: auto; }
+}
