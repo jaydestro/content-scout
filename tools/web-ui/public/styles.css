@@ -950,6 +950,10 @@ legend .link-btn { margin-left: 0.4rem; font-weight: 500; }
 .run-custom-prompt-preview { font-family: var(--mono, monospace); font-size: 0.9em; margin: 0 0.5rem; }
 .run-custom-prompt-preview.is-empty { font-style: italic; color: var(--muted); }
 
+/* Run-view model picker — lets an already-configured user change the model per run */
+.run-model { display: grid; gap: 0.4rem; padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 4px; }
+.run-model #run-model-status:empty { display: none; }
+
 /* Sign-in scan — visually emphasized fieldset inside the Run form */
 .run-browser-scan {
   border: 1px solid var(--accent, #4178d4);
