@@ -1018,6 +1018,46 @@ document.addEventListener('click', (e) => {
   if (chips && !chips.querySelector('.tag-chip-wrap')) chips.hidden = true;
 });
 
+// Delegated handler: "Verify" buttons on the official social-account fields.
+// Normalizes the handle (server-side), confirms it resolves to a real account,
+// writes the normalized handle back into the field, and shows ✓ / ✗ / a caveat.
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest?.('.soc-verify-btn');
+  if (!btn) return;
+  e.preventDefault();
+  const platform = btn.dataset.platform;
+  const input = entryField(btn.dataset.fieldId);
+  const status = btn.closest('.soc-acct')?.querySelector('.soc-verify-status');
+  const handle = (input?.value || '').trim();
+  if (!handle) {
+    if (status) { status.textContent = 'Enter a handle first.'; status.dataset.state = ''; }
+    return;
+  }
+  if (status) { status.textContent = 'Verifying…'; status.dataset.state = ''; }
+  btn.disabled = true;
+  try {
+    const r = await api(`/api/verify-social?platform=${encodeURIComponent(platform)}&handle=${encodeURIComponent(handle)}`);
+    if (r.normalized && input) input.value = r.normalized;
+    if (status) {
+      if (r.ok && r.inconclusive) {
+        status.dataset.state = 'warn';
+        status.textContent = `Reachable, but couldn't confirm — ${r.note || 'open the profile to verify.'}`;
+      } else if (r.ok) {
+        status.dataset.state = 'ok';
+        const name = r.displayName ? ` (${r.displayName})` : '';
+        status.textContent = `✓ Verified${name}`;
+      } else {
+        status.dataset.state = 'bad';
+        status.textContent = `✗ Not found — double-check the handle.`;
+      }
+    }
+  } catch (err) {
+    if (status) { status.dataset.state = 'bad'; status.textContent = `Couldn't verify: ${String(err.message || err)}`; }
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 // Wire chip groups.
 wireMultiSelectChip('exclBlog', 'cfg-blog-suggest-chips');
 wireMultiSelectChip('exclYoutube', 'cfg-youtube-suggest-chips');

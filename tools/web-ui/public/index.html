@@ -325,12 +325,12 @@
               </fieldset>
               <fieldset class="cfg-group">
                 <legend>Social post accounts</legend>
-                <p class="hint">Your team's handles used when drafting posts — these get <em>mentioned</em> or authenticated against.</p>
+                <p class="hint">Your team's handles used when drafting posts — these get <em>mentioned</em> or authenticated against. Click <strong>Verify</strong> to confirm each one resolves to a real account before saving.</p>
                 <div class="social-accts-grid">
-                  <label class="field"><span>LinkedIn</span><input data-field="socAcctLinkedin" type="text" placeholder="@AzureCosmosDB or URL" /></label>
-                  <label class="field"><span>X / Twitter</span><input data-field="socAcctX" type="text" placeholder="@AzureCosmosDB" /></label>
-                  <label class="field"><span>Bluesky</span><input data-field="socAcctBluesky" type="text" placeholder="@azurecosmos.bsky.social" /></label>
-                  <label class="field"><span>YouTube Community</span><input data-field="socAcctYoutube" type="text" placeholder="@AzureCosmosDB" /></label>
+                  <label class="field soc-acct"><span>LinkedIn</span><span class="soc-acct-row"><input data-field="socAcctLinkedin" type="text" placeholder="azure-cosmos-db or URL" /><button type="button" class="link-btn soc-verify-btn" data-platform="linkedin" data-field-id="socAcctLinkedin">Verify</button></span><span class="soc-verify-status hint" aria-live="polite"></span></label>
+                  <label class="field soc-acct"><span>X / Twitter</span><span class="soc-acct-row"><input data-field="socAcctX" type="text" placeholder="@AzureCosmosDB" /><button type="button" class="link-btn soc-verify-btn" data-platform="x" data-field-id="socAcctX">Verify</button></span><span class="soc-verify-status hint" aria-live="polite"></span></label>
+                  <label class="field soc-acct"><span>Bluesky</span><span class="soc-acct-row"><input data-field="socAcctBluesky" type="text" placeholder="azurecosmosdb.com or handle.bsky.social" /><button type="button" class="link-btn soc-verify-btn" data-platform="bluesky" data-field-id="socAcctBluesky">Verify</button></span><span class="soc-verify-status hint" aria-live="polite"></span></label>
+                  <label class="field soc-acct"><span>YouTube Community</span><span class="soc-acct-row"><input data-field="socAcctYoutube" type="text" placeholder="@AzureCosmosDB" /><button type="button" class="link-btn soc-verify-btn" data-platform="youtube" data-field-id="socAcctYoutube">Verify</button></span><span class="soc-verify-status hint" aria-live="polite"></span></label>
                 </div>
               </fieldset>
             </div>
