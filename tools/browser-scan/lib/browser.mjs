@@ -29,16 +29,62 @@ export function ensureProfileDir(scanRoot, platform) {
  * Returns a { browser, context } where `context` is the existing default
  * context (so cookies / login state from the user's real Edge are reused).
  */
-export async function attachEdge({ port = 9222 } = {}) {
+export async function attachEdge({ port = 9222, timeout } = {}) {
   const endpoint = `http://127.0.0.1:${port}`;
-  let browser;
-  try {
-    browser = await chromium.connectOverCDP(endpoint, { timeout: 30000 });
-  } catch (e) {
+  // Per-attempt timeout. Override with SCOUT_CDP_TIMEOUT_MS for a heavily
+  // loaded browser (many tabs/extensions take longer to enumerate).
+  const baseTimeout = Number(timeout || process.env.SCOUT_CDP_TIMEOUT_MS || 30000);
+
+  // connectOverCDP auto-attaches to EVERY existing page target. A single
+  // frozen / sleeping tab (Chrome/Edge memory-saver) can stall the whole
+  // enumeration past the timeout, even though the browser itself is fine.
+  // The first attach actually *resumes* those renderers as it attaches, so
+  // a second attempt frequently succeeds where the first timed out. We try
+  // up to twice, widening the timeout on the retry, before giving up.
+  const maxAttempts = 2;
+  let browser = null;
+  let lastErr = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const attemptTimeout = attempt === 1 ? baseTimeout : Math.round(baseTimeout * 1.5);
+    try {
+      browser = await chromium.connectOverCDP(endpoint, { timeout: attemptTimeout });
+      break;
+    } catch (e) {
+      lastErr = e;
+      const msg = String(e && e.message ? e.message : e);
+      const enumerationHang = /Timeout\s+\d+ms exceeded/i.test(msg);
+      // Only retry the enumeration-hang case — a real "browser not running"
+      // (ECONNREFUSED) won't fix itself, and the caller (server preflight)
+      // already polls for the port coming up before calling us.
+      if (enumerationHang && attempt < maxAttempts) {
+        console.warn(
+          `[browser-scan] CDP attach timed out enumerating tabs (attempt ${attempt}/${maxAttempts}); ` +
+          `the attach may have woken sleeping tabs — retrying with a longer timeout…`,
+        );
+        await sleep(2000);
+        continue;
+      }
+      break;
+    }
+  }
+
+  if (!browser) {
+    const msg = String(lastErr && lastErr.message ? lastErr.message : lastErr);
+    const enumerationHang = /Timeout\s+\d+ms exceeded/i.test(msg);
+    if (enumerationHang) {
+      throw new Error(
+        `Connected to the CDP browser on port ${port} but could not read its tabs after ${maxAttempts} attempts. ` +
+        `This means the browser has sleeping/frozen tabs or too many open tabs (often your everyday browser with lots of tabs + extensions), ` +
+        `so a tab's debugging target stopped responding. ` +
+        `Most reliable fix: fully quit that browser, then run \`node tools/browser-scan/launch-edge.mjs\` — it opens a clean dedicated profile with only the login tabs and tab-sleep disabled. ` +
+        `Or, in the current window: bring it to the foreground (wakes sleeping tabs), close extra tabs so only the login tabs remain, and re-run. ` +
+        `You can also raise the per-attempt timeout via SCOUT_CDP_TIMEOUT_MS. Underlying error: ${msg}`
+      );
+    }
     throw new Error(
       `Could not connect to Edge over CDP at ${endpoint} — is Edge running with --remote-debugging-port=${port}? ` +
       `Start it with: node tools/browser-scan/launch-edge.mjs   (then sign in to the platforms once). ` +
-      `Underlying error: ${e.message}`
+      `Underlying error: ${msg}`
     );
   }
   // connectOverCDP returns a Browser whose contexts() is the user's real

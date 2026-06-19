@@ -172,6 +172,9 @@
     setControl('conv-sentiment', '');
     setControl('conv-platform', '');
     setControl('conv-timeframe', '');
+    setControl('conv-date-from', '');
+    setControl('conv-date-to', '');
+    if (typeof _syncConvDateRange === 'function') _syncConvDateRange();
     setControl('conv-jobs', '');             // include job posts
     setControl('conv-needs-reply', false);
     setControl('conv-team-mode', 'everyone'); // community + team/product
@@ -190,6 +193,45 @@
       if (row) { reveal(row); return; }
       await new Promise((r) => setTimeout(r, 80));
     }
+  }
+
+  // Jump from a dashboard sentiment pill to the Conversations view, pre-filtered
+  // to that sentiment. Mirrors the dashboard card's scope (community-only, last
+  // 30 days, open rows) so the pill count and the filtered list line up. Every
+  // control is persisted so the view's own localStorage restore can't revert it.
+  async function _filterConversationsBySentiment(sentiment) {
+    const navBtn = document.querySelector('nav button[data-view="conversations"]');
+    if (navBtn) navBtn.click();
+    const setControl = (id, value) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (el.type === 'checkbox') el.checked = !!value;
+      else el.value = value;
+      try {
+        localStorage.setItem('cs.conv.' + id, el.type === 'checkbox' ? (value ? '1' : '0') : String(value));
+      } catch {}
+    };
+    // Reset to the All tab so neither the Conversations nor Mentions sub-filter
+    // hides a matching row.
+    _activeTab = 'all';
+    try { localStorage.setItem('cs.conv.activeTab', 'all'); } catch {}
+    document.querySelectorAll('.conv-tab').forEach((b) => {
+      const on = b.dataset.convTab === 'all';
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    setControl('conv-q', '');
+    setControl('conv-sentiment', sentiment || '');
+    setControl('conv-platform', '');
+    setControl('conv-timeframe', '30');
+    setControl('conv-date-from', '');
+    setControl('conv-date-to', '');
+    if (typeof _syncConvDateRange === 'function') _syncConvDateRange();
+    setControl('conv-jobs', 'hide');
+    setControl('conv-needs-reply', false);
+    setControl('conv-team-mode', 'community');
+    setControl('conv-show', 'open');
+    try { await loadConversations(); } catch {}
   }
 
   const REASON_LABELS = {
@@ -527,6 +569,14 @@
     </div>`;
   }
 
+  // Show the custom from/to date inputs only when the timeframe filter is set
+  // to "Custom range…"; hide them for the preset windows and "All time".
+  function _syncConvDateRange() {
+    const tf = document.getElementById('conv-timeframe')?.value || '';
+    const wrap = document.getElementById('conv-date-range');
+    if (wrap) wrap.hidden = tf !== 'custom';
+  }
+
   function renderConversations() {
     const list = document.getElementById('conv-list');
     if (!list) return;
@@ -558,7 +608,27 @@
     }
     if (sentiment) convs = convs.filter((c) => c.sentiment === sentiment);
     if (platform) convs = convs.filter((c) => canonicalPlatform(c.platform) === platform);
-    if (timeframe) {
+    if (timeframe === 'custom') {
+      // Custom range: inclusive from/to dates. Either bound is optional, so
+      // "from only" means "since X" and "to only" means "up to Y". Undated
+      // rows are excluded once any bound is set so the range stays honest.
+      const fromEl = document.getElementById('conv-date-from');
+      const toEl = document.getElementById('conv-date-to');
+      const fromMs = fromEl?.value ? _parseDate(fromEl.value)?.getTime() : null;
+      // Include the whole "to" day by pushing the bound to end-of-day.
+      const toDt = toEl?.value ? _parseDate(toEl.value) : null;
+      const toMs = toDt ? toDt.getTime() + 86400000 - 1 : null;
+      if (Number.isFinite(fromMs) || Number.isFinite(toMs)) {
+        convs = convs.filter((c) => {
+          const dt = _parseDate(c.date);
+          if (!dt) return false;
+          const t = dt.getTime();
+          if (Number.isFinite(fromMs) && t < fromMs) return false;
+          if (Number.isFinite(toMs) && t > toMs) return false;
+          return true;
+        });
+      }
+    } else if (timeframe) {
       const days = parseInt(timeframe, 10);
       if (Number.isFinite(days) && days > 0) {
         const cutoffMs = Date.now() - days * 86400000;
@@ -1424,7 +1494,7 @@
         renderConversations();
       });
     });
-    ['conv-q', 'conv-sentiment', 'conv-platform', 'conv-timeframe', 'conv-jobs', 'conv-needs-reply', 'conv-team-mode'].forEach((id) => {
+    ['conv-q', 'conv-sentiment', 'conv-platform', 'conv-timeframe', 'conv-date-from', 'conv-date-to', 'conv-jobs', 'conv-needs-reply', 'conv-team-mode'].forEach((id) => {
       const el = document.getElementById(id);
       if (el && !el.dataset.wired) {
         el.dataset.wired = '1';
@@ -1441,12 +1511,16 @@
             const v = el.type === 'checkbox' ? (el.checked ? '1' : '') : el.value;
             localStorage.setItem('cs.conv.' + id, v);
           } catch {}
+          // The custom date inputs only show when timeframe === 'custom'.
+          if (id === 'conv-timeframe') _syncConvDateRange();
           renderConversations();
         };
         el.addEventListener('input', persist);
         el.addEventListener('change', persist);
       }
     });
+    // Reflect the restored timeframe in the custom-range inputs' visibility.
+    _syncConvDateRange();
     // conv-show changes `include` mode and requires a refetch.
     const showSel = document.getElementById('conv-show');
     if (showSel && !showSel.dataset.wired) {
@@ -1722,6 +1796,24 @@
     return 'other';
   }
 
+  // The post's URL host is the ground truth for which platform it lives on.
+  // A mislabeled row (e.g. an x.com permalink tagged "LinkedIn") must bucket
+  // by its real host, never by the bad label — otherwise the card shows a
+  // post under a platform it was never on. Returns a SOCIAL_PLATFORMS key or
+  // '' when the host isn't a recognized social platform.
+  function platformKeyFromUrl(url) {
+    const u = String(url || '').toLowerCase();
+    if (!u) return '';
+    if (/reddit\.com|redd\.it/.test(u)) return 'reddit';
+    if (/bsky\.app|bluesky/.test(u)) return 'bluesky';
+    if (/linkedin\.com/.test(u)) return 'linkedin';
+    if (/(^|\/\/|\.)x\.com(\/|$)|twitter\.com/.test(u)) return 'x';
+    if (/news\.ycombinator\.com/.test(u)) return 'hackernews';
+    if (/stackoverflow\.com|stackexchange\.com/.test(u)) return 'stackoverflow';
+    if (/youtube\.com|youtu\.be/.test(u)) return 'youtube';
+    return '';
+  }
+
   // Wrap fetch with an AbortController-based timeout so a slow or hung
   // /api/conversations response can't pin the "Needs your attention" card on
   // "Loading…" forever and block the rest of the dashboard from feeling done.
@@ -1790,7 +1882,11 @@
       // failing fast enough that the user sees an actionable error instead
       // of a stuck card.
       const [data, itemsData] = await Promise.all([
-        fetchJsonResilient('/api/conversations?includeProduct=1', { timeoutMs: 12000, retries: 1 }),
+        // Community signals = EXTERNAL community only, so we do NOT pass
+        // includeProduct: the server drops the company's own team-member
+        // posts (community === 'product') plus muted/owned channels. They
+        // work for us — they aren't community signal.
+        fetchJsonResilient('/api/conversations', { timeoutMs: 12000, retries: 1 }),
         // Pull social-kind items in parallel so we can backfill the Pulse
         // card when agents file Reddit/X/Bluesky/LinkedIn posts under
         // "Community Projects & Tools" instead of "Conversations & Mentions".
@@ -1803,6 +1899,9 @@
       const convUrlSet = new Set(allEver.map((c) => (c.url || '').trim()).filter(Boolean));
       const socialItems = (Array.isArray(itemsData.items) ? itemsData.items : [])
         .filter((it) => SOCIAL_KINDS.has(it.kind))
+        // Drop the company's own team members / brand channels — the index
+        // stamps these items with isProduct. Community signals is external.
+        .filter((it) => !it.isProduct)
         .filter((it) => !convUrlSet.has((it.url || '').trim()))
         .map((it) => ({
           date: it.date || '',
@@ -1864,12 +1963,16 @@
       if (summary) {
         // Hide buckets that are empty so "0 mixed" doesn't waste a slot when
         // the classifier (intentionally restrictive) finds no items there.
+        // Each pill is a button that jumps to Conversations filtered to that
+        // sentiment, so the dashboard count is a one-click path to the rows.
         const pills = [];
-        if (totals.positive) pills.push(`<span class="pill pill-pos" title="Advocates"><span class="tone-dot tone-positive"></span>${totals.positive} advocate${totals.positive === 1 ? '' : 's'}</span>`);
-        if (totals.neutral)  pills.push(`<span class="pill pill-neu" title="Neutral"><span class="tone-dot tone-neutral"></span>${totals.neutral} neutral</span>`);
-        if (totals.mixed)    pills.push(`<span class="pill pill-mix" title="Mixed — worth a thoughtful reply"><span class="tone-dot tone-mixed"></span>${totals.mixed} mixed</span>`);
-        if (totals.negative) pills.push(`<span class="pill pill-neg" title="Critical — respond first"><span class="tone-dot tone-negative"></span>${totals.negative} critical</span>`);
-        if (totals.unknown)  pills.push(`<span class="pill pill-unk" title="Unknown — not enough product stance to score"><span class="tone-dot tone-unknown"></span>${totals.unknown} unclassified</span>`);
+        const pill = (sentiment, cls, label, title) =>
+          `<button type="button" class="pill ${cls} pill-clickable" data-sentiment="${sentiment}" title="${title} — click to view in Conversations">${label}</button>`;
+        if (totals.positive) pills.push(pill('positive', 'pill-pos', `<span class="tone-dot tone-positive"></span>${totals.positive} advocate${totals.positive === 1 ? '' : 's'}`, 'Advocates'));
+        if (totals.neutral)  pills.push(pill('neutral', 'pill-neu', `<span class="tone-dot tone-neutral"></span>${totals.neutral} neutral`, 'Neutral'));
+        if (totals.mixed)    pills.push(pill('mixed', 'pill-mix', `<span class="tone-dot tone-mixed"></span>${totals.mixed} mixed`, 'Mixed — worth a thoughtful reply'));
+        if (totals.negative) pills.push(pill('negative', 'pill-neg', `<span class="tone-dot tone-negative"></span>${totals.negative} critical`, 'Critical — respond first'));
+        if (totals.unknown)  pills.push(pill('unknown', 'pill-unk', `<span class="tone-dot tone-unknown"></span>${totals.unknown} unclassified`, 'Unknown — not enough product stance to score'));
         summary.innerHTML = all.length
           ? `<div class="dash-signal-strip">
               <div class="dash-signal-metric"><strong>${all.length}</strong><span>conversations</span></div>
@@ -1877,8 +1980,11 @@
               <div class="dash-signal-metric"><strong>${olderCount}</strong><span>older archived</span></div>
               <div class="dash-signal-metric dash-fresh-metric dash-fresh-${scanFresh.tier}" title="Most recent scan ${scanFresh.tier === 'unknown' ? 'date unknown' : scanFresh.label}${scanFresh.tier === 'stale' || scanFresh.tier === 'aging' ? ' — run a scan to refresh' : ''}"><strong>${scanFresh.rel || '—'}</strong><span>last scan</span></div>
             </div>
-            <div class="dash-sent-pills">${pills.join('')}</div>`
+            <div class="dash-sent-pills" role="group" aria-label="Filter conversations by sentiment">${pills.join('')}</div>`
           : `<p class="hint">No conversations tracked yet. Run a scan to surface community chatter.</p>`;
+        summary.querySelectorAll('.pill-clickable').forEach((btn) => {
+          btn.addEventListener('click', () => _filterConversationsBySentiment(btn.dataset.sentiment));
+        });
       }
 
       if (!all.length) {
@@ -1902,9 +2008,15 @@
       // Bucket by platform → community/product
       const byPlatform = new Map();
       for (const c of all) {
-        const k = platformKey(c.platform);
+        // Trust the URL host over the row's platform label so a mistagged
+        // post (e.g. an x.com link labeled LinkedIn) lands on its real
+        // platform.
+        const k = platformKeyFromUrl(c.url) || platformKey(c.platform);
         const bucket = byPlatform.get(k) || { community: [], product: [] };
-        const side = c.community === 'product' ? 'product' : 'community';
+        // Verified Microsoft / owned / product-team authors are internal
+        // advocacy, not external community sentiment — keep them on the
+        // official side so they never inflate the community count.
+        const side = c.community === 'product' || c.isNoTriage ? 'product' : 'community';
         bucket[side].push(c);
         byPlatform.set(k, bucket);
       }
@@ -1970,40 +2082,51 @@
           const b = byPlatform.get(p.key);
           if (!b) return null;
           const c = b.community.length;
-          const pr = b.product.length;
-          if (!c && !pr) return null;
+          // Community signals is external-only — the product/official side is
+          // excluded upstream, so a platform with no community rows is hidden.
+          if (!c) return null;
           // Pick the first sample whose URL — either explicit or extracted
           // from a leading markdown link in the summary — is syntactically
-          // valid; fall back to whatever's first if nothing has one.
+          // valid. Failing that, prefer one with a working author/profile
+          // URL (LinkedIn SDUI posts have dead post permalinks but a real
+          // profile link), then fall back to whatever's first.
+          const sampleUrl = (x) =>
+            (x.url || (String(x.summary || '').match(_mdLeadingLink) || [])[2] || '').trim();
           const withUrl = (x) => {
-            const u = (x.url || (String(x.summary || '').match(_mdLeadingLink) || [])[2] || '').trim();
+            const u = sampleUrl(x);
             return u && isValidPostUrl(u);
           };
+          const withAuthorUrl = (x) => !!x.authorUrl && isValidPostUrl(x.authorUrl);
           // Show the *newest* sample, not whatever happened to be first in
           // the API response. Without this sort the bucket order is stable
           // across scans, so the same (often oldest) Reddit post stuck on the
           // card run after run even when fresher chatter had arrived.
           const communitySorted = [...b.community].sort(byDateDesc);
-          const productSorted = [...b.product].sort(byDateDesc);
           const sample =
             communitySorted.find(withUrl) ||
-            productSorted.find(withUrl) ||
-            communitySorted[0] ||
-            productSorted[0];
+            communitySorted.find(withAuthorUrl) ||
+            communitySorted[0];
           const prev = sample ? extractSamplePreview(sample) : { text: '', url: '' };
           const sampleHasUrl = !!prev.url && isValidPostUrl(prev.url);
+          // Working fallback link to the author's profile/company page when
+          // the post itself has no navigable permalink (LinkedIn SDUI).
+          const sampleAuthorUrl =
+            !sampleHasUrl && sample && sample.authorUrl && isValidPostUrl(sample.authorUrl)
+              ? sample.authorUrl
+              : '';
           const sampleHasKey = !!(sample && sample.key);
           const sampleTone = sample?.sentiment || 'unknown';
           const sentTitle = sample ? esc(sample.sentiment || 'unknown') : '';
-          // Three render modes for the sample line:
-          //  1. valid external URL → keyed samples open the tracked
+          // Render modes for the sample line:
+          //  1. valid external post URL → keyed samples open the tracked
           //     conversation on plain click (source via Ctrl/Cmd-click);
           //     keyless samples open the original post directly. Either way,
           //     decayDeadDashLinks strips the link when the URL probes as a
           //     definitive 404/410, so a click never lands on a dead post.
-          //  2. key but no usable URL (e.g. LinkedIn SDUI posts, whose
-          //     synthesized permalinks dead-end) → in-app link only.
-          //  3. neither → plain text.
+          //  2. no post URL but a working author/profile URL (LinkedIn SDUI)
+          //     → link to the author's LinkedIn with an honest title.
+          //  3. key but no usable URL → in-app Conversations link.
+          //  4. neither → plain text.
           const sampleLabel = esc(trim(prev.text, 100));
           let sampleLink;
           if (sampleHasUrl) {
@@ -2011,6 +2134,8 @@
               ? 'Open in Conversations (Ctrl/Cmd-click for source)'
               : 'Open original post ↗';
             sampleLink = `<a href="${esc(prev.url)}" class="dash-link" data-check-url="${esc(prev.url)}" data-conv-key="${esc(sample.key || '')}" target="_blank" rel="noopener" title="${esc(sampleTitle)}">${sampleLabel}</a>`;
+          } else if (sampleAuthorUrl) {
+            sampleLink = `<a href="${esc(sampleAuthorUrl)}" class="dash-link" data-check-url="${esc(sampleAuthorUrl)}" target="_blank" rel="noopener" title="LinkedIn hides the public post link — opens ${esc(sample.author || 'the author')}’s profile ↗">${sampleLabel}</a>`;
           } else if (sampleHasKey) {
             sampleLink = `<a href="#conversations" class="dash-link" data-conv-key="${esc(sample.key)}" title="Open in Conversations (no public source link available)">${sampleLabel}</a>`;
           } else {
@@ -2032,10 +2157,9 @@
             <div class="dash-plat-head">
               <span class="dash-plat-icon" aria-hidden="true">${p.icon}</span>
               <strong>${esc(p.label)}</strong>
-              <span class="dash-plat-total">${c + pr}</span>
+              <span class="dash-plat-total">${c}</span>
               <span class="dash-plat-counts">
-                <span class="dash-plat-chip dash-plat-community" title="Community-generated posts">${c} community</span>
-                <span class="dash-plat-chip dash-plat-product" title="Product / official posts">${pr} official</span>
+                <span class="dash-plat-chip dash-plat-community" title="External community posts (excludes our team + owned channels)">${c} community ${c === 1 ? 'post' : 'posts'}</span>
               </span>
             </div>
             ${sampleHtml}
@@ -2044,22 +2168,31 @@
         .filter(Boolean)
         .join('');
 
-      // Needs-reply sub-card (only if any flagged)
+      // Needs-reply sub-card (only if any flagged). Each row is actionable:
+      // "Help me reply" expands an inline AI brief (why it matters + talking
+      // points + a copy-ready draft) right here, so the user never bounces to
+      // a dead-end view. "Open post" is a genuine external link when present.
+      const _slugFromReport = (r) => {
+        const m = String(r || '').match(/^\d{4}-\d{2}-\d{2}-\d{4}-(.+?)-(?:content|mindshare|supplemental)\b/);
+        return m ? m[1] : '';
+      };
       const needsHtml = needs.length
         ? `<details class="dash-needs-card" ${needs.length <= 3 ? 'open' : ''}>
             <summary><strong>Needs reply</strong> <span class="hint">${needs.length} item${needs.length === 1 ? '' : 's'}</span></summary>
-            ${needs.slice(0, 5).map((c) => {
+            ${needs.slice(0, 5).map((c, i) => {
               const tone = c.sentiment === 'negative' ? 'critical' : 'mixed';
               const hasUrl = isValidPostUrl(c.url);
-              const link = hasUrl
-                ? `<a href="${esc(c.url)}" class="dash-link" data-check-url="${esc(c.url)}" data-conv-key="${esc(c.key || '')}" target="_blank" rel="noopener" title="Open in Conversations (Ctrl/Cmd-click for source)">Source ↗</a>`
-                : (c.key
-                    ? `<a href="#conversations" class="dash-link" data-conv-key="${esc(c.key)}" title="Open in Conversations (no public source link available)">Open ↗</a>`
-                    : '');
-              const replyBtn = hasUrl
-                ? `<button type="button" class="dash-reply-btn" data-url="${esc(c.url)}">Draft reply</button>`
+              const openLink = hasUrl
+                ? `<a href="${esc(c.url)}" class="dash-link" data-check-url="${esc(c.url)}" target="_blank" rel="noopener" title="Open the original post in a new tab">Open post ↗</a>`
                 : '';
-              return `<div class="dash-needs-row sent-${esc(c.sentiment)}">
+              const rid = `dash-needs-${i}`;
+              return `<div class="dash-needs-row sent-${esc(c.sentiment)}" data-needs-id="${rid}"
+                data-summary="${esc(c.summary || '')}"
+                data-author="${esc(c.author || '')}"
+                data-platform="${esc(c.platform || '')}"
+                data-sentiment="${esc(c.sentiment || 'mixed')}"
+                data-slug="${esc(_slugFromReport(c.report))}"
+                data-url="${esc(hasUrl ? c.url : '')}">
                 <div class="dash-needs-head">
                   <span class="dash-needs-dot tone-dot tone-${tone}" aria-label="${tone}"></span>
                   <strong>${esc(c.author || '(unknown)')}</strong>
@@ -2067,7 +2200,11 @@
                   <span class="dash-needs-tone tone-${tone}">${tone}</span>
                 </div>
                 <div class="dash-needs-summary">${esc(c.summary || '')}</div>
-                <div class="dash-needs-actions">${replyBtn} ${link}</div>
+                <div class="dash-needs-actions">
+                  <button type="button" class="dash-needs-help-btn" data-needs-id="${rid}">💬 Help me reply</button>
+                  ${openLink}
+                </div>
+                <div class="dash-needs-ai" data-needs-id="${rid}" hidden></div>
               </div>`;
             }).join('')}
             ${needs.length > 5 ? `<button type="button" class="dash-needs-viewall">View all ${needs.length} →</button>` : ''}
@@ -2101,15 +2238,10 @@
           _navigateToConversation(k);
         });
       });
-      host.querySelectorAll('.dash-reply-btn').forEach((btn) => {
+      host.querySelectorAll('.dash-needs-help-btn').forEach((btn) => {
         btn.addEventListener('click', () => {
-          const url = btn.dataset.url;
-          const cmd = document.getElementById('run-command');
-          const extra = document.getElementById('run-extra');
-          if (cmd) cmd.value = 'scout-post';
-          if (extra) extra.value = `Draft a thoughtful, on-brand reply post for: ${url}`;
-          const navBtn = document.querySelector('nav button[data-view="run"]');
-          if (navBtn) navBtn.click();
+          const row = btn.closest('.dash-needs-row');
+          if (row) suggestReplyForRow(row, btn);
         });
       });
       host.querySelector('.dash-needs-viewall')?.addEventListener('click', () => {
@@ -2148,6 +2280,118 @@
         : `<p class="hint">Failed to load conversations: ${esc(err.message || err)} <button type="button" class="link-btn" id="dash-social-retry">Retry</button></p>`;
       document.getElementById('dash-social-retry')?.addEventListener('click', () => loadSocialActivity());
     }
+  }
+
+  // ----- Needs-reply inline AI brief -------------------------------
+  // Clicking "Help me reply" on a flagged row asks the configured agent LLM
+  // (POST /api/reply/suggest) for: why the post matters, 2-3 talking points,
+  // and a copy-ready draft reply. Rendered inline under the row so the user
+  // gets something actionable without leaving the dashboard. Cached per row.
+  const _replyCache = new Map(); // needs-id -> suggestion object
+  function _suggestionHtml(s, sourceUrl) {
+    const points = Array.isArray(s.talkingPoints) && s.talkingPoints.length
+      ? `<ul class="dash-needs-points">${s.talkingPoints.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>`
+      : '';
+    const caution = s.caution
+      ? `<p class="dash-needs-caution"><strong>Before you post:</strong> ${esc(s.caution)}</p>`
+      : '';
+    const model = s.model ? ` <span class="hint">· ${esc(s.model)}</span>` : '';
+    const openBtn = sourceUrl
+      ? `<a href="${esc(sourceUrl)}" class="dash-link" target="_blank" rel="noopener" title="Open the original post to reply in context">Open post to reply ↗</a>`
+      : '';
+    return `
+      ${s.explanation ? `<p class="dash-needs-why"><strong>Why it matters:</strong> ${esc(s.explanation)}</p>` : ''}
+      ${points ? `<div class="dash-needs-points-wrap"><span class="dash-needs-label">Hit these points</span>${points}</div>` : ''}
+      <div class="dash-needs-draft-wrap">
+        <span class="dash-needs-label">Draft reply${model}</span>
+        <textarea class="dash-needs-draft" rows="3" aria-label="Suggested reply (editable)">${esc(s.reply || '')}</textarea>
+        <div class="dash-needs-draft-actions">
+          <button type="button" class="dash-needs-copy-btn">Copy reply</button>
+          <button type="button" class="dash-needs-regen-btn">Regenerate</button>
+          ${openBtn}
+        </div>
+      </div>
+      ${caution}`;
+  }
+  async function suggestReplyForRow(row, btn, { force = false } = {}) {
+    const id = row.dataset.needsId;
+    const panel = row.querySelector(`.dash-needs-ai[data-needs-id="${id}"]`);
+    if (!panel) return;
+    // Toggle closed if already open and not a forced regen.
+    if (!force && !panel.hidden && panel.dataset.state === 'done') {
+      panel.hidden = true;
+      btn.textContent = '💬 Help me reply';
+      return;
+    }
+    panel.hidden = false;
+    btn.textContent = 'Hide reply help';
+    const sourceUrl = row.dataset.url || '';
+    if (!force && _replyCache.has(id)) {
+      panel.dataset.state = 'done';
+      panel.innerHTML = _suggestionHtml(_replyCache.get(id), sourceUrl);
+      _wireSuggestionPanel(row, panel, btn);
+      return;
+    }
+    panel.dataset.state = 'loading';
+    panel.innerHTML = `<p class="hint dash-needs-loading">Asking your agent for an explanation and a draft reply…</p>`;
+    try {
+      const resp = await fetch('/api/reply/suggest', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          summary: row.dataset.summary || '',
+          author: row.dataset.author || '',
+          platform: row.dataset.platform || '',
+          sentiment: row.dataset.sentiment || 'mixed',
+          slug: row.dataset.slug || '',
+        }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data.error) {
+        const msg = data.error || `Request failed (${resp.status})`;
+        const needsProvider = /no reply provider|no agent runner/i.test(msg);
+        panel.dataset.state = 'error';
+        panel.innerHTML = `<p class="hint dash-needs-error">${esc(msg)}${
+          needsProvider
+            ? ' <button type="button" class="link-btn dash-needs-setup">Open Setup</button>'
+            : ' <button type="button" class="link-btn dash-needs-retry">Retry</button>'
+        }</p>`;
+        panel.querySelector('.dash-needs-setup')?.addEventListener('click', () => {
+          document.querySelector('nav button[data-view="setup"]')?.click();
+        });
+        panel.querySelector('.dash-needs-retry')?.addEventListener('click', () =>
+          suggestReplyForRow(row, btn, { force: true })
+        );
+        return;
+      }
+      _replyCache.set(id, data);
+      panel.dataset.state = 'done';
+      panel.innerHTML = _suggestionHtml(data, sourceUrl);
+      _wireSuggestionPanel(row, panel, btn);
+    } catch (err) {
+      panel.dataset.state = 'error';
+      panel.innerHTML = `<p class="hint dash-needs-error">Failed: ${esc(err.message || err)} <button type="button" class="link-btn dash-needs-retry">Retry</button></p>`;
+      panel.querySelector('.dash-needs-retry')?.addEventListener('click', () =>
+        suggestReplyForRow(row, btn, { force: true })
+      );
+    }
+  }
+  function _wireSuggestionPanel(row, panel, btn) {
+    panel.querySelector('.dash-needs-copy-btn')?.addEventListener('click', async (e) => {
+      const ta = panel.querySelector('.dash-needs-draft');
+      if (!ta) return;
+      try {
+        await navigator.clipboard.writeText(ta.value);
+        e.target.textContent = 'Copied ✓';
+        setTimeout(() => { e.target.textContent = 'Copy reply'; }, 1600);
+      } catch {
+        ta.focus();
+        ta.select();
+      }
+    });
+    panel.querySelector('.dash-needs-regen-btn')?.addEventListener('click', () =>
+      suggestReplyForRow(row, btn, { force: true })
+    );
   }
 
   // Hosts that routinely block automated HEAD/GET probes (bot walls, 403,

@@ -65,7 +65,7 @@ Read the corresponding prompt file for each command's detailed flow. Ignore VS C
 3. Apply quality filter strictly (date gate + relevancy gate + score ≥ 5/9)
 4. Deduplicate against `reports/.seen-links.json`
 5. Number items sequentially, tag with canonical topic tags
-6. Auto-generate social posts only if role has them enabled
+6. Generate social posts/thumbnails only when the user explicitly asks — never by default during a scan
 
 ## Browser-scan (optional Layer 0 for X / LinkedIn / Reddit)
 

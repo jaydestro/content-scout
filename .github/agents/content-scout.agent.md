@@ -85,7 +85,7 @@ The config file defines:
 - **Networks to scan** (which sources are enabled)
 - **Known external authors** (auto-pass quality filter)
 - **Influencers to monitor** (high-signal mentions)
-- **Social post platforms** (LinkedIn, X, Bluesky, YouTube — only if social posts are on)
+- **Social post platforms** (LinkedIn, X, Bluesky, TikTok, YouTube — only if social posts are on)
 - **Social post standards** (tone, voice, platform targets, things to avoid — only if social posts are on)
 - **Brand assets** (logos, colors, theme)
 - **API keys** (YouTube, Bluesky, X — collected during network selection)
@@ -120,6 +120,7 @@ The config's `## Role` section controls what the agent emphasizes:
 - `scout-post` still works on demand if the user explicitly invokes it
 
 **When social posts are on:**
+- **Scans still never auto-generate social posts/thumbnails** — generation during a `scout-scan` is opt-in (only when the user explicitly asks for it in the scan request). This toggle governs on-demand availability (`scout-post`) and calendars, not scan defaults.
 - Use the `## Social Post Standards` from config (not hardcoded defaults)
 - If no standards section exists in config, use sensible defaults (plainspoken, technically credible, no fluff)
 
@@ -195,12 +196,12 @@ The config file specifies which networks are enabled. For each enabled source, u
 - **Custom RSS Feeds** -- If the config has a `## Custom RSS Feeds` section, treat each `Name | URL` entry as an additional RSS source to fetch and apply the standard date + relevancy + scoring filters to. Use this for personal blogs, third-party aggregators, RSS bridges (e.g., rss.app / RSSHub feeds for X/Twitter listening), and any feed not covered by the built-in sources. Note the source name in the report's "Sources Scanned" line.
 - **Dev.to** -- RSS feed at `https://dev.to/feed/tag/{product-tag}`
 - **Medium** -- RSS feed at `https://medium.com/feed/tag/{product-tag}`
-- **Hashnode** -- Search by product name. **NOTE (2026-04, still current 2026-05):** Hashnode's tag-RSS endpoints (`/n/{tag}/rss`, `/rss/tag/{tag}`) currently return 404. Only the global `https://hashnode.com/rss` feed works. **Default behavior:** skip Hashnode tag-RSS unless the config explicitly opts in via `## Custom RSS Feeds` with the GraphQL bridge URL or a per-tag global feed filter. Do not waste agent time discovering the 404 every run.
-- **DZone, C# Corner, InfoQ** -- Search by product name. **NOTES (2026-04, still current 2026-05):**
-  - **DZone**: anti-bot 403 on every recent scan; treat as **opt-in only** — skip by default unless the config lists it under `## Content Sources (scan order)`. Do not retry within a single run.
-  - **C# Corner**: RSS feeds (`/rss/articles.xml`, `/rss.aspx`, `/rss/latestcontent.aspx`) currently return 500. **Skip by default**; add to scan order only if the user opts in.
+- **Hashnode** -- **Primary path: browser-scan Layer 0.** Hashnode's tag-RSS endpoints (`/n/{tag}/rss`, `/rss/tag/{tag}`) return 404 (only the global `https://hashnode.com/rss` feed works), so Hashnode is now covered by the logged-in `content-sites` browser scan, which drives `hashnode.com/search` once per configured search term. Ingest its hits from the `*-content-sites.json` sidecar (items tagged `subSource: "hashnode"`, `source: "hashnode-browser"`). Do not waste agent time re-discovering the tag-RSS 404; the global RSS / GraphQL-bridge opt-in via `## Custom RSS Feeds` remains a supplemental fallback for posts on fully custom domains.
+- **DZone, C# Corner, InfoQ** -- **NOTES (2026-06):**
+  - **DZone**: anti-bot 403 on anonymous requests. **Now covered by browser-scan Layer 0** — the `content-sites` platform drives `dzone.com/search` from a real browser; ingest its hits from the `*-content-sites.json` sidecar (`subSource: "dzone"`). Do not retry the anonymous RSS/HTTP path within a run.
+  - **C# Corner**: RSS feeds (`/rss/articles.xml`, `/rss.aspx`, `/rss/latestcontent.aspx`) return 500. **Now covered by browser-scan Layer 0** — `content-sites` drives `c-sharpcorner.com/search`; ingest from `*-content-sites.json` (`subSource: "csharpcorner"`). Skip the 500-ing RSS path.
   - **InfoQ**: works fine; keep in default scan order.
-- **Microsoft Tech Community** -- Sign-in wall blocks unauthenticated content access. **Skip by default.** Only attempt if the config explicitly lists `https://techcommunity.microsoft.com/...` URLs under `## Direct Sources` for `web/fetch` against specific known-public posts.
+- **Microsoft Tech Community** -- Sign-in wall blocks unauthenticated content access, so it is **now covered by browser-scan Layer 0**: the `content-sites` platform drives `techcommunity.microsoft.com/search` from the logged-in CDP browser (sign in once via `node tools/browser-scan/launch-edge.mjs`). Ingest its hits from the `*-content-sites.json` sidecar (`subSource: "techcommunity"`). If the scan logs a sign-in wall for Tech Community, prompt the user to sign in to it in the CDP browser, then re-run. Direct `web/fetch` against specific known-public `## Direct Sources` URLs remains a supplemental fallback.
 - **Influencer blogs** -- If the config includes custom sources of type `influencer`, scan those. Otherwise search general influencer platforms using all search terms.
 
 ### Product Updates & Docs
@@ -454,11 +455,11 @@ When scanning sources via `web/fetch` or API calls, follow these rules to avoid 
 |--------|--------------|-------|---------------------------|
 | Dev.to | No | — | Works fine |
 | Medium | No | — | Works fine (RSS) |
-| Hashnode | No | — | Global RSS works; tag-RSS returns 404 (skipped by default; opt-in via Custom RSS Feeds with GraphQL bridge) |
+| Hashnode | No (browser) | Yes | **Browser-scan Layer 0** (`content-sites`, `subSource: hashnode`) via logged-in `hashnode.com/search` — replaces the dead tag-RSS (404). Global RSS / GraphQL bridge remain optional fallbacks for custom-domain posts. |
 | InfoQ | No | — | Works fine |
-| DZone | No | — | Anti-bot 403 by default — **skipped unless config opts in** under `## Content Sources (scan order)` |
-| C# Corner | No | — | RSS returns 500 — **skipped by default** (opt-in via config if site recovers) |
-| Microsoft Tech Community | Sign-in | — | Login wall blocks scraping — **skipped by default**; only attempt for explicit public URLs listed under `## Direct Sources` |
+| DZone | No (browser) | Yes | **Browser-scan Layer 0** (`content-sites`, `subSource: dzone`) via real-browser `dzone.com/search` — bypasses the anonymous anti-bot 403. |
+| C# Corner | No (browser) | Yes | **Browser-scan Layer 0** (`content-sites`, `subSource: csharpcorner`) via real-browser `c-sharpcorner.com/search` — replaces the 500-ing RSS. |
+| Microsoft Tech Community | Sign-in (browser) | Yes | **Browser-scan Layer 0** (`content-sites`, `subSource: techcommunity`) via the logged-in CDP browser at `techcommunity.microsoft.com/search` — sign in once with `launch-edge.mjs`. Anonymous scraping still hits the login wall. |
 | YouTube | API key | Yes (free) | YouTube scanning skipped |
 | GitHub | No (unauthenticated) | — | Lower rate limits (60 req/hr). Add a `GITHUB_TOKEN` for 5000 req/hr |
 | Stack Overflow | No | — | Works fine (public API v2.3) |
@@ -1312,8 +1313,8 @@ Where the platform exposes them, also include engagement metrics (likes/upvotes/
 
 ## Social Post Generation
 
-Social posts and thumbnails are generated in two ways:
-1. **Automatically with every `scout-scan`** (only if the role has social posts enabled) — after the report is saved, generate posts for each item with thumbnail specs for "link in first comment" posts.
+Social posts and thumbnails are **opt-in — never generated by default.** They are produced only when the user explicitly asks, in one of two ways:
+1. **On request during a `scout-scan`** — only when the user's scan request explicitly asks for social posts/thumbnails (e.g., "scan and generate social posts"). A plain `scout-scan` writes the **report only** and skips social/thumbnail generation. When asked, generate posts for each item (with thumbnail specs for "link in first comment" posts) after the report is saved.
 2. **On demand via `scout-post`** — the user provides a single URL (and optional context) to generate posts for an individual piece of content. This works regardless of role.
 
 ### scout-post Input Handling
@@ -1427,6 +1428,7 @@ Thumbnail spec details:
   - X: 1600x900 (16:9 landscape)
   - Bluesky: 2000x1000 (2:1 landscape)
   - YouTube Community: 1200x675 (16:9)
+  - TikTok: 1080x1920 (9:16 vertical cover — only when a cover is explicitly requested; not auto-rendered)
 - Background from brand config (or default dark if not configured)
 - Logo from brand assets (if configured)
 - Headline text from post
@@ -1507,7 +1509,7 @@ Auto-generate at report end:
 7. **Tag every item** with 1-4 tags from the config's canonical list.
 8. **Update .seen-links.json** after saving the report.
 9. **Save the report** to `reports/{YYYY-MM-DD-HHmm}-content.md`.
-10. **Auto-generate social posts and thumbnail specs** for every item **only if the role has social posts enabled**. Save to `social-posts/{YYYY-MM-DD-HHmm}-social-posts.md`. If social posts are off, skip this step.
+10. **Social posts and thumbnails are opt-in.** Generate them for the report's items **only when the user explicitly requests them** in the scan request — a plain scan writes the report only and skips this step. When requested, save to `social-posts/{YYYY-MM-DD-HHmm}-social-posts.md`. (On-demand `scout-post` / `scout-calendar` stay available regardless.)
 11. After saving, give a brief summary including item count, top topics, and (if applicable) confirm social posts were generated. Include a role-specific insight based on the Role-Aware Behavior table. Remind of available commands.
 12. **Complete ALL source scanning before generating the report.** Do not generate or show the report while scans are still in progress. Scan every enabled source first, collect all results, merge, deduplicate, filter, then generate the report once from the complete dataset. If a source fails, note it in "Sources That Could Not Be Reached" but do not delay the report for retries.
 13. **Social source items require poster details.** Every item from Reddit, X, Bluesky, LinkedIn, YouTube, Stack Overflow, or Hacker News must include the poster's name, handle/profile link, post content summary, sentiment, engagement metrics, and a direct permalink. See "Social Source Data Requirements" for the full field list.
@@ -1609,7 +1611,7 @@ When running a scan with a real dispatch tool available, use this pattern:
 6. Apply quality filter to any items not pre-filtered by subagents
 7. Number sequentially, tag with canonical topics
 8. Save report (including Open CFPs section — not numbered, sorted by deadline)
-9. Dispatch scout-post-generator with the final report (only if role has social posts on)
+9. Dispatch scout-post-generator with the final report (only if the user explicitly requested social posts in the scan)
 10. Update .seen-links.json
 11. Summarize to user (include role-specific insight; call out any CFPs closing within 14 days)
 ```
@@ -1634,7 +1636,7 @@ must:
    write a stub report stating "0 items passed the quality filter" and list
    what was scanned and why nothing qualified — do not silently exit.
 7. Update `.seen-links.json`.
-8. Generate social posts only if the role has them enabled.
+8. Generate social posts only if the user explicitly requested them in the scan (a plain scan skips this).
 9. Print the report path in your final message so the user can find it.
 
 A run that ends with "scanning is underway" or "I'll notify you" without a

@@ -306,8 +306,9 @@
               </fieldset>
               <fieldset class="cfg-group">
                 <legend>Output <button type="button" class="link-btn bulk-select" data-target=".cfg-output" data-action="all">Select all</button> <span class="sep">·</span> <button type="button" class="link-btn bulk-select" data-target=".cfg-output" data-action="none">Clear</button></legend>
-                <label class="field-inline"><input data-field="social" class="cfg-output" type="checkbox" checked /><span>Auto-generate social posts after scans</span></label>
-                <label class="field-inline"><input data-field="calendar" class="cfg-output" type="checkbox" /><span>Generate a weekly posting calendar</span></label>
+                <label class="field-inline"><input data-field="social" class="cfg-output" type="checkbox" checked /><span>Enable social posts (drafted on demand, not during scans)</span></label>
+                <label class="field-inline"><input data-field="calendar" class="cfg-output" type="checkbox" /><span>Enable weekly posting calendar (on demand)</span></label>
+                <p class="hint">Scans write a report only. Social posts &amp; thumbnails are generated when you ask — use <strong>Generate posts</strong> (<code>/scout-post</code>) in the Social view, or say so in your scan request.</p>
               </fieldset>
               <fieldset class="cfg-group">
                 <legend>Social post accounts</legend>
@@ -1261,15 +1262,23 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             <option value="neutral">Neutral</option>
             <option value="mixed">Mixed</option>
             <option value="negative">Negative</option>
+            <option value="unknown">Unclassified</option>
           </select>
           <select id="conv-platform" aria-label="Filter by platform" title="Platform"><option value="">All platforms</option></select>
           <select id="conv-timeframe" aria-label="Filter by timeframe" title="Timeframe">
             <option value="">All time</option>
+            <option value="7">Last 7 days</option>
             <option value="30">Last 30 days</option>
             <option value="90">Last 90 days</option>
             <option value="180">Last 6 months</option>
             <option value="365">Last year</option>
+            <option value="custom">Custom range…</option>
           </select>
+          <span id="conv-date-range" class="conv-date-range" hidden>
+            <input id="conv-date-from" type="date" aria-label="From date" title="From date" />
+            <span class="conv-date-sep">→</span>
+            <input id="conv-date-to" type="date" aria-label="To date" title="To date" />
+          </span>
           <select id="conv-jobs" aria-label="Filter job posts" title="Job posts">
             <option value="hide">Hide job posts</option>
             <option value="">Include job posts</option>

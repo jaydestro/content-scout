@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Content Scout — Browser Scan
-// Drives Microsoft Edge to scrape X, LinkedIn, Reddit, and Google News
-// search results from the logged-in UI. Writes normalized JSON sidecars
-// that `scout scan` ingests as Layer 0.
+// Drives Microsoft Edge to scrape X, LinkedIn, Reddit, Google (News + Web),
+// and developer content sites (Microsoft Tech Community, DZone, C# Corner,
+// Hashnode) from the logged-in / real-browser UI. Writes normalized JSON
+// sidecars that `scout scan` ingests as Layer 0.
 //
 // Default mode is CDP attach: you start Edge yourself with
 //   node tools/browser-scan/launch-edge.mjs
@@ -25,6 +26,7 @@ import { scanX, openXLogin } from './platforms/x.mjs';
 import { scanLinkedIn, openLinkedInLogin } from './platforms/linkedin.mjs';
 import { scanReddit, openRedditLogin } from './platforms/reddit.mjs';
 import { scanGoogle, openGoogleLogin } from './platforms/google.mjs';
+import { scanContentSites, openContentSitesLogin } from './platforms/content-sites.mjs';
 import { loadConfig } from './lib/config.mjs';
 import { ensureProfileDir, launchEdge, attachEdge, newPage } from './lib/browser.mjs';
 import { filterHiring, categorizeRoles, ROLE_ORDER } from './lib/hiring-filter.mjs';
@@ -47,7 +49,7 @@ for (let i = 1; i < argv.length; i++) {
   }
 }
 
-const PLATFORMS = ['x', 'linkedin', 'reddit', 'google'];
+const PLATFORMS = ['x', 'linkedin', 'reddit', 'google', 'content-sites'];
 const DEFAULT_CDP_PORT = 9222;
 
 function usageAndExit(code = 1) {
@@ -60,7 +62,7 @@ Usage:
       login tabs. Sign in once; leave Edge running.
 
   node index.mjs scan --slug <slug>
-                      [--platforms x,linkedin,reddit,google]
+                      [--platforms x,linkedin,reddit,google,content-sites]
                       [--mode cdp|launch]              (default: cdp)
                       [--port 9222]                    (cdp port)
                       [--days 30] [--max-per-term 25] [--headed]
@@ -69,7 +71,7 @@ Usage:
       calendar month); the Google Web pass maps it to a precise
       tbs=cdr:1,cd_min:…,cd_max:… filter. Default is a rolling --days window.
 
-  node index.mjs login --platform x|linkedin|reddit|google    (LEGACY launch-mode only)
+  node index.mjs login --platform x|linkedin|reddit|google|content-sites    (LEGACY launch-mode only)
 
 Examples:
   node index.mjs launch
@@ -77,6 +79,7 @@ Examples:
   node index.mjs launch --list
   node index.mjs scan --slug <your-subject-slug>
   node index.mjs scan --slug <your-subject-slug> --platforms linkedin
+  node index.mjs scan --slug <your-subject-slug> --platforms content-sites
   node index.mjs scan --slug <your-subject-slug> --mode launch --headed
 `);
   process.exit(code);
@@ -125,6 +128,7 @@ if (command === 'launch') {
     else if (platform === 'linkedin') await openLinkedInLogin(handle);
     else if (platform === 'reddit') await openRedditLogin(handle);
     else if (platform === 'google') await openGoogleLogin(handle);
+    else if (platform === 'content-sites') await openContentSitesLogin(handle);
     await new Promise((resolve) => browser.on('close', resolve));
   } finally {
     if (browser.isConnected && browser.isConnected()) await browser.close().catch(() => {});
@@ -253,6 +257,7 @@ if (command === 'launch') {
       else if (platform === 'linkedin') items = await scanLinkedIn(handle, ctx);
       else if (platform === 'reddit') items = await scanReddit(handle, ctx);
       else if (platform === 'google') items = await scanGoogle(handle, ctx);
+      else if (platform === 'content-sites') items = await scanContentSites(handle, ctx);
     } catch (e) {
       console.error(`[browser-scan] ${platform}: error — ${e.message}`);
     } finally {

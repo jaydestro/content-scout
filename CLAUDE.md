@@ -80,7 +80,7 @@ When reading prompt files, the `${{input:...}}` placeholders are VS Code syntax.
 5. Number items sequentially across all report sections
 6. Tag every item with canonical topic tags from config
 7. Update `.seen-links.json` after saving any report
-8. Auto-generate social posts only if the role has social posts enabled
+8. Generate social posts/thumbnails only when the user explicitly asks — never by default during a scan
 
 ## Browser-scan tool (X / LinkedIn / Reddit, first-class Layer 0)
 

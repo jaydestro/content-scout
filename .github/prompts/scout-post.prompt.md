@@ -21,14 +21,36 @@ ${{input:Platform preference? Leave blank for LinkedIn + X, or specify one (Link
 
 ${{input:Product? (optional) Leave blank if only one product is configured, or specify a product slug}}
 
-## Product Resolution
+## Product Resolution & Config Caching
+
+Load the product config **once at the start** and cache it in memory for all downstream steps.
+
 1. If the user specified a product slug, load `scout-config-{slug}.prompt.md`.
 2. If only one `scout-config-*.prompt.md` exists, use it automatically.
 3. If multiple configs exist and no product was specified, infer from the URL, report, or supplied copy. If still ambiguous, ask.
 
+**Cache the resolved config (branding rules, social standards, topic tags) throughout variant generation.** Do not re-read `scout-config-*.prompt.md` per variant. Reference the cached rules for brand name, tone defaults, hashtag policy, and platform defaults on every variant block.
+
 ## Source resolution
 
 The user must provide **at least one** of: a URL, a report item number, or source copy/context. Resolve the source like this:
+
+## Brand Naming Guardrail (hard requirement)
+
+Before writing any post file, enforce product naming from the loaded product config's **Social Post Standards**.
+
+For Azure Cosmos DB specifically:
+
+- Canonical product name in post copy: **Azure Cosmos DB**
+- Never emit these in post body copy: `CosmosDB`, `Azure CosmosDB`, bare `Cosmos` when referring to the product, or `vCore-based Azure Cosmos DB for MongoDB`
+- Prefer `Azure Cosmos DB` in headlines and first mention, then keep using `Azure Cosmos DB` (do not shorten to `Cosmos DB` unless the user explicitly asks for shorthand)
+
+Required pre-save QA pass (for every variant block):
+
+1. Scan variant text for forbidden brand forms.
+2. Replace forbidden forms with the canonical product name while preserving grammar.
+3. Re-read the variant to ensure no malformed phrasing after replacements.
+4. Only then write/save the output file.
 
 1. **URL provided, link is live** — use it as the CTA link as-is (never shorten, never add tracking params). If additional context is provided, prioritize it. If only a URL, fetch it and extract key details.
 2. **URL provided, but link is NOT live yet** — signaled by phrases like `(link not live yet — use copy below as source of truth, do not fetch the URL)` in the input, or an explicit user note that the URL isn't live. Use the URL **as the CTA in every post** exactly as supplied (this is its eventual home), but do **not** fetch it. Treat the provided copy/context as authoritative. At the very top of the output file, add a one-line callout:
@@ -290,11 +312,18 @@ Reddit-specific rules:
 
 ## Humanizer pass (mandatory final step — do not skip)
 
-Before writing any post body to disk, run every variant (LinkedIn, X, Bluesky, Reddit title + body, OP context comments) through the **humanizer** skill at [`.claude/skills/humanizer/SKILL.md`](../../.claude/skills/humanizer/SKILL.md). The skill is vendored into this repo so it's always available; load it as part of the post-generation flow, not as an optional cleanup.
+Before writing any post body to disk, run every variant (LinkedIn, X, Bluesky, Reddit title + body, OP context comments) through the humanizer checklist below. **Apply the inline checklist directly — do NOT read [`.claude/skills/humanizer/SKILL.md`](../../.claude/skills/humanizer/SKILL.md) as part of the normal flow.** The high-impact tells for social copy are already inlined here, so the common case needs no mid-run file read (saves a tool round-trip and ~7K tokens of skill load per run).
 
-What to do:
+**Fallback only:** read the full `SKILL.md` *only if* a variant still reads like AI after applying the inline checklist twice and you can't pinpoint why — e.g., longer LinkedIn bodies where subtler patterns (passive voice, vague attribution, superficial -ing analysis) survive. For short X/Bluesky/Reddit copy the inline list is sufficient.
 
-1. After drafting all variants, do a single editing pass per variant against the patterns in the humanizer skill. Pay particular attention to the patterns that show up most often in social copy:
+**Performance optimization: Batch humanizer pass in parallel.** After drafting all variants:
+
+1. **Collect all variant text blocks** (LinkedIn options 1–N, X options 1–N, Bluesky, Reddit bodies, OP comments) into a single batch.
+2. **Run the humanizer checklist on all variants at once** using a parallel pass (submit all variant texts together for review). This avoids serial invocations and cuts latency significantly.
+3. **For this pass, use Claude Haiku** (fast) instead of the default generation model. The humanizer task is pattern-matching and lightweight rewriting, not creative brainstorming, so Haiku is well-suited and runs ~2–3× faster than larger models.
+4. **After the batch pass returns**, apply the fixes to each variant and preserve the tuner contract: tone, length caps, emoji budget, hashtag policy, and the canonical brand name must survive the pass unchanged.
+
+Inline humanizer checklist (apply directly — this is the full working set for social copy):
    - Promotional / advertisement language ("boasts", "vibrant", "groundbreaking", "seamless", "powerful")
    - AI-vocabulary words ("delve", "underscore", "unlock", "showcase", "leverage", "robust", "empower", "intricate")
    - Significance inflation ("a pivotal moment", "reshaping the landscape", "a testament to")
@@ -303,8 +332,11 @@ What to do:
    - Em-dash overuse (a single em-dash per post is plenty; replace the rest with commas or periods)
    - Sycophantic / chatbot artifacts ("Excited to share", "Thrilled to announce", "Big news…")
    - Filler openings ("In today's fast-paced world", "Let's dive into…")
-2. After the cleanup pass, ask yourself the skill's audit prompt: **"What makes this so obviously AI-generated?"** Note 1–3 remaining tells per variant, then revise once more to remove them.
-3. Preserve the tuner contract: tone, length caps, emoji budget, hashtag policy, and the canonical brand name must survive the humanizer pass unchanged. The humanizer trims AI tells, it does not rewrite the angle.
-4. If `tone:` is `enthusiastic` or `playful`, the humanizer still applies — keep the energy but cut the AI tells. Enthusiasm should come from concrete specifics, not from filler intensifiers.
+   - Passive voice where active is stronger ("was built by the team" → "the team built")
+   - Vague attribution ("experts say", "many believe", "it's widely known") — name the source or cut it
+   - Superficial -ing wrap-ups ("highlighting the importance of…", "showcasing how…") — state the point plainly
 
-The goal is copy that reads like a real practitioner posted it, not like an LLM autocompleted a marketing brief. If a variant still reads like a press release after two passes, drop it and write a different angle from scratch.
+5. After humanizer fixes, ask yourself: **"What makes this so obviously AI-generated?"** Note 1–3 remaining tells per variant if any, then quick second pass if needed.
+6. If `tone:` is `enthusiastic` or `playful`, the humanizer still applies — keep the energy but cut the AI tells. Enthusiasm should come from concrete specifics, not from filler intensifiers.
+
+The goal is copy that reads like a real practitioner posted it, not like an LLM autocompleted a marketing brief. If a variant still reads like a press release after humanizer review, drop it and write a different angle from scratch.

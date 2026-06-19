@@ -60,7 +60,22 @@ if (flags.list) {
   process.exit(0);
 }
 
-const pick = pickBrowser({ preferred: flags.browser });
+// Browser selection priority:
+//   1. --browser flag         (explicit — hard requirement; error if missing)
+//   2. SCOUT_BROWSER env var   (soft preference; falls back to OS default if
+//                               that browser isn't installed)
+//   3. OS default browser
+// The CDP profile is a dedicated, isolated profile, so preferring a
+// specific browser here never touches your everyday browsing.
+const explicitBrowser = flags.browser || null;
+const envBrowser = (process.env.SCOUT_BROWSER || '').trim() || null;
+let pick = pickBrowser({ preferred: explicitBrowser || envBrowser });
+if (!pick.ok && !explicitBrowser && envBrowser) {
+  // The env-var preference isn't usable (e.g. Edge not installed on this
+  // machine). Don't fail the launch — fall back to the OS default browser.
+  console.warn(`[launch-edge] SCOUT_BROWSER="${envBrowser}" not usable (${pick.error}) — falling back to the default browser.`);
+  pick = pickBrowser({});
+}
 if (!pick.ok) {
   console.error(`[launch-edge] ${pick.error}`);
   process.exit(1);
@@ -72,6 +87,24 @@ if (notice) {
 console.log(`[launch-edge] Browser: ${browser.name} (${source}) — ${browser.path}`);
 
 const args = [`--remote-debugging-port=${flags.port}`];
+
+// Keep every tab responsive to CDP for the whole lifetime of the window.
+// This browser is meant to be left running between scans, so the
+// browser's memory-saver features (Edge "sleeping tabs", renderer
+// backgrounding, background timer throttling, occlusion-based freezing)
+// would otherwise freeze the idle login tabs. A frozen tab's CDP target
+// stops answering attach/enable, which makes Playwright's connectOverCDP
+// finish the WebSocket handshake and then hang on post-handshake target
+// enumeration until it times out (symptom: "<ws connected>" followed by a
+// 30s Timeout). Disabling these keeps the attach fast and reliable.
+// Unknown feature tokens are ignored by Chromium, so this is safe across
+// Edge / Chrome / Brave / Vivaldi / Arc / Opera.
+args.push(
+  '--disable-background-timer-throttling',
+  '--disable-backgrounding-occluded-windows',
+  '--disable-renderer-backgrounding',
+  '--disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,HighEfficiencyModeAvailable,TabFreezeAndDiscard,ProactiveTabFreezeAndDiscard',
+);
 
 if (!flags['use-default-profile']) {
   // Prefer the canonical .local/state/browser-profile, but if the user
@@ -91,18 +124,22 @@ if (!flags['use-default-profile']) {
   console.log(`[launch-edge] Using your DEFAULT ${browser.name} profile. Close all other ${browser.name} windows first or this will fail.`);
 }
 
-// Open the four login / landing pages so the user can sign in once.
+// Open the login / landing pages so the user can sign in once.
 // (Google News works anonymously, but we open it so personalization can
-// be enabled by signing in if the user wants.)
+// be enabled by signing in if the user wants. Microsoft Tech Community
+// content is behind a sign-in wall, so sign in there to let the
+// content-sites scanner read it; DZone / C# Corner / Hashnode need no
+// login.)
 args.push(
   'https://x.com/login',
   'https://www.linkedin.com/login',
   'https://www.reddit.com/login/',
-  'https://news.google.com/'
+  'https://news.google.com/',
+  'https://techcommunity.microsoft.com/'
 );
 
 console.log(`[launch-edge] Debug port: ${flags.port}`);
-console.log(`[launch-edge] Sign in to X, LinkedIn, and Reddit in the window that just opened. Google News works without sign-in.`);
+console.log(`[launch-edge] Sign in to X, LinkedIn, Reddit, and Microsoft Tech Community in the window that just opened. Google News, DZone, C# Corner, and Hashnode work without sign-in.`);
 console.log(`[launch-edge] Once signed in, leave the browser running and start a scan in another terminal:`);
 console.log(`[launch-edge]   node tools/browser-scan/index.mjs scan --slug <your-slug>`);
 console.log(`[launch-edge] (the scanner attaches over CDP and reuses these sessions)`);

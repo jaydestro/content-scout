@@ -35,6 +35,7 @@ export function safeJoin(baseDir, name) {
 // Anything in the env whose key matches this RegExp is treated as a
 // secret and its value will be replaced with [REDACTED:KEY] in output.
 const SECRET_KEY_RE = /(KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|CREDENTIAL|ACCESS|BEARER|AUTH|API|SESSION|COOKIE|SIGNATURE|SIGN|PRIVATE)/i;
+const SECRET_LABEL_RE = /(api[_-]?key|app[_-]?password|password|passwd|pwd|token|secret|credential|bearer|auth|session|cookie|private[_-]?key)/i;
 
 // Allow callers to extend / override the env source (tests pass a fixture).
 export function collectSecretValues(env = process.env) {
@@ -109,12 +110,24 @@ export function redactSecrets(text, options = {}) {
   }
   // KEY=value style assignments (env-export, JSON, query string) for any
   // key whose name matches our secret regex — covers values not in process.env.
+  // Accept lowercase / dashed variants too because browser-run prompts and
+  // SDK errors often print `password: ...`, `api-key=...`, or JSON fields.
   s = s.replace(
-    /([A-Z][A-Z0-9_]{2,})\s*([=:])\s*("?)([^"\s,;&]{8,})\3/g,
+    /([A-Za-z][A-Za-z0-9_-]{2,})\s*([=:])\s*("?)([^"\s,;&]{8,})\3/g,
     (full, key, sep, q, val) => {
-      if (!SECRET_KEY_RE.test(key)) return full;
+      if (!SECRET_KEY_RE.test(key) && !SECRET_LABEL_RE.test(key)) return full;
       if (val === '[REDACTED]' || val.startsWith('[REDACTED:')) return full;
       return `${key}${sep}${q}[REDACTED:${key}]${q}`;
+    }
+  );
+  // Natural-language prompts / logs: "password is ...", "api key ...",
+  // "token was ...". This is intentionally limited to unmistakable secret
+  // labels and a non-space value of 8+ chars to avoid masking normal prose.
+  s = s.replace(
+    /\b((?:api[_ -]?key|app[_ -]?password|password|passwd|pwd|token|secret|credential|bearer|auth|session|cookie|private[_ -]?key)\b\s*(?:is|was|=|:)?\s*)([A-Za-z0-9._\-+/=]{8,})/gi,
+    (full, label, val) => {
+      if (val === '[REDACTED]' || val.startsWith('[REDACTED:')) return full;
+      return `${label}[REDACTED]`;
     }
   );
   return s;

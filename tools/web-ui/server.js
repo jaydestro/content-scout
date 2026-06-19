@@ -15,6 +15,7 @@ import { findMissingPrompts, findUnreferencedPrompts } from './lib/prompt-health
 import { describeImage, formatVisionReport, probeVision, getVisionProvider } from './lib/vision.js';
 import { reviewSentiment, probeSentiment, getSentimentProvider } from './lib/sentiment-review.js';
 import { getSeoRewriteProvider, generateSeoRewrites, hasAnyRewrite } from './lib/seo-rewrite.js';
+import { suggestReply, getReplyProvider } from './lib/reply-suggest.js';
 import { searchCorpus } from '../lib/corpus-search.mjs';
 import { extractDocMeta } from '../lib/doc-meta.mjs';
 import { responseCache } from '../lib/response-cache.mjs';
@@ -30,6 +31,10 @@ import {
   normalizeSentiment,
   classifyItem,
   canonicalUrlKey,
+  platformFromUrl,
+  isProductAuthorName,
+  parseProductTeamNamesFromConfig,
+  handleFromUrl,
 } from '../lib/report-index.mjs';
 import { isHiringContent } from '../browser-scan/lib/hiring-filter.mjs';
 import {
@@ -433,6 +438,10 @@ function pushRunOutput(run, chunk) {
   }
 }
 
+function safeRunOutput(run) {
+  return redactSecrets(run && run.output ? run.output : '');
+}
+
 function closeRun(run, status) {
   run.status = status;
   run.finishedAt = new Date().toISOString();
@@ -460,11 +469,13 @@ function closeRun(run, status) {
     // manual refresh. Fire-and-forget; failures simply rebuild on demand.
     getIndex().catch(() => { /* will rebuild on demand */ });
   }
-  // Auto-render thumbnails for any run that produces a social-posts/*.md
-  // (scout-post bulk + solo, plus scout-scan when posts are auto-generated).
-  // Fire-and-forget so the SSE close above isn't delayed. Honor the
-  // per-run `options.skipThumbnails` flag set when the user chose
-  // "Thumbnail style: Off" in the Run form.
+  // Auto-render thumbnails for any run that produced a social-posts/*.md.
+  // scout-post always writes one. scout-scan only writes one when the user
+  // explicitly asked for social posts (opt-in) — a plain scan is report-only,
+  // so autoRenderThumbnails freshness-gates on run.startedAt and no-ops when
+  // this run didn't produce a new social-posts file. Fire-and-forget so the
+  // SSE close above isn't delayed. Honor the per-run `options.skipThumbnails`
+  // flag set when the user chose "Thumbnail style: Off" in the Run form.
   if (status === 'success' && (run.cmdName === 'scout-post' || run.cmdName === 'scout-scan')) {
     if (run.options && run.options.skipThumbnails) {
       pushRunOutput(run, `\n[scout-web] Skipping auto-thumbnail render (Thumbnail style: Off).\n`);
@@ -480,6 +491,30 @@ function closeRun(run, status) {
   // available for ad-hoc lookups.
 }
 
+// Find the most-recently-modified social-posts/*.md file (bulk, solo, or
+// calendar). Returns { name, mtimeMs } or null. Used to freshness-gate the
+// auto-thumbnail render so a report-only scan doesn't re-render an old batch.
+async function newestSocialPostFile() {
+  const dir = path.join(REPO_ROOT, 'social-posts');
+  let entries;
+  try {
+    entries = await fs.readdir(dir);
+  } catch {
+    return null;
+  }
+  let best = null;
+  for (const name of entries) {
+    if (!name.endsWith('.md')) continue;
+    try {
+      const st = await fs.stat(path.join(dir, name));
+      if (!best || st.mtimeMs > best.mtimeMs) best = { name, mtimeMs: st.mtimeMs };
+    } catch {
+      /* ignore unreadable entry */
+    }
+  }
+  return best;
+}
+
 // Spawn `node tools/render-thumbnails/index.js` to produce LinkedIn (1200x1200)
 // + X (1600x900) PNGs for every `**Thumbnail spec:**` block in the newest
 // social-posts markdown file. Output is appended to the originating run log
@@ -490,6 +525,16 @@ async function autoRenderThumbnails(run) {
     await fs.access(renderer);
   } catch {
     return; // renderer not installed — silently skip
+  }
+  // Only render when THIS run actually produced (or updated) a social-posts
+  // markdown file. Social posts are opt-in for /scout-scan now: a plain scan
+  // writes the report only, leaving social-posts/ untouched, so we must not
+  // re-render an older batch. scout-post (and an opt-in scan that generated
+  // posts) writes a fresh file, so newest.mtime >= run.startedAt holds there.
+  const newest = await newestSocialPostFile();
+  if (!newest) return;
+  if (run.startedAt && newest.mtimeMs < Date.parse(run.startedAt) - 1000) {
+    return; // nothing new in social-posts/ from this run
   }
   pushRunOutput(run, `\n[scout-web] Auto-rendering thumbnails (LinkedIn 1200x1200 + X 1600x900) from the newest social-posts/*.md…\n`);
   const child = spawn(process.execPath, [renderer], {
@@ -2200,21 +2245,97 @@ function browserSidecarIsRelevant(item, slug) {
   return [...terms].some((term) => text.includes(term));
 }
 
-function browserSidecarConversation(item, { slug, platform, stamp }) {
+function browserSidecarConversation(item, { slug, platform, stamp, community }) {
+  // LinkedIn search posts only expose a synthesized `/feed/sdui-post/{hash}`
+  // permalink that dead-ends (the real post URL is lazy-loaded on "..." menu
+  // open). The scraped `author_profile` (e.g. /in/{handle} or /company/…) IS
+  // navigable, so carry it as a working fallback link for the dashboard.
+  const authorUrl = /^https?:\/\//i.test(String(item.author_profile || '').trim())
+    ? String(item.author_profile).trim()
+    : '';
   return {
     date: browserSidecarDate(item.post_date || item.scraped_at),
-    platform: BROWSER_SOCIAL_LABELS[platform] || platform,
+    // URL host is authoritative; the filename platform is a fallback. This
+    // keeps a stray cross-posted permalink from landing under the wrong
+    // platform.
+    platform: platformFromUrl(item.url) || BROWSER_SOCIAL_LABELS[platform] || platform,
     author: browserSidecarAuthor(item),
     summary: browserSidecarSummary(item),
     sentiment: 'unknown',
-    community: 'community',
+    community: community || 'community',
     communityRaw: '',
     engagement: formatBrowserEngagement(item.engagement),
     url: String(item.url || '').trim(),
+    authorUrl,
     section: 'Browser scan sidecar',
     report: `${stamp}-${slug}-content.md`,
     source: `browser-scan:${platform}`,
   };
+}
+
+// Normalize a scraped handle ("u/sajee_mvp", "@hasansavran", "/in/foo") down
+// to the bare, lowercased handle used by the muted/team account keys.
+function cleanScrapedHandle(raw) {
+  return String(raw || '')
+    .trim()
+    .replace(/^@+/, '')
+    .replace(/^u\//i, '')
+    .replace(/^\/?(in|company)\//i, '')
+    .replace(/\/+$/, '')
+    .toLowerCase();
+}
+
+function normProductName(raw) {
+  return String(raw || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+// Per-slug index of product/owned accounts (handle keys + display names),
+// derived from the scout config. Cached for the life of a build so the
+// sidecar loop doesn't re-read the same config repeatedly.
+async function loadProductAccountIndex(slug, cache) {
+  if (cache.has(slug)) return cache.get(slug);
+  let raw = '';
+  try {
+    raw = (await readConfig(slug)).raw || '';
+  } catch {
+    /* no config for this slug — everyone stays community */
+  }
+  const keys = new Set();
+  const names = new Set();
+  if (raw) {
+    for (const acct of [
+      ...parseTeamMemberAccountsFromConfig(raw),
+      ...parseOwnedAccountsFromConfig(raw),
+    ]) {
+      const h = normHandle(acct.handle);
+      if (!h) continue;
+      keys.add(`${normPlatform(acct.platform)}::${h}`);
+      keys.add(`*::${h}`);
+    }
+    for (const name of parseProductTeamNamesFromConfig(raw)) {
+      const n = normProductName(name);
+      if (n) names.add(n);
+    }
+  }
+  const index = { keys, names };
+  cache.set(slug, index);
+  return index;
+}
+
+// Decide whether a browser-sidecar row is a product / owned-account post
+// rather than external community chatter. Sidecar rows otherwise default to
+// 'community', so an unclassified Microsoft employee or owned brand handle
+// would wrongly count as community sentiment.
+function classifySidecarCommunity(item, platformKey, index) {
+  const handle = cleanScrapedHandle(item.author_handle || item.author_display);
+  if (handle && index) {
+    const p = normPlatform(platformKey);
+    if (index.keys.has(`${p}::${handle}`) || index.keys.has(`*::${handle}`)) return 'product';
+  }
+  const display = String(item.author_display || '').trim();
+  if (display && index && index.names.has(normProductName(display))) return 'product';
+  if (isProductAuthorName(display) || isProductAuthorName(item.author_handle || '')) return 'product';
+  return 'community';
 }
 
 function addConversationAggregate(c, slug, authors, sources) {
@@ -2229,6 +2350,7 @@ function addConversationAggregate(c, slug, authors, sources) {
     if (c.date && c.date > entry.lastSeen) entry.lastSeen = c.date;
     if (slug) entry.slugs.add(slug);
     if (c.url) entry.urls.add(c.url);
+    if (c.community === 'product') entry.isProduct = true;
     authors.set(key, entry);
   }
   if (c.platform) {
@@ -2238,6 +2360,69 @@ function addConversationAggregate(c, slug, authors, sources) {
     if (c.date && c.date > entry.lastSeen) entry.lastSeen = c.date;
     sources.set(key, entry);
   }
+}
+
+// Merge the company's own people + brand/owned channels across every known
+// subject config into one matcher (display names + bare handles), augmented
+// with owned + no-triage handles from the muted-accounts file. Used to keep
+// internal actors out of Community signals and the Creators card — they work
+// for us, so they are not external community signal.
+async function buildProductActorMatcher(slugs, cache) {
+  const names = new Set();
+  const handles = new Set();
+  for (const slug of slugs) {
+    if (!slug) continue;
+    const idx = await loadProductAccountIndex(slug, cache);
+    for (const n of idx.names) names.add(n);
+    for (const k of idx.keys) {
+      const h = k.slice(k.indexOf('::') + 2);
+      if (h) handles.add(h);
+    }
+  }
+  try {
+    const muted = await loadMuted(REPORTS_DIR);
+    for (const [key, info] of Object.entries(muted.items || {})) {
+      if (!info) continue;
+      if (info.owned || info.noTriage || info.reason === NO_TRIAGE_REASON) {
+        const h = normHandle(info.handle || key.slice(key.indexOf('::') + 2));
+        if (h) handles.add(h);
+      }
+    }
+  } catch {}
+  return { names, handles };
+}
+
+// True when an author (by display name or any of their handles/URLs) is an
+// internal product actor: a brand/owned channel or a configured team member.
+// Author strings arrive in many shapes — `Display Name`, a bare `handle`,
+// `display (u/handle)`, or a byline-polluted `u/handle (Display, Title) ·
+// May 27, 2026 · r/Sub` — so we gather every plausible handle/name candidate
+// before testing against the matcher.
+function matcherFlagsAuthor(matcher, name, urls) {
+  if (!matcher) return false;
+  const raw = String(name || '').trim();
+  if (isProductAuthorName(raw)) return true;
+  if (normProductName(raw) && matcher.names.has(normProductName(raw))) return true;
+  const candidates = [];
+  // Every parenthetical group (handle or display name may live inside).
+  for (const m of raw.matchAll(/\(([^)]+)\)/g)) {
+    const inner = m[1].trim();
+    candidates.push(inner);
+    // A parenthetical display name like "(Sajeetharan Sinnathurai, Title)":
+    // test its leading comma-separated chunk against the name set.
+    const firstChunk = normProductName(inner.split(',')[0]);
+    if (firstChunk && matcher.names.has(firstChunk)) return true;
+  }
+  // Leading token before the first space — covers "u/handle (…) · date".
+  const lead = raw.split(/\s+/)[0];
+  if (lead) candidates.push(lead);
+  // Whole string when it has no spaces (a bare handle).
+  if (raw && !/\s/.test(raw)) candidates.push(raw);
+  for (const u of urls || []) {
+    const h = handleFromUrl(u);
+    if (h) candidates.push(h);
+  }
+  return candidates.map((h) => cleanScrapedHandle(h)).some((h) => h && matcher.handles.has(h));
 }
 
 async function _buildIndex() {
@@ -2295,6 +2480,17 @@ async function _buildIndex() {
   const sources = new Map(); // sourceKey -> aggregate
   const reportsMeta = [];
 
+  // Build the internal-actor matcher once for the whole index from every
+  // known subject config (+ owned/no-triage handles in the muted file). Used
+  // to stamp `isProduct` on items and authors so the company's own people and
+  // brand channels stay out of Community signals and the Creators card.
+  const productAccountCache = new Map();
+  const allSlugs = new Set([
+    ...latestReportStampBySlug.keys(),
+    ...browserSidecars.bySlug.keys(),
+  ]);
+  const productMatcher = await buildProductActorMatcher([...allSlugs], productAccountCache);
+
   // Read + parse all reports in parallel via the shared lib. loadReport()
   // prefers the JSON sidecar (the agent's structured output) and falls back
   // to markdown for legacy reports.
@@ -2319,7 +2515,12 @@ async function _buildIndex() {
       sentimentTotals: parsed.sentimentTotals,
       skippedSources: parsed.skippedSources,
     });
-    for (const it of parsed.items) items.push({ ...it, report: r.name });
+    for (const it of parsed.items)
+      items.push({
+        ...it,
+        report: r.name,
+        isProduct: matcherFlagsAuthor(productMatcher, it.author, it.url ? [it.url] : []),
+      });
     for (const c of parsed.conversations) conversations.push({ ...c, report: r.name });
 
     for (const it of parsed.items) {
@@ -2354,6 +2555,7 @@ async function _buildIndex() {
         if (c.date && c.date > entry.lastSeen) entry.lastSeen = c.date;
         entry.slugs.add(parsed.slug);
         if (c.url) entry.urls.add(c.url);
+        if (c.community === 'product') entry.isProduct = true;
         authors.set(key, entry);
       }
       if (c.platform) {
@@ -2379,8 +2581,10 @@ async function _buildIndex() {
   // dashboard does not keep showing stale community activity. Once a later
   // report is written for the same slug, these sidecar rows are skipped.
   const existingConversationKeys = new Set(conversations.map((c) => convoKey(c)).filter(Boolean));
+  // productAccountCache is declared above (shared with the product matcher).
   for (const [slug, entry] of browserSidecars.bySlug.entries()) {
     const latestReportStamp = latestReportStampBySlug.get(slug) || '';
+    const productIndex = await loadProductAccountIndex(slug, productAccountCache);
     for (const platform of BROWSER_SOCIAL_PLATFORMS) {
       const sidecar = entry.platforms[platform];
       if (!sidecar) continue;
@@ -2394,7 +2598,8 @@ async function _buildIndex() {
         if (!item || typeof item !== 'object') continue;
         if (isHiringContent(item)) continue;
         if (!browserSidecarIsRelevant(item, slug)) continue;
-        const conversation = browserSidecarConversation(item, { slug, platform, stamp: sidecar.stamp });
+        const community = classifySidecarCommunity(item, platform, productIndex);
+        const conversation = browserSidecarConversation(item, { slug, platform, stamp: sidecar.stamp, community });
         if (!conversation.url && !conversation.summary) continue;
         const key = convoKey(conversation);
         if (key && existingConversationKeys.has(key)) continue;
@@ -2402,6 +2607,16 @@ async function _buildIndex() {
         conversations.push(conversation);
         addConversationAggregate(conversation, slug, authors, sources);
       }
+    }
+  }
+
+  // Final pass: flag any remaining internal actors (brand/owned channels or
+  // configured team members) who only surfaced via items, or whose
+  // conversations weren't group-classified, so Creators + Community signals
+  // can exclude them.
+  for (const a of authors.values()) {
+    if (!a.isProduct && matcherFlagsAuthor(productMatcher, a.name, [...a.urls])) {
+      a.isProduct = true;
     }
   }
 
@@ -2418,6 +2633,7 @@ async function _buildIndex() {
       sentiments: a.sentiments,
       slugs: [...a.slugs],
       urls: [...a.urls],
+      isProduct: !!a.isProduct,
     })),
     sources: [...sources.values()],
     reports: reportsMeta,
@@ -2834,7 +3050,15 @@ app.get('/api/authors', async (req, res) => {
   try {
     const idx = await getIndex();
     const { slug, q } = req.query;
+    // Creators is an EXTERNAL-community view: the company's own people and
+    // brand/owned channels are excluded by default (they work for us, so they
+    // are not community creators to track or engage). Pass includeProduct=1
+    // to opt back in.
+    const includeProduct = ['1', 'true'].includes(
+      String(req.query.includeProduct || '').toLowerCase()
+    );
     let authors = idx.authors;
+    if (!includeProduct) authors = authors.filter((a) => !a.isProduct);
     if (slug) authors = authors.filter((a) => a.slugs.includes(slug));
     if (q) {
       const needle = String(q).toLowerCase();
@@ -3037,7 +3261,7 @@ app.get('/api/runs/:id', (req, res) => {
     command: redactSecrets(run.command),
     startedAt: run.startedAt,
     finishedAt: run.finishedAt,
-    output: run.output,
+    output: safeRunOutput(run),
   });
 });
 
@@ -3426,6 +3650,65 @@ app.post('/api/sentiment/review', express.json({ limit: '64kb' }), async (req, r
         productName,
         currentSentiment: String(body.currentSentiment || 'unknown').toLowerCase(),
         userNote: String(body.userNote || '').slice(0, 500),
+      },
+      env,
+      { runner, cwd: REPO_ROOT },
+    );
+    if (result?.error) {
+      return res.status(502).json({ ...result, ok: false });
+    }
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Suggest an AI explanation + ready-to-use reply for a flagged "needs reply"
+// conversation. Powers the dashboard Community-signals "Needs reply" card so a
+// click yields something actionable inline (why it matters + a draftable
+// reply) instead of bouncing the user to a dead-end view.
+app.get('/api/reply/status', async (_req, res) => {
+  try {
+    const env = await readEnvObject();
+    const provider = getReplyProvider(env);
+    if (provider === 'none') {
+      return res.json({ ok: false, provider, message: 'No reply provider configured' });
+    }
+    if (provider === 'agent') {
+      const { runner } = await getRunner();
+      if (!runner) {
+        return res.json({ ok: false, provider, message: 'No agent runner configured — pick one on the Setup view.' });
+      }
+      return res.json({ ok: true, provider, message: 'Reuses your agent runner' });
+    }
+    res.json({ ok: true, provider, message: `Provider: ${provider}` });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+app.post('/api/reply/suggest', express.json({ limit: '64kb' }), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const summary = String(body.summary || '').trim();
+    if (!summary) return res.status(400).json({ error: 'summary required' });
+    const env = await readEnvObject();
+    if (getReplyProvider(env) === 'none') {
+      return res.status(400).json({
+        error: 'No reply provider configured. Set REPLY_SUGGEST_PROVIDER=agent|ollama|openai|custom in .env.',
+      });
+    }
+    const productName = body.productName
+      ? String(body.productName).trim()
+      : await resolveProductName(body.slug || '');
+    const { runner } = await getRunner();
+    const result = await suggestReply(
+      {
+        summary,
+        author: String(body.author || '').slice(0, 200),
+        platform: String(body.platform || '').slice(0, 80),
+        sentiment: String(body.sentiment || 'mixed').toLowerCase(),
+        productName,
       },
       env,
       { runner, cwd: REPO_ROOT },
@@ -3887,12 +4170,13 @@ app.post('/api/runs/bulk', express.json({ limit: '512kb' }), async (req, res) =>
 
   const finalizeItem = (item, run) => {
     item.status = run ? run.status : 'error';
-    item.posts = run ? extractSocialPostPaths(run.output) : [];
+    const safeOutput = run ? safeRunOutput(run) : '';
+    item.posts = run ? extractSocialPostPaths(safeOutput) : [];
     // Capture the (already-redacted) run output so the bulk summary can
     // inline the post body even if no `social-posts/*.md` file was written
     // — and so the bulk report is fully self-contained (no cross-file
     // links that may or may not resolve in the user's markdown viewer).
-    item.output = run ? (run.output || '') : '';
+    item.output = safeOutput;
     if (run && run.status !== 'success' && !item.error) {
       item.error = `Run exited with status: ${run.status}`;
     }
@@ -4079,7 +4363,7 @@ app.get('/api/runs/:id/stream', (req, res) => {
   });
   res.flushHeaders();
   if (run.output) {
-    res.write(`data: ${JSON.stringify({ chunk: run.output })}\n\n`);
+    res.write(`data: ${JSON.stringify({ chunk: safeRunOutput(run) })}\n\n`);
   }
   if (run.status !== 'running') {
     res.write(`event: done\ndata: ${JSON.stringify({ status: run.status })}\n\n`);
@@ -4141,10 +4425,20 @@ async function ensureBrowserForPreflight(run, port) {
   );
   try {
     const launcher = path.join(BROWSER_SCAN_DIR, 'launch-edge.mjs');
+    // Default the auto-launched dedicated-profile browser to Edge so the
+    // preflight never attaches to (or wakes) the user's everyday default
+    // browser — that's the recurring source of "connected but couldn't read
+    // tabs" hangs when the default is a heavily-loaded Chrome. The launcher
+    // treats SCOUT_BROWSER as a SOFT preference and falls back to the OS
+    // default if the chosen browser isn't installed. Override by exporting
+    // SCOUT_BROWSER before starting the web UI server.
+    const preferredBrowser = (process.env.SCOUT_BROWSER || 'Microsoft Edge').trim();
+    pushRunOutput(run, `[browser-scan] Auto-launching ${preferredBrowser} (dedicated CDP profile).\n`);
     const child = spawn(process.execPath, [launcher, '--port', String(port)], {
       cwd: REPO_ROOT,
       detached: true,
       stdio: 'ignore',
+      env: { ...process.env, SCOUT_BROWSER: preferredBrowser },
     });
     child.unref();
   } catch (err) {
@@ -4414,7 +4708,7 @@ app.post('/api/browser-scan/scan', async (req, res) => {
   const args = [path.join(BROWSER_SCAN_DIR, 'index.mjs'), 'scan', '--slug', slug];
   if (port) { args.push('--port', String(Number(port))); }
   if (Array.isArray(platforms) && platforms.length) {
-    const valid = platforms.filter((p) => ['x', 'linkedin', 'reddit', 'google'].includes(p));
+    const valid = platforms.filter((p) => ['x', 'linkedin', 'reddit', 'google', 'content-sites'].includes(p));
     if (valid.length) args.push('--platforms', valid.join(','));
   }
   // Optional date-range scope. Clamp to a sane 1..365 day window.
