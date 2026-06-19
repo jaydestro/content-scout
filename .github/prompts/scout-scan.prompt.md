@@ -26,23 +26,47 @@ Run a content scan using the Content Scout agent.
 > `reports/{stamp}-{slug}-content.md` file written this turn is a FAILED
 > run, regardless of what any background agent does afterward.
 
-> **Speed — batch independent calls.** Per-source fetches are independent.
-> Inside a single tool turn, issue them in **parallel** (multiple
-> `fetch_webpage` / `run_in_terminal` calls in the same response) whenever
-> the next step doesn't depend on the previous result. Concretely, you can
-> fan out in parallel: Brave search per source, RSS feed pulls, GitHub API
-> queries, HN Algolia, DEV/Medium tags, Bluesky `app.bsky.feed.searchPosts`,
-> Stack Overflow, YouTube. Sequential is only required when you actually
-> need a previous result (e.g., reading a sidecar produced by a terminal
-> call). This typically cuts scan wall-clock by 4–8×.
+> **Speed — fan out independent calls in parallel (default).** Per-source
+> fetches are independent, so **by default** issue them in **parallel** inside
+> a single tool turn (multiple `fetch_webpage` / `run_in_terminal` calls in the
+> same response) — never one-at-a-time when the next step doesn't depend on the
+> previous result. Fan out in parallel: Brave search per source, RSS feed
+> pulls, GitHub API queries, HN Algolia, DEV/Medium tags, Bluesky
+> `app.bsky.feed.searchPosts`, Stack Overflow, YouTube. Sequential is only
+> required when you actually need a previous result (e.g., reading a sidecar
+> produced by a terminal call). This typically cuts scan wall-clock by 4–8×.
+>
+> **Gate and dedup before you fetch full content.** Order the work so the cheap
+> filters run first: (1) date-gate on the snippet/timestamp, (2) dedup against
+> `reports/.seen-links.json`, (3) relevancy snippet-check — and only THEN fetch
+> the full article/thread body for the survivors. Never fetch-then-discard: do
+> not pull a full page for an item that already fails the date, dedup, or
+> relevancy gate on metadata alone. This keeps the most expensive operation
+> (full-body fetch + read) off items you were going to drop anyway.
 
-> **Subagent dispatch (if available).** If your runtime exposes a
-> `runSubagent`-style tool that returns the child's full output back to
-> the caller, you may fan out one subagent per source family (e.g., one
-> for "social: Bluesky+X+LinkedIn+Reddit", one for "blogs: DEV+Medium+RSS",
-> one for "code: GitHub+HN+Stack Overflow") and merge their findings.
-> Never fire-and-forget — only use subagents when their result text comes
-> back to you for inclusion in the final report.
+> **Subagent dispatch (default when a returning dispatch tool is available).**
+> If your runtime exposes a `runSubagent`-style tool that returns the child's
+> full output back to the caller, **prefer it** — fan out one subagent per
+> source family and merge their findings:
+> - **social** → Bluesky + X + LinkedIn + Reddit
+> - **blogs** → DEV + Medium + RSS + open-web Brave
+> - **code** → GitHub + HN + Stack Overflow
+>
+> This is both faster (families run concurrently) and the best way to **keep
+> context**: each child reasons in its **own fresh context window**, applies the
+> date/dedup/relevancy gates itself, and returns only a **compact digest of the
+> qualified survivors** (title, URL, date, source, score, 1–2 line why) — NOT
+> raw payloads. The parent merges digests, so the parent's context never fills
+> with discarded candidates. Give each child the same config rules (search
+> terms, date window, quality filter, drop rules) so its gating matches a
+> single-session run.
+>
+> **Guardrails (unchanged).** Never fire-and-forget — only use subagents whose
+> result text comes back to you **this turn** for inclusion in the final
+> report. If the only available dispatch tool returns an `agent_id` and exits
+> (results delivered via a separate channel later), do NOT use it — fall back to
+> the inline parallel scan above. The run is not complete until a
+> `reports/{stamp}-{slug}-content.md` file is written this turn.
 
 ## Instructions
 
