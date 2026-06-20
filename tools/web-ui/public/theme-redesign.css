@@ -1,8 +1,8 @@
 /* =============================================================================
-   Content Scout — "Slate" redesign
-   A flat, minimal, restrained interface. No gradients, no glass blur, no glow
-   shadows, no gradient text, no icon chips. Hairline borders, flat surfaces,
-   calm spacing, crisp typography, one accent used sparingly.
+   Content Scout — GitHub (Primer) redesign
+   Flat, utilitarian, GitHub-style. Canvas surfaces (#0d1117 / #fff), hairline
+   borders (#30363d / #d0d7de), blue links/accent, green primary buttons, 6px
+   radii, system font stack. No gradients, glass, or glow.
    Loads LAST — wins the cascade. CSS-only; all JS hooks preserved.
    ========================================================================== */
 
@@ -13,47 +13,52 @@
    ========================================================================== */
 
 html[data-theme] {
-  /* Surfaces — flat, neutral, near-black */
-  --bg: #0b0b0e;
-  --bg-2: #0f0f13;
-  --panel: #131317;
-  --panel-2: #18181d;
-  --panel-3: #1f1f25;
-  --panel-4: #26262d;
+  /* Surfaces — GitHub Primer dark (canvas) */
+  --bg: #0d1117;          /* canvas.default */
+  --bg-2: #161b22;        /* canvas.subtle / sidebar */
+  --panel: #0d1117;       /* .Box bg (border does the work) */
+  --panel-2: #161b22;     /* insets / table header band */
+  --panel-3: #21262d;     /* hover / neutral button */
+  --panel-4: #30363d;
 
-  /* Hairline borders */
-  --border: #232329;
-  --border-strong: #313139;
+  /* Borders */
+  --border: #30363d;      /* border.default */
+  --border-strong: #444c56;
 
   /* Text */
-  --text: #ececee;
-  --muted: #87878f;
-  --muted-2: #b6b6be;
+  --text: #e6edf3;        /* fg.default */
+  --muted: #8b949e;       /* fg.muted */
+  --muted-2: #c9d1d9;
 
-  /* Single restrained accent (indigo) — used sparingly */
-  --accent: #6366f1;
-  --accent-hover: #818cf8;
-  --accent-strong: #4f46e5;
-  --accent-soft: rgba(99, 102, 241, 0.13);
-  --accent-ring: rgba(99, 102, 241, 0.4);
-  --accent-2: #6366f1;
-  --accent-2-hover: #818cf8;
-  --hi: #6366f1;
-  --hi-soft: rgba(99, 102, 241, 0.13);
-  --danger: #f06d6d;
-  --success: #4ade80;
+  /* Accent = GitHub blue (links, focus, active) */
+  --accent: #2f81f7;      /* accent.fg */
+  --accent-hover: #58a6ff;
+  --accent-strong: #1f6feb;
+  --accent-soft: rgba(56, 139, 253, 0.15);
+  --accent-ring: rgba(56, 139, 253, 0.4);
+  --accent-2: #2f81f7;
+  --accent-2-hover: #58a6ff;
+  --hi: #2f81f7;
+  --hi-soft: rgba(56, 139, 253, 0.15);
+  --danger: #f85149;
+  --success: #3fb950;
 
-  /* Geometry — small, consistent radii */
+  /* Primary action = GitHub green */
+  --primary: #238636;
+  --primary-hover: #2ea043;
+  --primary-border: rgba(240, 246, 252, 0.1);
+
+  /* Geometry — GitHub uses 6px almost everywhere */
   --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 10px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
   --radius-xl: 12px;
-  --radius: 8px;
+  --radius: 6px;
 
-  /* Elevation — barely-there */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32);
-  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.34);
-  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
+  /* Elevation — dark mode is nearly flat */
+  --shadow-sm: 0 0 0 0 transparent;
+  --shadow-md: 0 1px 3px rgba(1, 4, 9, 0.5);
+  --shadow-lg: 0 8px 24px rgba(1, 4, 9, 0.7);
   --ring: 0 0 0 3px var(--accent-ring);
 
   /* Kill legacy gradient tokens (flatten anything still referencing them) */
@@ -66,35 +71,40 @@ html[data-theme] {
 }
 
 html[data-theme="light"] {
-  --bg: #fbfbfc;
-  --bg-2: #f5f5f7;
+  /* GitHub Primer light (canvas) */
+  --bg: #ffffff;          /* canvas.default */
+  --bg-2: #f6f8fa;        /* canvas.subtle / sidebar */
   --panel: #ffffff;
-  --panel-2: #f6f6f8;
-  --panel-3: #eeeef1;
-  --panel-4: #e5e5e9;
+  --panel-2: #f6f8fa;     /* insets / table header band */
+  --panel-3: #eaeef2;     /* hover */
+  --panel-4: #d0d7de;
 
-  --border: #e6e6ea;
-  --border-strong: #d3d3da;
+  --border: #d0d7de;      /* border.default */
+  --border-strong: #afb8c1;
 
-  --text: #18181b;
-  --muted: #71717a;
-  --muted-2: #43434b;
+  --text: #1f2328;        /* fg.default */
+  --muted: #656d76;       /* fg.muted */
+  --muted-2: #424a53;
 
-  --accent: #4f46e5;
-  --accent-hover: #4338ca;
-  --accent-strong: #4338ca;
-  --accent-soft: rgba(79, 70, 229, 0.09);
-  --accent-ring: rgba(79, 70, 229, 0.28);
-  --accent-2: #4f46e5;
-  --accent-2-hover: #4338ca;
-  --hi: #4f46e5;
-  --hi-soft: rgba(79, 70, 229, 0.09);
-  --danger: #dc2626;
-  --success: #16a34a;
+  --accent: #0969da;      /* accent.fg */
+  --accent-hover: #0a5cc7;
+  --accent-strong: #0550ae;
+  --accent-soft: rgba(9, 105, 218, 0.1);
+  --accent-ring: rgba(9, 105, 218, 0.3);
+  --accent-2: #0969da;
+  --accent-2-hover: #0a5cc7;
+  --hi: #0969da;
+  --hi-soft: rgba(9, 105, 218, 0.1);
+  --danger: #cf222e;
+  --success: #1a7f37;
 
-  --shadow-sm: 0 1px 2px rgba(16, 16, 20, 0.06);
-  --shadow-md: 0 2px 8px rgba(16, 16, 20, 0.08);
-  --shadow-lg: 0 12px 30px rgba(16, 16, 20, 0.14);
+  --primary: #1f883d;
+  --primary-hover: #1a7f37;
+  --primary-border: rgba(31, 35, 40, 0.15);
+
+  --shadow-sm: 0 1px 0 rgba(31, 35, 40, 0.04);
+  --shadow-md: 0 3px 6px rgba(140, 149, 159, 0.15);
+  --shadow-lg: 0 8px 24px rgba(140, 149, 159, 0.2);
 
   --brand-gradient: var(--accent);
   --gradient-accent: var(--accent);
@@ -114,7 +124,9 @@ html[data-theme] body {
   margin: 0 !important;
   background: var(--bg) !important;
   color: var(--text);
-  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
+    Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  font-size: 14px;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -495,25 +507,36 @@ nav[aria-label="Primary"] .help-nav-btn {
   letter-spacing: -0.02em;
 }
 
-/* Buttons — solid accent primary, bordered secondary */
-.btn-primary,
-.primary,
-button.primary,
-.btn.primary {
-  background: var(--accent) !important;
-  border: 1px solid var(--accent) !important;
+/* Buttons — GitHub green primary, bordered neutral secondary.
+   Scoped under html[data-theme] to out-rank theme-production.css's
+   html[data-theme="dark"] .btn-primary { background: none !important } rule. */
+html[data-theme] .btn-primary,
+html[data-theme] .primary,
+html[data-theme] button.primary,
+html[data-theme] .btn.primary,
+html[data-theme] .dash-hero-actions .btn-primary,
+html[data-theme] .dash-hero-actions button:first-child,
+html[data-theme] button[type="submit"]:not(.secondary) {
+  background: var(--primary) !important;
+  background-color: var(--primary) !important;
+  background-image: none !important;
+  border: 1px solid var(--primary-border) !important;
   color: #fff !important;
   border-radius: var(--radius-sm) !important;
   box-shadow: none !important;
   font-weight: 550;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
 }
-.btn-primary:hover,
-.primary:hover,
-button.primary:hover,
-.btn.primary:hover {
-  background: var(--accent-hover) !important;
-  border-color: var(--accent-hover) !important;
+html[data-theme] .btn-primary:hover,
+html[data-theme] .primary:hover,
+html[data-theme] button.primary:hover,
+html[data-theme] .btn.primary:hover,
+html[data-theme] .dash-hero-actions .btn-primary:hover,
+html[data-theme] .dash-hero-actions button:first-child:hover,
+html[data-theme] button[type="submit"]:not(.secondary):hover {
+  background: var(--primary-hover) !important;
+  background-color: var(--primary-hover) !important;
+  border-color: var(--primary-border) !important;
   transform: none !important;
 }
 
