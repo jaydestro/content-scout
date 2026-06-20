@@ -68,6 +68,8 @@ html[data-theme] {
   --glass-line: var(--border);
 
   --sidebar-w: 240px;
+  --header-h: 54px;
+  --nav-underline: #fd8c73;
 }
 
 html[data-theme="light"] {
@@ -110,16 +112,18 @@ html[data-theme="light"] {
   --gradient-accent: var(--accent);
   --glass: var(--bg-2);
   --glass-line: var(--border);
+  --nav-underline: #fd8c73;
 }
 
 /* ============================================================================
-   2. APP SHELL — flat sidebar + content, no washes, no blur
+   2. APP SHELL — GitHub-style top nav bar + content, no washes, no blur
    ========================================================================== */
 
 html[data-theme] body {
   display: grid !important;
-  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) !important;
-  grid-template-rows: 100vh !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: var(--header-h) minmax(0, 1fr) !important;
+  grid-template-areas: none !important;
   min-height: 100vh;
   margin: 0 !important;
   background: var(--bg) !important;
@@ -135,34 +139,51 @@ html[data-theme] body {
   position: absolute !important;
 }
 
-/* ---- Sidebar -------------------------------------------------------------- */
-.site-header {
+/* ---- Top nav bar (GitHub-style) ------------------------------------------ */
+html[data-theme] .site-header {
   grid-row: 1;
   grid-column: 1;
+  grid-area: auto !important;
   position: sticky;
   top: 0;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding: 18px 12px 14px;
+  height: var(--header-h);
+  display: flex !important; /* beat theme-polish's display: contents */
+  flex-direction: row;
+  align-items: stretch;
+  gap: 16px;
+  padding: 0 16px;
   background: var(--bg-2) !important;
-  border-right: 1px solid var(--border);
+  border-right: 0 !important;
+  border-bottom: 1px solid var(--border);
   box-shadow: none !important;
-  overflow: hidden;
-  z-index: 20;
+  overflow: visible;
+  z-index: 30;
+}
+html[data-theme] .site-header::after,
+html[data-theme] .site-header::before {
+  content: none !important;
 }
 
-/* Brand row */
+/* Brand (left of the bar) */
 .site-header .banner {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 4px 8px 14px;
-  margin: 0 0 10px;
-  border-bottom: 1px solid var(--border);
+  gap: 9px;
+  padding: 0;
+  margin: 0;
+  border-bottom: 0;
+  flex: 0 0 auto;
+  width: auto;
+  position: static;
+  background: none;
+  box-shadow: none;
+  grid-area: auto !important;
   text-decoration: none;
   color: var(--text);
+}
+.site-header .banner::after,
+.site-header .banner::before {
+  content: none !important;
 }
 .site-header .banner-logo {
   width: 30px;
@@ -188,35 +209,50 @@ html[data-theme] body {
   line-height: 1.2;
 }
 .site-header .banner-tagline {
-  display: block;
-  font-size: 0.68rem;
-  line-height: 1.3;
-  color: var(--muted);
-  font-weight: 450;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: none; /* keep the top bar to a single tidy row */
 }
 
-.site-header .header-bar {
+html[data-theme] .site-header .header-bar {
+  grid-area: auto !important;
+  position: static !important;
+  align-self: auto !important;
+  height: auto !important;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
   flex: 1 1 auto;
-  min-height: 0;
-  gap: 0;
+  min-width: 0;
+  gap: 8px;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: none !important;
+  border-right: 0 !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+html[data-theme] .site-header .header-bar::after {
+  content: none !important;
 }
 
-/* ---- Primary nav — flat rows, subtle active ------------------------------ */
-nav[aria-label="Primary"] {
+/* ---- Primary nav — horizontal GitHub underline tabs ---------------------- */
+html[data-theme] .site-header .header-bar > nav,
+html[data-theme] .site-header nav[aria-label="Primary"] {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: stretch;
   gap: 2px;
   flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 2px 0;
+  min-width: 0;
+  width: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0;
   margin: 0;
+  background: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  box-sizing: border-box;
 }
 
 nav[aria-label="Primary"] > button,
@@ -224,18 +260,22 @@ nav[aria-label="Primary"] .help-nav-btn {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 36px;
-  padding: 7px 10px;
+  justify-content: center;
+  gap: 8px;
+  width: auto;
+  flex: none;
+  height: 100%;
+  min-height: 40px;
+  padding: 0 10px;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: 0;
   background: transparent;
   color: var(--muted-2);
-  font-size: 0.84rem;
+  font-size: 0.875rem;
   font-weight: 500;
-  letter-spacing: -0.005em;
-  text-align: left;
+  letter-spacing: 0;
+  text-align: center;
+  white-space: nowrap;
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
@@ -268,27 +308,33 @@ nav[aria-label="Primary"] .help-nav-btn:hover {
 }
 nav[aria-label="Primary"] > button:hover .icon,
 nav[aria-label="Primary"] .help-nav-btn:hover .icon {
-  color: var(--muted-2);
+  color: var(--text);
 }
 
+/* Active — GitHub UnderlineNav: bold label, neutral fill, orange bottom bar */
+html[data-theme] nav[aria-label="Primary"] button.active,
 nav[aria-label="Primary"] > button.active {
-  background: var(--panel-2);
+  background: transparent;
   color: var(--text);
-  font-weight: 560;
+  font-weight: 600;
 }
 nav[aria-label="Primary"] > button.active .icon {
-  color: var(--accent);
+  color: var(--text);
 }
-/* thin accent indicator on active */
+/* orange underline indicator on active (Primer UnderlineNav), sits on the
+   header's bottom border — scoped to out-specify theme-production.css */
+html[data-theme] nav[aria-label="Primary"] button.active::after,
 nav[aria-label="Primary"] > button.active::after {
   content: "";
   position: absolute;
-  left: 0;
-  top: 7px;
-  bottom: 7px;
-  width: 2px;
-  border-radius: 2px;
-  background: var(--accent);
+  left: 8px;
+  right: 8px;
+  bottom: -1px;
+  top: auto;
+  width: auto;
+  height: 2px;
+  border-radius: 6px 6px 0 0;
+  background: var(--nav-underline);
 }
 
 nav[aria-label="Primary"] > button:focus-visible,
@@ -297,16 +343,18 @@ nav[aria-label="Primary"] .help-nav-btn:focus-visible {
   outline-offset: -2px;
 }
 
-/* ---- Command-palette button: flat search field at top -------------------- */
+/* ---- Command-palette button: compact search field on the right ----------- */
 button#kbd-hint.nav-kbd {
-  order: -2;
+  order: 10;
+  align-self: center;
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
-  min-height: 34px;
-  margin: 0 0 8px;
-  padding: 6px 10px;
+  width: auto;
+  min-width: 120px;
+  min-height: 30px;
+  margin: 0 0 0 auto;
+  padding: 4px 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--panel-2);
@@ -350,26 +398,31 @@ button#kbd-hint .kbd-hint-keys kbd {
   display: none !important;
 }
 nav[aria-label="Primary"] .help-nav-btn {
-  order: 5;
-  margin-top: 4px;
+  order: 11;
+  margin-top: 0;
 }
 
-/* ---- Footer actions ------------------------------------------------------- */
-.header-actions {
-  margin-top: auto;
+/* ---- Right-side actions (theme toggle, status) --------------------------- */
+html[data-theme] .site-header .header-actions {
+  margin: 0;
+  align-self: center;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
   gap: 8px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
+  padding-top: 0;
+  border-top: 0;
+  flex: none;
 }
-.theme-toggle {
+html[data-theme] .site-header .header-actions .theme-toggle {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
-  min-height: 34px;
-  padding: 7px 10px;
+  width: auto;
+  height: auto;
+  min-height: 30px;
+  margin: 0;
+  padding: 6px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--panel);
@@ -397,10 +450,10 @@ nav[aria-label="Primary"] .help-nav-btn {
 
 /* ---- Main content --------------------------------------------------------- */
 #main-content {
-  grid-row: 1;
-  grid-column: 2;
+  grid-row: 2;
+  grid-column: 1;
   min-width: 0;
-  height: 100vh;
+  height: calc(100vh - var(--header-h));
   overflow-y: auto;
   background: var(--bg);
   padding: clamp(20px, 3.2vw, 40px) clamp(18px, 3.4vw, 44px) 64px;
@@ -817,7 +870,7 @@ select:focus-visible {
 }
 
 /* ============================================================================
-   4. RESPONSIVE — collapse sidebar to a top bar under 900px
+   4. RESPONSIVE — stack the top bar on narrow screens
    ========================================================================== */
 @media (max-width: 900px) {
   html[data-theme] body {
@@ -828,40 +881,38 @@ select:focus-visible {
     position: static;
     height: auto;
     flex-direction: column;
-    border-right: 0;
+    align-items: stretch;
+    gap: 8px;
     border-bottom: 1px solid var(--border);
     padding: 12px;
   }
   .site-header .banner {
-    margin-bottom: 8px;
-    padding-bottom: 10px;
+    margin-bottom: 0;
+    padding-bottom: 0;
+  }
+  .site-header .header-bar {
+    flex-direction: row;
   }
   nav[aria-label="Primary"] {
     flex-direction: row;
     overflow-x: auto;
     overflow-y: hidden;
     gap: 4px;
-    padding-bottom: 4px;
+    padding-bottom: 0;
   }
   nav[aria-label="Primary"] > button {
     width: auto;
     flex: none;
+    min-height: 38px;
   }
   nav[aria-label="Primary"] > button .nav-label,
   nav[aria-label="Primary"] .help-nav-btn .nav-label {
     display: none;
   }
-  nav[aria-label="Primary"] > button.active::after {
-    top: auto;
-    bottom: 0;
-    left: 7px;
-    right: 7px;
-    width: auto;
-    height: 2px;
-  }
   button#kbd-hint.nav-kbd {
     order: 0;
     width: auto;
+    min-width: 0;
     margin: 0;
   }
   button#kbd-hint .kbd-hint-keys {
@@ -875,7 +926,7 @@ select:focus-visible {
     align-items: center;
     border-top: 0;
     padding-top: 0;
-    margin-top: 8px;
+    margin-top: 0;
   }
   .theme-toggle {
     width: auto;
