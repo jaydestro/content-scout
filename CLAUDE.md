@@ -81,6 +81,7 @@ When reading prompt files, the `${{input:...}}` placeholders are VS Code syntax.
 6. Tag every item with canonical topic tags from config
 7. Update `.seen-links.json` after saving any report
 8. Generate social posts/thumbnails only when the user explicitly asks — never by default during a scan
+9. Validate every URL before presenting it — confirm it is real, reachable content (run `node tools/validate-urls.mjs`, or call `tools/lib/url-validate.mjs`). Drop or replace any `DEAD` link (404/410, malformed, or a known-broken shape like a LinkedIn `/feed/sdui-post/` permalink); prefer canonical sources over aggregators. If an item has no navigable public link, say so plainly rather than shipping a dead link. This applies to every surface — reports, social posts, calendars, and chat answers.
 
 ## Browser-scan tool (X / LinkedIn / Reddit, first-class Layer 0)
 

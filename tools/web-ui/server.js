@@ -19,6 +19,7 @@ import { suggestReply, getReplyProvider } from './lib/reply-suggest.js';
 import { searchCorpus } from '../lib/corpus-search.mjs';
 import { extractDocMeta } from '../lib/doc-meta.mjs';
 import { responseCache } from '../lib/response-cache.mjs';
+import { probeUrl } from '../lib/url-validate.mjs';
 import {
   runSeoAudit,
   extractSeoSnapshot,
@@ -3037,42 +3038,9 @@ app.get('/api/conversations/reasons', (_req, res) => {
 // see it anonymously). Aggressively short timeout so we never block the UI.
 const _urlCheckCache = new Map(); // url -> { at, ok, status }
 const URL_CHECK_TTL_MS = 60 * 60 * 1000; // 1h
-const URL_CHECK_TIMEOUT_MS = 6000;
-async function probeUrl(url) {
-  const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), URL_CHECK_TIMEOUT_MS);
-  // Browser-shaped UA: some hosts (notably x.com / bsky.app / linkedin.com)
-  // return 403/404 to "compatible;" bot UAs even on GET. Pretend to be a
-  // recent Chromium so liveness probes match what a user would actually see.
-  const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
-  try {
-    let r = await fetch(url, {
-      method: 'HEAD',
-      redirect: 'follow',
-      signal: ac.signal,
-      headers: { 'user-agent': ua, accept: '*/*' },
-    });
-    // Many SPAs (bsky.app, some LinkedIn routes, x.com) return 404 to HEAD
-    // even though the page renders 200 on GET. 4xx that *might* be the
-    // server lying about HEAD support gets a second-chance GET.
-    if (r.status === 404 || r.status === 405 || r.status === 410 || r.status === 501 || r.status === 403) {
-      // Try GET — some hosts block HEAD or return 403/404 to it.
-      r = await fetch(url, {
-        method: 'GET',
-        redirect: 'follow',
-        signal: ac.signal,
-        headers: { 'user-agent': ua, accept: 'text/html,*/*' },
-      });
-    }
-    const s = r.status;
-    const ok = (s >= 200 && s < 400) || s === 401 || s === 403 || s === 429;
-    return { ok, status: s };
-  } catch (err) {
-    return { ok: false, status: 0, error: String(err && err.message || err) };
-  } finally {
-    clearTimeout(t);
-  }
-}
+// probeUrl (HEAD→GET liveness, browser UA, short timeout) lives in the shared
+// tools/lib/url-validate.mjs so the server, the validate-urls CLI, and any
+// agent/scan flow all agree on what "reachable" means.
 app.get('/api/check-url', async (req, res) => {
   const raw = String(req.query.u || '').trim();
   if (!raw) return res.status(400).json({ error: 'u: required' });

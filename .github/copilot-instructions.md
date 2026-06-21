@@ -66,6 +66,7 @@ Read the corresponding prompt file for each command's detailed flow. Ignore VS C
 4. Deduplicate against `reports/.seen-links.json`
 5. Number items sequentially, tag with canonical topic tags
 6. Generate social posts/thumbnails only when the user explicitly asks — never by default during a scan
+7. Validate every URL before presenting it — confirm it is real, reachable content (run `node tools/validate-urls.mjs`, or call `tools/lib/url-validate.mjs`). Drop or replace any `DEAD` link (404/410, malformed, or a known-broken shape like a LinkedIn `/feed/sdui-post/` permalink); prefer canonical sources over aggregators. If an item has no navigable public link, say so plainly rather than shipping a dead link. Applies to every surface — reports, social posts, calendars, and chat answers.
 
 ## Browser-scan (optional Layer 0 for X / LinkedIn / Reddit)
 

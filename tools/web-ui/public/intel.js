@@ -2139,7 +2139,11 @@
           } else if (sampleHasKey) {
             sampleLink = `<a href="#conversations" class="dash-link" data-conv-key="${esc(sample.key)}" title="Open in Conversations (no public source link available)">${sampleLabel}</a>`;
           } else {
-            sampleLink = sampleLabel;
+            // No navigable post URL, no author profile, no tracked conversation.
+            // Be honest rather than shipping a dead link: show the text plus a
+            // muted tag so the user understands why there's nothing to click
+            // (common for LinkedIn SDUI posts that hide their public permalink).
+            sampleLink = `${sampleLabel} <span class="dash-plat-nolink" title="This platform didn't expose a shareable public link for the post">no public link</span>`;
           }
           const sampleHtml = sample
             ? `<div class="dash-plat-sample">
@@ -2177,8 +2181,8 @@
         return m ? m[1] : '';
       };
       const needsHtml = needs.length
-        ? `<details class="dash-needs-card" ${needs.length <= 3 ? 'open' : ''}>
-            <summary><strong>Needs reply</strong> <span class="hint">${needs.length} item${needs.length === 1 ? '' : 's'}</span></summary>
+        ? `<details class="dash-needs-card" open>
+            <summary><span class="dash-needs-label">Needs reply</span> <span class="dash-needs-count">${needs.length}</span></summary>
             ${needs.slice(0, 5).map((c, i) => {
               const tone = c.sentiment === 'negative' ? 'critical' : 'mixed';
               const hasUrl = isValidPostUrl(c.url);
@@ -2209,12 +2213,14 @@
             }).join('')}
             ${needs.length > 5 ? `<button type="button" class="dash-needs-viewall">View all ${needs.length} →</button>` : ''}
           </details>`
-        : '';
+        : `<div class="dash-needs-card dash-needs-empty">
+            <div class="dash-needs-empty-head"><span class="dash-needs-label">Needs reply</span></div>
+            <p class="dash-needs-empty-msg">Nothing flagged in this window — no critical or mixed-sentiment posts to respond to. You're caught up.</p>
+          </div>`;
 
-      host.innerHTML =
-        (platformRows ? `<div class="dash-plat-grid">${platformRows}</div>` : '') +
-        needsHtml ||
-        '<p class="hint">No platform-specific conversations parsed yet.</p>';
+      host.innerHTML = platformRows
+        ? `<div class="dash-plat-grid">${platformRows}</div>${needsHtml}`
+        : `${needsHtml}<p class="hint">No platform-specific conversations parsed yet.</p>`;
 
       // Background liveness probe: walk every `data-check-url` we just
       // rendered, probe in the background, and downgrade dead links to

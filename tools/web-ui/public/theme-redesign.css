@@ -1095,3 +1095,318 @@ select:focus-visible {
     padding: 20px 16px 48px;
   }
 }
+
+/* ============================================================================
+   3c. COMMUNITY SIGNALS — reimagined (freshness-first, actionable inbox)
+   Overrides theme-modern.css's social-activity card. Loads last, so these
+   win without !important except where theme-production/compact use it.
+   Goals: (1) freshness is the loudest signal so cards never feel stale,
+   (2) "Needs reply" is an always-visible inbox, (3) platform rows are calm,
+   scannable list items, (4) honest "no public link" affordance for posts
+   with no validated permalink.
+   ========================================================================== */
+
+/* --- Signal strip: 4 metric tiles, freshness emphasized ----------------- */
+html[data-theme] #dash-social-summary .dash-signal-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+html[data-theme] #dash-social-summary .dash-signal-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 11px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+}
+html[data-theme] #dash-social-summary .dash-signal-metric strong {
+  font-size: 1.18rem;
+  font-weight: 660;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+html[data-theme] #dash-social-summary .dash-signal-metric span {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+/* Freshness tile = the headline. Tier-colored left bar + dot so the user
+   can tell at a glance whether the card reflects current chatter. */
+html[data-theme] #dash-social-summary .dash-fresh-metric {
+  border-left-width: 3px;
+  border-left-style: solid;
+}
+html[data-theme] #dash-social-summary .dash-fresh-metric strong::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  margin-right: 6px;
+  vertical-align: middle;
+  background: currentColor;
+}
+html[data-theme] #dash-social-summary .dash-fresh-fresh  { border-left-color: #2da44e; }
+html[data-theme] #dash-social-summary .dash-fresh-fresh  strong { color: #3fb950; }
+html[data-theme] #dash-social-summary .dash-fresh-recent { border-left-color: #2f81f7; }
+html[data-theme] #dash-social-summary .dash-fresh-recent strong { color: #58a6ff; }
+html[data-theme] #dash-social-summary .dash-fresh-aging  { border-left-color: #bf8700; }
+html[data-theme] #dash-social-summary .dash-fresh-aging  strong { color: #d29922; }
+html[data-theme] #dash-social-summary .dash-fresh-stale  { border-left-color: #cf222e; }
+html[data-theme] #dash-social-summary .dash-fresh-stale  strong { color: #f85149; }
+html[data-theme] #dash-social-summary .dash-fresh-unknown { border-left-color: var(--border-strong); }
+
+/* --- Sentiment pills ----------------------------------------------------- */
+html[data-theme] #dash-social-summary .dash-sent-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+html[data-theme] #dash-social-summary .dash-sent-pills .pill {
+  cursor: pointer;
+  font-size: 0.74rem;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+}
+html[data-theme] #dash-social-summary .dash-sent-pills .pill:hover {
+  border-color: var(--border-strong);
+  background: var(--panel-2);
+}
+html[data-theme] #dash-social-summary .dash-sent-pills .pill:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+/* --- Platform grid: calm, scannable list rows --------------------------- */
+html[data-theme] #dash-social-activity .dash-plat-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+html[data-theme] #dash-social-activity .dash-plat-row {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+html[data-theme] #dash-social-activity .dash-plat-row:last-child {
+  border-bottom: 0;
+}
+html[data-theme] #dash-social-activity .dash-plat-row:hover {
+  background: var(--bg-2);
+}
+html[data-theme] #dash-social-activity .dash-plat-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+html[data-theme] #dash-social-activity .dash-plat-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted-2);
+  flex: none;
+}
+html[data-theme] #dash-social-activity .dash-plat-head strong {
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+html[data-theme] #dash-social-activity .dash-plat-total {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 660;
+  color: var(--text);
+}
+html[data-theme] #dash-social-activity .dash-plat-chip {
+  font-size: 0.68rem;
+  color: var(--muted);
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+html[data-theme] #dash-social-activity .dash-plat-sample {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 7px;
+  padding-left: 30px;
+  font-size: 0.8rem;
+  color: var(--muted-2);
+}
+html[data-theme] #dash-social-activity .dash-plat-sample .dash-link {
+  color: var(--accent-hover);
+}
+
+/* Honest "no public link" tag — muted, never looks clickable. */
+html[data-theme] #dash-social-activity .dash-plat-nolink {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 1px 6px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 999px;
+  cursor: help;
+  white-space: nowrap;
+}
+
+/* Freshness badge on each sample (per-post recency). */
+html[data-theme] #dash-social-activity .dash-fresh-badge {
+  font-size: 0.64rem;
+  font-weight: 600;
+  padding: 0 5px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+html[data-theme] #dash-social-activity .dash-fresh-badge.dash-fresh-fresh  { color: #3fb950; background: color-mix(in srgb, #2da44e 16%, transparent); }
+html[data-theme] #dash-social-activity .dash-fresh-badge.dash-fresh-recent { color: #58a6ff; background: color-mix(in srgb, #2f81f7 16%, transparent); }
+html[data-theme] #dash-social-activity .dash-fresh-badge.dash-fresh-aging  { color: #d29922; background: color-mix(in srgb, #bf8700 16%, transparent); }
+html[data-theme] #dash-social-activity .dash-fresh-badge.dash-fresh-stale  { color: #f85149; background: color-mix(in srgb, #cf222e 16%, transparent); }
+
+/* --- Needs reply: always-visible actionable inbox ----------------------- */
+html[data-theme] #dash-social-activity .dash-needs-card {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-2);
+  padding: 0;
+  overflow: hidden;
+}
+html[data-theme] #dash-social-activity .dash-needs-card > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  font-weight: 600;
+  -webkit-user-select: none;
+  user-select: none;
+}
+html[data-theme] #dash-social-activity .dash-needs-card > summary::-webkit-details-marker { display: none; }
+html[data-theme] #dash-social-activity .dash-needs-label {
+  font-size: 0.8rem;
+  font-weight: 640;
+  color: var(--text);
+}
+html[data-theme] #dash-social-activity .dash-needs-count {
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+html[data-theme] #dash-social-activity .dash-needs-row {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+}
+html[data-theme] #dash-social-activity .dash-needs-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+html[data-theme] #dash-social-activity .dash-needs-head strong { font-size: 0.82rem; }
+html[data-theme] #dash-social-activity .dash-needs-tone {
+  margin-left: auto;
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+html[data-theme] #dash-social-activity .dash-needs-tone.tone-critical { color: #f85149; background: color-mix(in srgb, #cf222e 16%, transparent); }
+html[data-theme] #dash-social-activity .dash-needs-tone.tone-mixed    { color: #d29922; background: color-mix(in srgb, #bf8700 16%, transparent); }
+html[data-theme] #dash-social-activity .dash-needs-summary {
+  margin: 5px 0 8px;
+  font-size: 0.82rem;
+  color: var(--muted-2);
+  line-height: 1.5;
+}
+html[data-theme] #dash-social-activity .dash-needs-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+html[data-theme] #dash-social-activity .dash-needs-help-btn {
+  cursor: pointer;
+  font-size: 0.74rem;
+  font-weight: 550;
+  padding: 4px 10px;
+  border: 1px solid var(--primary-border, var(--border-strong));
+  border-radius: var(--radius-sm);
+  background: var(--primary);
+  color: #fff;
+  transition: background 0.12s ease;
+}
+html[data-theme] #dash-social-activity .dash-needs-help-btn:hover { background: var(--primary-hover); }
+html[data-theme] #dash-social-activity .dash-needs-help-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+html[data-theme] #dash-social-activity .dash-needs-actions .dash-link {
+  font-size: 0.74rem;
+  color: var(--accent-hover);
+}
+html[data-theme] #dash-social-activity .dash-needs-viewall {
+  display: block;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  padding: 9px 12px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: var(--accent-hover);
+  font-size: 0.76rem;
+  font-weight: 550;
+}
+html[data-theme] #dash-social-activity .dash-needs-viewall:hover { background: var(--bg-2); }
+
+/* Caught-up empty state — calm, not a dead blank. */
+html[data-theme] #dash-social-activity .dash-needs-empty {
+  border-left-color: #2da44e;
+  padding: 11px 12px;
+}
+html[data-theme] #dash-social-activity .dash-needs-empty-head { margin-bottom: 3px; }
+html[data-theme] #dash-social-activity .dash-needs-empty-msg {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme] #dash-social-activity .dash-plat-row,
+  html[data-theme] #dash-social-summary .dash-sent-pills .pill,
+  html[data-theme] #dash-social-activity .dash-needs-help-btn {
+    transition: none;
+  }
+}
+
+@media (max-width: 560px) {
+  html[data-theme] #dash-social-summary .dash-signal-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+}
