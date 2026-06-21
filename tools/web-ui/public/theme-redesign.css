@@ -497,40 +497,93 @@ html[data-theme] .site-header .header-actions .theme-toggle {
   transform: none !important;
 }
 
-/* Hero — flat, no gradient washes or top bars */
-.dash-hero {
+/* ============================================================================
+   3b. DASHBOARD — reimagined (GitHub command-center layout)
+   - Hero becomes a borderless page header with a bottom hairline.
+   - Stat tiles get a colored top accent + big numerals.
+   - Section heads carry a trailing divider rule.
+   - Cards adopt the GitHub "Box" pattern: muted header band + bordered body.
+   All selectors preserve every #id / .class / data-* hook — CSS only.
+   ========================================================================== */
+
+/* --- Hero: page header, not a panel ------------------------------------- */
+html[data-theme] .dash-hero {
   position: relative;
-  overflow: hidden;
-  padding: clamp(20px, 2.6vw, 30px) clamp(20px, 2.8vw, 32px);
+  overflow: visible;
+  background: none !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--border) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  display: flex !important;
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 2px 0 20px !important;
+  margin: 2px 0 8px !important;
 }
 .dash-hero::before,
 .dash-hero::after {
   display: none !important;
 }
-.dash-hero h1,
-.dash-hero h2 {
+html[data-theme] .dash-hero > div {
+  min-width: 0;
+}
+html[data-theme] .dash-hero h1,
+html[data-theme] .dash-hero h2 {
   background: none !important;
   -webkit-text-fill-color: currentColor;
-  color: var(--text);
+  color: var(--text) !important;
+  font-size: clamp(1.45rem, 2.4vw, 1.95rem) !important;
+  font-weight: 650 !important;
+  line-height: 1.2 !important;
   letter-spacing: -0.02em;
+  margin: 0 0 4px !important;
 }
-
-/* Section heads — quiet, uppercase, no gradient ticks */
-.dash-section-head {
+html[data-theme] .dash-hero .hint,
+html[data-theme] .dash-hero #dash-hero-sub {
+  color: var(--muted) !important;
+  font-size: 0.9rem !important;
+  margin: 0 !important;
+}
+html[data-theme] .dash-hero-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* --- Section heads: label + trailing hairline rule ----------------------- */
+html[data-theme] .dash-section-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   font-size: 0.72rem;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
+  margin: 26px 0 12px;
 }
 .dash-section-head::before {
   display: none !important;
 }
+html[data-theme] .dash-section-head::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--border);
+}
 
-/* Stats — flat tiles, solid numbers */
+/* --- Stat tiles: colored top accent + display numerals ------------------- */
+html[data-theme] #dash-stats {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+  margin-bottom: 0 !important;
+}
 .stat,
 .dash-stats .stat {
   position: relative;
@@ -539,25 +592,131 @@ html[data-theme] .site-header .header-actions .theme-toggle {
   border-radius: var(--radius-md) !important;
   box-shadow: none !important;
   overflow: hidden;
-  transition: border-color 0.12s ease;
+  padding: 14px 16px !important;
+  transition: border-color 0.12s ease, transform 0.12s ease;
 }
+.dash-stats .stat:nth-child(1) { --tile-accent: var(--accent); }
+.dash-stats .stat:nth-child(2) { --tile-accent: #2da44e; }
+.dash-stats .stat:nth-child(3) { --tile-accent: #8957e5; }
+.dash-stats .stat:nth-child(4) { --tile-accent: #bf8700; }
 .stat::before,
 .dash-stats .stat::before {
-  display: none !important;
+  content: "" !important;
+  display: block !important;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  background: var(--tile-accent, var(--accent));
+  opacity: 0.85;
 }
 .stat:hover,
 .dash-stats .stat:hover {
   border-color: var(--border-strong) !important;
-  transform: none !important;
+  transform: translateY(-1px);
 }
 .stat-num,
 .stat .num,
+.dash-stats .stat-num,
 .dash-stats .stat .num {
   background: none !important;
   -webkit-text-fill-color: currentColor;
   color: var(--text) !important;
-  font-weight: 680;
+  font-size: 1.7rem !important;
+  font-weight: 700;
   letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.stat-label,
+.dash-stats .stat-label {
+  color: var(--muted) !important;
+  font-size: 0.7rem !important;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+
+/* --- Cards: GitHub "Box" pattern (header band + bordered body) ----------- */
+html[data-theme] #dash-body .card {
+  padding: 14px 16px !important;
+}
+html[data-theme] #dash-body .card > h3:first-child,
+html[data-theme] #dash-body .card > .dash-card-head:first-child,
+html[data-theme] #dash-body .card > .dash-social-activity-head:first-child {
+  margin: -14px -16px 12px !important;
+  padding: 9px 16px !important;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+  color: var(--text) !important;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+html[data-theme] #dash-body .card .dash-card-head h3,
+html[data-theme] #dash-body .card .dash-social-activity-head h3 {
+  margin: 0 !important;
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+}
+html[data-theme] #dash-body .card .dash-card-head .hint,
+html[data-theme] #dash-body .card .dash-social-activity-head .hint,
+html[data-theme] #dash-body .card .dash-card-head [class*="meta"],
+html[data-theme] #dash-body .card .dash-social-activity-head [class*="meta"] {
+  font-size: 0.72rem !important;
+  color: var(--muted) !important;
+  font-weight: 400;
+}
+
+/* Feature the latest-scan card with a leading accent bar. */
+html[data-theme] #dash-latest-report-card {
+  border-left: 3px solid var(--accent) !important;
+}
+
+/* --- Grids: 3-up intel row, 2-up event/next-steps rows ------------------- */
+html[data-theme] #dash-intel-cards {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 14px !important;
+}
+html[data-theme] .cards.dash-row-2 {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 14px !important;
+}
+
+/* --- Dashboard responsive reflow ---------------------------------------- */
+@media (max-width: 1100px) {
+  html[data-theme] #dash-intel-cards {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+@media (max-width: 820px) {
+  html[data-theme] .dash-hero {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  html[data-theme] .dash-hero-actions {
+    width: 100%;
+  }
+  html[data-theme] #dash-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  html[data-theme] #dash-intel-cards,
+  html[data-theme] .cards.dash-row-2 {
+    grid-template-columns: 1fr !important;
+  }
+}
+@media (max-width: 460px) {
+  html[data-theme] #dash-stats {
+    grid-template-columns: 1fr 1fr !important;
+  }
 }
 
 /* Buttons — GitHub green primary, bordered neutral secondary.
