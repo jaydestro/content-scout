@@ -84,7 +84,6 @@
 
     const info = await fetchInfo();
     const launchBtn = $('bs-launch-btn');
-    const scanBtn = $('bs-scan-btn');
     const refreshBtn = $('bs-refresh-btn');
     const authBtn = $('bs-auth-check-btn');
     const msg = $('bs-message');
@@ -95,7 +94,7 @@
         msg.innerHTML =
           `<span class="warn-text">tools/browser-scan/ is not installed in this checkout — Layer 0 is disabled.</span>`;
       }
-      [launchBtn, scanBtn, refreshBtn, authBtn].forEach((b) => { if (b) b.disabled = true; });
+      [launchBtn, refreshBtn, authBtn].forEach((b) => { if (b) b.disabled = true; });
       return;
     }
 
@@ -119,7 +118,6 @@
     }
 
     launchBtn?.addEventListener('click', () => onLaunchClick());
-    scanBtn?.addEventListener('click', () => onScanClick());
     refreshBtn?.addEventListener('click', () => refreshState(true));
     authBtn?.addEventListener('click', () => runAuthCheck());
 
@@ -231,7 +229,7 @@
             })
             .join(' · ');
       } else if (slug) {
-        sidecarEl.innerHTML = `No browser-scan sidecars yet for <code>${esc(slug)}</code>. Click "Force-rescan active subject" after signing in.`;
+        sidecarEl.innerHTML = `No browser-scan sidecars yet for <code>${esc(slug)}</code>. Run /scout-scan (with Force selected) after signing in to populate them.`;
       } else {
         sidecarEl.textContent = 'Pick a subject below to see its sidecar freshness.';
       }
@@ -249,43 +247,6 @@
     if (hidden && hidden.value && !hidden.value.includes(',')) return hidden.value;
     const firstCard = document.querySelector('#run-subject-list input[type="checkbox"][value]:not([value=""])');
     return firstCard?.value || '';
-  }
-
-  // Read the date-range preset from the form and convert it to a
-  // whole-number "days" lookback. The browser-scan CLI accepts --days N.
-  // Default: 30 days. Custom ranges → max(1, days between from and to).
-  function activeRangeDays() {
-    const presetEl = $('run-range-preset');
-    if (!presetEl) return 30;
-    const choice = presetEl.value || 'default';
-    if (choice === 'default') return 30;
-    if (choice === 'today') return 1;
-    if (choice === 'this-week') {
-      const now = new Date();
-      const day = now.getDay();
-      const elapsed = (day === 0 ? 6 : day - 1);
-      return Math.max(1, elapsed + 1);
-    }
-    if (choice === 'this-month') {
-      return new Date().getDate();
-    }
-    if (choice === 'last-month') {
-      const now = new Date();
-      const last = new Date(now.getFullYear(), now.getMonth(), 0);
-      return last.getDate() + now.getDate();
-    }
-    if (choice === 'custom') {
-      const from = $('run-range-from')?.value;
-      const to = $('run-range-to')?.value;
-      const now = new Date();
-      const f = from ? new Date(from) : null;
-      const t = to ? new Date(to) : now;
-      if (!f && !t) return 30;
-      const start = f || new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      const days = Math.ceil((now.getTime() - start.getTime()) / (24 * 60 * 60 * 1000));
-      return Math.max(1, days);
-    }
-    return 30;
   }
 
   async function runAuthCheck() {
@@ -364,43 +325,6 @@
         await refreshState(true);
         if (statusCache?.cdp?.up || tries > 15) clearInterval(fast);
       }, 2000);
-    } catch (err) {
-      if (msg) msg.innerHTML = `<span class="warn-text">${esc(err.message)}</span>`;
-    } finally {
-      if (btn) btn.disabled = false;
-    }
-  }
-
-  async function onScanClick() {
-    const slug = activeSubjectSlug();
-    const btn = $('bs-scan-btn');
-    const msg = $('bs-message');
-    if (!slug) {
-      if (msg) msg.innerHTML = `<span class="warn-text">Pick exactly one subject in the form below first.</span>`;
-      return;
-    }
-    if (btn) btn.disabled = true;
-    if (msg) msg.textContent = `Starting browser-scan for ${slug}…`;
-    try {
-      const r = await fetch('/api/browser-scan/scan', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ slug, days: activeRangeDays() }),
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error || `${r.status}`);
-      if (msg) {
-        msg.innerHTML = `Browser-scan running (last ${activeRangeDays()} days). When it finishes it auto-ingests into a report. Watch progress in the <button type="button" data-open-runs class="link-btn">Operations drawer</button>.`;
-        msg.querySelector('[data-open-runs]')?.addEventListener('click', () => {
-          window.runsQueue?.open?.();
-        });
-      }
-      let tries = 0;
-      const fast = setInterval(async () => {
-        tries++;
-        await refreshState(true);
-        if (tries > 30) clearInterval(fast);
-      }, 4000);
     } catch (err) {
       if (msg) msg.innerHTML = `<span class="warn-text">${esc(err.message)}</span>`;
     } finally {
