@@ -836,7 +836,7 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
            via the modal runner at the bottom of <main>. -->
       <section id="view-run" class="view">
         <h2>Scan</h2>
-        <p class="hint view-intro">Run <code>/scout-scan</code> against one or more subjects to discover new content. Other tools (calendar, SEO, doctor…) now live in their own sections — see the sidebar.</p>
+        <p class="hint view-intro">Run <code>/scout-scan</code> against one or more subjects to discover new content.</p>
         <div class="run-form">
           <label>
             Command
@@ -920,8 +920,8 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
             </div>
             <div class="run-browser-scan-mode">
               <span class="run-browser-scan-mode-label">When /scout-scan runs:</span>
-              <label class="field-inline"><input type="radio" name="run-browser-scan" value="auto" checked /><span>Auto — use sign-in scan when it's fresh (recommended)</span></label>
-              <label class="field-inline"><input type="radio" name="run-browser-scan" value="force" /><span>Always re-scan first (slower, freshest results)</span></label>
+              <label class="field-inline"><input type="radio" name="run-browser-scan" value="auto" /><span>Auto — use sign-in scan when it's fresh</span></label>
+              <label class="field-inline"><input type="radio" name="run-browser-scan" value="force" checked /><span>Always re-scan first (slower, freshest results)</span></label>
               <label class="field-inline"><input type="radio" name="run-browser-scan" value="skip" /><span>Skip — public search and RSS only</span></label>
             </div>
             <div id="bs-sidecars" class="hint"></div>
@@ -951,6 +951,13 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
                 <input id="run-range-to" type="date" />
               </label>
             </div>
+          </fieldset>
+          <fieldset id="run-social-wrap" class="run-range">
+            <legend>After the scan</legend>
+            <label class="field-inline">
+              <input type="checkbox" id="run-gen-social" />
+              <span>Draft social posts for new content that doesn't have any yet <span class="hint">— only items that aren't already social posts and aren't covered in <code>social-posts/</code></span></span>
+            </label>
           </fieldset>
           <label id="run-prompt-wrap">
             Additional context (optional)
@@ -1018,6 +1025,13 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
 
         <!-- Browse panel (Full Report, Mindshare, and CFPs & Events) -->
         <div class="tab-panel" data-panel="browse">
+          <div class="reports-browse-controls">
+            <button type="button" id="reports-list-toggle" aria-expanded="true" title="Show or hide the report list">Hide list</button>
+            <label class="reports-quick-pick-wrap">
+              <span>Report</span>
+              <select id="reports-quick-pick" aria-label="Jump to a report"></select>
+            </label>
+          </div>
           <div class="split">
             <aside>
               <input type="search" id="reports-filter" class="list-filter" placeholder="Filter reports (name or content)…" autocomplete="off" />

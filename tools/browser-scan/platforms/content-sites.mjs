@@ -82,8 +82,11 @@ const SITES = [
   },
 ];
 
-// Captcha / Cloudflare / anti-bot interstitial markers. If any are present
-// we stop that site (the user must clear it once in the live browser).
+// Captcha / Cloudflare / anti-bot interstitial markers. These are only
+// treated as a hard block when (a) the page returned ZERO usable results
+// AND (b) the matched element is actually VISIBLE — see scanOneSite. A
+// hidden/background reCAPTCHA widget (DZone loads one for its login &
+// subscribe forms on every page) must NOT count as a block.
 const BLOCK_SELECTORS = [
   '#captcha-form',
   'iframe[src*="recaptcha"]',
@@ -160,15 +163,43 @@ async function scanOneSite(page, site, { searchTerms, maxPerTerm, outDir, items 
       }
     }
 
-    // Captcha / Cloudflare detection.
-    const blocked = await page.evaluate((sels) => sels.some((s) => document.querySelector(s)), BLOCK_SELECTORS);
-    if (blocked) {
-      console.warn(`[browser-scan] ${site.key}: anti-bot / captcha challenge for "${term}". Solve it once in the CDP browser, then re-run. Skipping ${site.key}.`);
-      await dumpDebug(page, outDir, site.key, term, 'blocked');
-      return;
+    // Extract results FIRST. If the page served real article links it
+    // clearly wasn't blocked — several of these sites (notably DZone)
+    // embed a hidden/background reCAPTCHA iframe for their login &
+    // subscribe widgets on EVERY page, including search results. Checking
+    // for a captcha element before reading results would false-positive on
+    // that background widget and skip the whole site even though the
+    // results rendered fine.
+    let fresh = await extractLinksOnPage(page, site.linkPattern);
+    if (fresh.length === 0) {
+      // Give slow client-rendered search pages (DZone, Hashnode) a second
+      // chance to hydrate their result list before deciding it's empty.
+      await sleep(2500);
+      fresh = await extractLinksOnPage(page, site.linkPattern);
     }
 
-    const fresh = await extractLinksOnPage(page, site.linkPattern);
+    // Only when we got NOTHING do we consider an anti-bot interstitial —
+    // and only a genuinely VISIBLE one. A real Cloudflare / reCAPTCHA
+    // challenge renders no results AND shows a visible challenge element;
+    // a 0px / display:none background captcha widget does not count.
+    if (fresh.length === 0) {
+      const blocked = await page.evaluate((sels) => {
+        const isVisible = (el) => {
+          if (!el) return false;
+          const st = getComputedStyle(el);
+          if (st.display === 'none' || st.visibility === 'hidden' || Number(st.opacity) === 0) return false;
+          const r = el.getBoundingClientRect();
+          return r.width > 40 && r.height > 40; // real challenge UI, not a hidden widget
+        };
+        return sels.some((s) => Array.from(document.querySelectorAll(s)).some(isVisible));
+      }, BLOCK_SELECTORS);
+      if (blocked) {
+        console.warn(`[browser-scan] ${site.key}: anti-bot / captcha challenge for "${term}". Solve it once in the CDP browser, then re-run. Skipping ${site.key}.`);
+        await dumpDebug(page, outDir, site.key, term, 'blocked');
+        return;
+      }
+    }
+
     let collected = 0;
     for (const it of fresh) {
       if (!it.url || items.has(it.url)) continue;

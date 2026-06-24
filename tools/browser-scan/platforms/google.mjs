@@ -1,4 +1,4 @@
-// Google — logged-in browser scraper for two surfaces:
+// Google — logged-in browser scraper for three surfaces:
 //   1. Google News (`news.google.com/search`) — structured publication /
 //      date metadata; emits items with `platform: "google-news"`.
 //   2. Google Web Search (`www.google.com/search`) — classic SERP,
@@ -7,6 +7,11 @@
 //      broad recent-results fallback (`tbs=qdr:y`) so the sidecar still
 //      catches newly indexed posts when Google's custom range returns a
 //      sparse / oddly personalized result set.
+//   3. Blogspot (`www.google.com/search?q=… site:blogspot.com`) — a
+//      dedicated single-domain pass over the same SERP scraper. Blogspot/
+//      Blogger has no global native search page, so this is the reliable
+//      way to surface blogspot.com-hosted posts. Hits are re-tagged with
+//      `platform: "blogspot"` so reports attribute origin correctly.
 //
 // Both passes share the same logged-in CDP browser context (same page
 // when possible) so the user's session keeps Google's anti-bot
@@ -181,6 +186,27 @@ export async function scanGoogle(browser, ctx) {
     items,
   });
 
+  await sleep(5000);
+
+  // ---- Pass 4: dedicated Blogspot layer ----
+  // Blogspot/Blogger has no global native search page, so the reliable way
+  // to scan it is a Google Web query scoped with `site:blogspot.com`. We
+  // reuse the same logged-in SERP scraper but re-tag the hits as `blogspot`
+  // so reports attribute origin correctly. Bounded to the exact scan window
+  // via the custom date range; the pipeline still date-gates each candidate.
+  await scanGoogleWebPass(page, {
+    searchTerms,
+    sinceMs,
+    untilMs,
+    maxPerTerm,
+    outDir,
+    tbs: cdr,
+    scope: 'blogspot',
+    siteFilter: 'blogspot.com',
+    label: 'blogspot',
+    items,
+  });
+
   if (ownsPage) await page.close();
   return [...items.values()];
 }
@@ -226,10 +252,14 @@ async function scanGoogleNewsPass(page, { searchTerms, sinceMs, maxPerTerm, outD
   }
 }
 
-async function scanGoogleWebPass(page, { searchTerms, sinceMs, untilMs, maxPerTerm, outDir, tbs, scope, items }) {
+async function scanGoogleWebPass(page, { searchTerms, sinceMs, untilMs, maxPerTerm, outDir, tbs, scope, siteFilter, label, items }) {
   for (const term of searchTerms) {
-    const query = buildSearchQuery(term, 'google-news'); // same shaping rules apply
+    let query = buildSearchQuery(term, 'google-news'); // same shaping rules apply
     if (!query) continue;
+    // Optional `site:` filter for a dedicated single-domain layer (e.g.
+    // Blogspot). Appended to the shaped query so the SERP only returns
+    // hits from that host.
+    if (siteFilter) query = `${query} site:${siteFilter}`;
     // Use either Google's custom date range (`tbs=cdr:1,cd_min:…,cd_max:…`)
     // or its broad recent-results shortcut (`tbs=qdr:y`). Both are real
     // browser SERPs, not an API call.
@@ -273,6 +303,13 @@ async function scanGoogleWebPass(page, { searchTerms, sinceMs, untilMs, maxPerTe
       item.search_term = term;
       item.search_scope = scope;
       item.google_tbs = tbs;
+      // Re-attribute hits from a dedicated single-domain layer so reports
+      // credit the right origin (e.g. `blogspot`) instead of generic web.
+      if (label) {
+        item.platform = label;
+        item.subSource = label;
+        item.source = `${label}-browser`;
+      }
       items.set(item.url, item);
       collected++;
       if (collected >= maxPerTerm) break;

@@ -144,6 +144,10 @@ async function openReportRow(li) {
   if (!li) return;
   document.querySelectorAll('#reports-list li').forEach((item) => item.classList.remove('selected'));
   li.classList.add('selected');
+  const quickPick = $('reports-quick-pick');
+  if (quickPick && li.dataset.name && quickPick.value !== li.dataset.name) {
+    quickPick.value = li.dataset.name;
+  }
   const name = li.dataset.name;
   const kind = li.dataset.kind || '';
   const body = $('reports-body');
@@ -167,6 +171,67 @@ async function openReportRow(li) {
   body.dataset.name = name;
   const nav = $('reports-section-nav');
   if (nav) { nav.hidden = true; nav.innerHTML = ''; }
+}
+
+function reportsSplitEl() {
+  return document.querySelector('#view-reports .tab-panel[data-panel="browse"] .split');
+}
+
+// Rebuild the compact "jump to report" dropdown from the currently visible
+// rows (respects the active tab filter). Keeps the current selection sticky.
+function syncReportsQuickPick(selectedName) {
+  const sel = $('reports-quick-pick');
+  if (!sel) return;
+  const rows = [...document.querySelectorAll('#reports-list li[data-name]')].filter((li) => !li.hidden);
+  const current =
+    selectedName
+    || document.querySelector('#reports-list li.selected:not([hidden])')?.dataset.name
+    || sel.value;
+  sel.innerHTML =
+    rows
+      .map((li) => {
+        const name = li.dataset.name;
+        const title = li.querySelector('.entry-title')?.textContent?.trim() || name;
+        const stamp = li.querySelector('.mtime')?.textContent?.trim() || '';
+        const label = stamp ? `${title} \u2014 ${stamp}` : title;
+        return `<option value="${escapeAttr(name)}">${escape(label)}</option>`;
+      })
+      .join('') || '<option value="">No reports</option>';
+  if (current && rows.some((li) => li.dataset.name === current)) {
+    sel.value = current;
+  }
+}
+
+let reportsControlsWired = false;
+// Wire the quick-pick dropdown and the rail show/hide toggle exactly once.
+function wireReportsControls() {
+  if (reportsControlsWired) return;
+  reportsControlsWired = true;
+  const sel = $('reports-quick-pick');
+  if (sel) {
+    sel.addEventListener('change', () => {
+      if (!sel.value) return;
+      const li = document.querySelector(`#reports-list li[data-name="${CSS.escape(sel.value)}"]`);
+      if (li) openReportRow(li);
+    });
+  }
+  const toggle = $('reports-list-toggle');
+  if (toggle) {
+    const collapsed = localStorage.getItem('scout-reports-list-collapsed') === '1';
+    const split = reportsSplitEl();
+    if (split) split.classList.toggle('list-collapsed', collapsed);
+    toggle.textContent = collapsed ? 'Show list' : 'Hide list';
+    toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    toggle.addEventListener('click', () => {
+      const s = reportsSplitEl();
+      if (!s) return;
+      const now = !s.classList.contains('list-collapsed');
+      s.classList.toggle('list-collapsed', now);
+      localStorage.setItem('scout-reports-list-collapsed', now ? '1' : '0');
+      toggle.textContent = now ? 'Show list' : 'Hide list';
+      toggle.setAttribute('aria-expanded', now ? 'false' : 'true');
+    });
+  }
 }
 
 function applyReportsTabFilter() {
@@ -193,6 +258,7 @@ function applyReportsTabFilter() {
       delete body.dataset.name;
     }
   }
+  syncReportsQuickPick();
 }
 
 function renderReportsActionBar(tab) {
@@ -233,4 +299,5 @@ export async function loadReports() {
     includeItem: (li) => rowMatchesTab(li, reportsActiveTab),
   });
   setReportsActiveTab(reportsActiveTab);
+  wireReportsControls();
 }

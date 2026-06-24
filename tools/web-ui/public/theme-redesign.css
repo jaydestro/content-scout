@@ -996,6 +996,18 @@ select:focus-visible {
   padding: 0.55em 0.9em;
   border-bottom: 1px solid var(--border);
   vertical-align: top;
+  /* Stop multi-column tables from crushing text into 1-char columns:
+     give every cell a readable floor, cap the prose columns, and let
+     long tokens/URLs wrap instead of forcing the column wider. */
+  min-width: 6.5ch;
+  max-width: 46ch;
+  overflow-wrap: anywhere;
+}
+#reports-body.markdown td:first-child,
+#reports-body.markdown th:first-child,
+#tools-body.markdown td:first-child,
+#tools-body.markdown th:first-child {
+  min-width: 2.5ch;
 }
 #reports-body.markdown tbody tr:nth-child(even) td,
 #tools-body.markdown tbody tr:nth-child(even) td {
@@ -1008,6 +1020,73 @@ select:focus-visible {
 #reports-body.markdown tbody tr:last-child td,
 #tools-body.markdown tbody tr:last-child td {
   border-bottom: 0;
+}
+
+/* ============================================================================
+   3c. REPORTS — full-width reading + collapsible list rail + quick switcher
+   ========================================================================== */
+
+/* The Reports view drops the global reading cap so multi-column scan tables
+   get the full pane width (no popout required). */
+#main-content .view#view-reports {
+  max-width: none;
+}
+
+/* Browse controls row above the split: rail toggle + quick report switcher. */
+.reports-browse-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.7rem;
+  flex-wrap: wrap;
+}
+.reports-browse-controls .reports-quick-pick-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.reports-browse-controls .reports-quick-pick-wrap > span {
+  font-size: 0.82rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+#reports-quick-pick {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 560px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.88rem;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 7px);
+}
+#reports-quick-pick:hover {
+  border-color: var(--border-strong);
+}
+#reports-list-toggle {
+  white-space: nowrap;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 7px);
+  background: var(--panel-2);
+  color: var(--muted-2);
+  cursor: pointer;
+}
+#reports-list-toggle:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+/* Collapsed state: hide the rail and let the document span the full width. */
+.tab-panel .split.list-collapsed {
+  grid-template-columns: 1fr;
+}
+.tab-panel .split.list-collapsed > aside {
+  display: none;
 }
 
 /* Report section nav — flat pills */

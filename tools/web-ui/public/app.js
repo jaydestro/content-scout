@@ -2636,6 +2636,8 @@ $('run-command').addEventListener('change', (e) => {
   if (subjectWrap) subjectWrap.hidden = custom;
   const rangeWrap = $('run-range-wrap');
   if (rangeWrap) rangeWrap.hidden = custom || !COMMANDS_WITH_RANGE.has(e.target.value);
+  const socialWrap = $('run-social-wrap');
+  if (socialWrap) socialWrap.hidden = custom || !COMMANDS_WITH_RANGE.has(e.target.value);
   syncBrowserScanVisibility();
   if (custom && !savedCustomPrompt.trim()) openCustomPromptDialog();
   updateRunPreview();
@@ -2797,12 +2799,33 @@ if (presetEl) {
 updateRangeSummary();
 const runPromptEl = $('run-prompt');
 if (runPromptEl) runPromptEl.addEventListener('input', updateRunPreview);
+// Sticky "draft social posts after scan" toggle.
+const SOCIAL_GEN_LS_KEY = 'cs.run.gen-social';
+const genSocialEl = $('run-gen-social');
+if (genSocialEl) {
+  try {
+    if (localStorage.getItem(SOCIAL_GEN_LS_KEY) === '1') genSocialEl.checked = true;
+  } catch {}
+  genSocialEl.addEventListener('change', () => {
+    try { localStorage.setItem(SOCIAL_GEN_LS_KEY, genSocialEl.checked ? '1' : '0'); } catch {}
+    updateRunPreview();
+  });
+}
 $('run-copy').addEventListener('click', async () => {
   const prompt = buildPrompt();
   await navigator.clipboard.writeText(prompt);
   $('run-meta').textContent = `Copied: ${prompt}`;
 });
 $('run-start').addEventListener('click', startRun);
+
+// When checked on the Scan view, appends an explicit instruction so the
+// /scout-scan agent (which never drafts posts by default) also generates
+// social posts for newly-found content that has none yet.
+function socialGenInstruction(cmd) {
+  if (cmd !== 'scout-scan') return '';
+  if (!$('run-gen-social')?.checked) return '';
+  return 'After saving the report, also draft social posts for each new content item that does not already have social posts — skip items already covered in social-posts/, and skip social-conversation items (posts that are themselves social media posts).';
+}
 
 function buildPrompt() {
   const cmd = $('run-command').value;
@@ -2811,13 +2834,14 @@ function buildPrompt() {
   const extra = $('run-extra').value.trim();
   const context = ($('run-prompt')?.value || '').trim();
   const range = COMMANDS_WITH_RANGE.has(cmd) ? dateRangePhrase() : '';
+  const social = socialGenInstruction(cmd);
   // If user picked "All subjects" and there's more than one config, pass "all"
   // explicitly so the agent doesn't interactively prompt.
   const configCount = $('run-subject-list')
     ? $('run-subject-list').querySelectorAll('input[name="run-slug-choice"]').length - 1
     : 0;
   const target = slug || (configCount > 1 ? 'all' : '');
-  return [`/${cmd}`, target, range, extra, context].filter(Boolean).join(' ');
+  return [`/${cmd}`, target, range, extra, context, social].filter(Boolean).join(' ');
 }
 
 async function startRun() {
@@ -2825,7 +2849,8 @@ async function startRun() {
   const range = COMMANDS_WITH_RANGE.has(cmd) ? dateRangePhrase() : '';
   const extra = $('run-extra').value.trim();
   const context = ($('run-prompt')?.value || '').trim();
-  const combinedExtra = [range, extra, context].filter(Boolean).join(' ');
+  const social = socialGenInstruction(cmd);
+  const combinedExtra = [range, extra, context, social].filter(Boolean).join(' ');
   const args =
     cmd === 'custom'
       ? { prompt: savedCustomPrompt.trim() }

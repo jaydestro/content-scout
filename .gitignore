@@ -65,6 +65,12 @@ diag-*
 *.orig
 *.local.*
 
+# Playwright MCP page snapshots — accessibility-tree dumps written when a
+# browser page is verified during agent sessions. Local-only artifacts that
+# may contain page content; never commit.
+.playwright-mcp/
+**/.playwright-mcp/
+
 # Seen-links tracker (local state, not shared)
 reports/.seen-links.json
 reports/.closed-conversations.json

@@ -30,8 +30,11 @@ const BROWSER_UA =
 // silent timeouts) even though the URL is perfectly valid for a human. A
 // failed probe to these is usually a false negative, so callers that want to
 // avoid stripping real-but-unprobable links can consult this list.
+// medium.com (and its publication subdomains, e.g. betterprogramming.medium.com)
+// returns 403 to automated requests but renders fine for a logged-out human, so
+// RSS-discovered Medium articles must not be dropped on a probe failure.
 export const PROBE_EXEMPT_HOSTS =
-  /(^|\.)(x\.com|twitter\.com|linkedin\.com|reddit\.com|bsky\.app|youtube\.com|youtu\.be)$/i;
+  /(^|\.)(x\.com|twitter\.com|linkedin\.com|reddit\.com|bsky\.app|youtube\.com|youtu\.be|medium\.com)$/i;
 
 export function isProbeExemptUrl(url) {
   try { return PROBE_EXEMPT_HOSTS.test(new URL(url).hostname); } catch { return false; }
