@@ -457,14 +457,71 @@ html[data-theme] .site-header .header-actions .theme-toggle {
   grid-row: 2;
   grid-column: 1;
   min-width: 0;
+  /* Neutralize the legacy `main { max-width: 1200px; margin: 0 auto }` from
+     styles.css. As a grid item, those auto margins + max-width shrink-wrapped
+     main to its content width instead of filling the column, leaving a cramped
+     working area. Let main fill the grid column; per-view reading caps below
+     (.view max-width: 1160px) still keep prose at a comfortable measure. */
+  max-width: none;
+  margin-inline: 0;
   height: calc(100vh - var(--header-h));
   overflow-y: auto;
   background: var(--bg);
   padding: clamp(20px, 3.2vw, 40px) clamp(18px, 3.4vw, 44px) 64px;
 }
 #main-content .view {
-  max-width: 1160px;
-  margin-inline: auto;
+  /* Full-width content under the nav (GitHub-style) — stretch across the pane
+     rather than a centered reading column. The #main-content padding supplies
+     the side gutters. */
+  max-width: none;
+  margin-inline: 0;
+}
+
+/* Scan view: the run form used a legacy 720px cap (styles.css) that left it
+   looking cramped/"compacted" against the now full-bleed view. Let it fill the
+   pane like the rest of the redesigned surfaces. */
+#main-content #view-run .run-form {
+  max-width: none;
+}
+
+/* Tools view: clean card layout for the SEO audit form. The shared
+   .reports-action-bar flex rules are scoped to #view-reports only, so the
+   tools action bar had no layout — style it here. */
+#main-content #view-tools #tools-action-bar {
+  display: block;
+  margin: 0 0 1.1rem 0;
+}
+#main-content #view-tools .seo-audit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.85rem;
+  padding: 1rem 1.1rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+}
+#main-content #view-tools .seo-audit__urls {
+  flex: 1 1 320px;
+  min-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+#main-content #view-tools .seo-audit__urls > span {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+#main-content #view-tools .seo-audit__urls textarea {
+  width: 100%;
+  resize: vertical;
+}
+#main-content #view-tools .seo-audit__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding-bottom: 0.15rem;
 }
 
 /* gentle entrance, no flashy transforms */
