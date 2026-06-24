@@ -589,6 +589,20 @@
     const teamMode = document.getElementById('conv-team-mode')?.value || 'community';
 
     let convs = _allConvs.slice();
+    // Closed conversations leave the view. A just-closed row should vanish
+    // immediately, so we drop closed items client-side instead of relying on
+    // the next server refetch. They only resurface when the user explicitly
+    // switches the "Show" control to Closed or All — that's where Reopen
+    // lives — so closing always feels like "done, gone from my list."
+    const _showMode = _currentInclude();
+    if (_showMode !== 'closed' && _showMode !== 'all') {
+      convs = convs.filter((c) => !c.isClosed);
+    }
+    // A conversation with no navigable public link isn't actionable from
+    // here — there's nothing to open or reply to — so it doesn't belong in
+    // the list. Closed rows are exempt so they stay reopenable in the
+    // Closed / All views even when their source link is gone.
+    convs = convs.filter((c) => c.isClosed || isValidPostUrl(c.url));
     // Team-mode filter: 'community' hides team-member rows (default — same
     // as legacy behavior), 'team' shows only team rows, 'everyone' shows
     // both. A row is considered "team" when the server tagged it with
@@ -1649,6 +1663,25 @@
       teamBtn.dataset.wired = '1';
       teamBtn.addEventListener('click', _importTeamNoTriageAccounts);
     }
+    // Creators & interventions inline panel — show the trajectory/outreach
+    // intel directly instead of only launching the chat command.
+    const creToggle = document.getElementById('creators-toggle');
+    if (creToggle && !creToggle.dataset.wired) {
+      creToggle.dataset.wired = '1';
+      creToggle.addEventListener('click', () => {
+        const panel = document.getElementById('creators-panel');
+        if (!panel) return;
+        const opening = panel.hasAttribute('hidden');
+        if (opening) {
+          panel.removeAttribute('hidden');
+          creToggle.setAttribute('aria-expanded', 'true');
+          loadCreatorsPanel();
+        } else {
+          panel.setAttribute('hidden', '');
+          creToggle.setAttribute('aria-expanded', 'false');
+        }
+      });
+    }
   }
 
   async function _populateOwnedSlugSelect() {
@@ -2097,15 +2130,34 @@
             return u && isValidPostUrl(u);
           };
           const withAuthorUrl = (x) => !!x.authorUrl && isValidPostUrl(x.authorUrl);
+          // A sample is only worth highlighting if it links somewhere a
+          // reader can actually go: a live post URL or a working
+          // author/profile URL. A tracked conversation with no public link
+          // would only render the dead-end "no public link" tag, which adds
+          // nothing actionable — so those never become the highlight.
+          const navigable = (x) => withUrl(x) || withAuthorUrl(x);
+          const isPositive = (x) => !!x && x.sentiment === 'positive';
+          // Never feature a detractor as the platform highlight — negative /
+          // mixed posts belong in the "Needs reply" card below, not as the
+          // showcased social activity. Anything else (positive / neutral /
+          // unclassified) is fair game for the highlight.
+          const isFeatureable = (x) =>
+            !!x && x.sentiment !== 'negative' && x.sentiment !== 'mixed';
           // Show the *newest* sample, not whatever happened to be first in
           // the API response. Without this sort the bucket order is stable
           // across scans, so the same (often oldest) Reddit post stuck on the
           // card run after run even when fresher chatter had arrived.
           const communitySorted = [...b.community].sort(byDateDesc);
+          // Lead with the latest *positive* community post we can actually
+          // link to (advocacy is the signal worth featuring), then fall back
+          // to the latest non-critical (neutral / unclassified) linkable
+          // post. If a platform has only detractors or nothing linkable,
+          // leave the highlight empty rather than featuring a critical post
+          // or shipping a "no public link" dead-end.
           const sample =
-            communitySorted.find(withUrl) ||
-            communitySorted.find(withAuthorUrl) ||
-            communitySorted[0];
+            communitySorted.find((x) => isPositive(x) && navigable(x)) ||
+            communitySorted.find((x) => isFeatureable(x) && navigable(x)) ||
+            null;
           const prev = sample ? extractSamplePreview(sample) : { text: '', url: '' };
           const sampleHasUrl = !!prev.url && isValidPostUrl(prev.url);
           // Working fallback link to the author's profile/company page when
@@ -2639,6 +2691,104 @@
       });
     } catch (err) {
       host.innerHTML = `<p class="hint">Failed: ${esc(err.message || err)}</p>`;
+    }
+  }
+
+  // ============================================================
+  // Creators & interventions — inline panel in the Conversations view.
+  // Surfaces trajectory/sentiment buckets + the interventions log instead
+  // of only launching the interactive chat command.
+  // ============================================================
+  let _creatorsPanelLoaded = false;
+  async function loadCreatorsPanel(force = false) {
+    const summary = document.getElementById('creators-summary');
+    const body = document.getElementById('creators-body');
+    if (!body) return;
+    if (_creatorsPanelLoaded && !force) return;
+    body.innerHTML = `<p class="hint">Loading creator intel…</p>`;
+    try {
+      const data = await fetchJsonResilient('/api/creators');
+      if (data.error) {
+        if (summary) summary.textContent = '';
+        body.innerHTML = `<p class="hint">Failed to load creators: ${esc(data.error)}</p>`;
+        _creatorsPanelLoaded = true;
+        return;
+      }
+      const c = data.counts || {};
+      if (data.missing || !c.total) {
+        if (summary) summary.textContent = '';
+        body.innerHTML = `<p class="hint">No creator trajectories tracked yet${
+          data.slug ? ` for <strong>${esc(data.slug)}</strong>` : ''
+        }. Run a scan to populate creators, or use “Log / record in chat”.</p>`;
+        _creatorsPanelLoaded = true;
+        return;
+      }
+      if (summary) {
+        summary.innerHTML = [
+          `<strong>${c.total}</strong> creators`,
+          c.influencers ? `${c.influencers} influencers` : '',
+          c.rising ? `${c.rising} rising` : '',
+          c.advocates ? `${c.advocates} advocates` : '',
+          c.detractors
+            ? `<span class="cre-warn">${c.detractors} detractor${c.detractors === 1 ? '' : 's'}</span>`
+            : '',
+          c.dormant ? `${c.dormant} dormant` : '',
+        ]
+          .filter(Boolean)
+          .join(' · ');
+      }
+      const row = (cr) => {
+        const name = cr.url && /^https?:\/\//.test(cr.url)
+          ? `<a href="${esc(cr.url)}" target="_blank" rel="noopener">${esc(cr.name)} ↗</a>`
+          : esc(cr.name);
+        const meta = [
+          cr.platform ? esc(cr.platform) : '',
+          cr.postsAll ? `${cr.postsAll} post${cr.postsAll === 1 ? '' : 's'}` : '',
+          cr.lastSeen ? `last ${esc(String(cr.lastSeen).slice(0, 10))}` : '',
+          cr.interventionCount ? `${cr.interventionCount} outreach` : '',
+        ]
+          .filter(Boolean)
+          .join(' · ');
+        return `<li class="cre-row"><span class="cre-name">${name}</span><span class="cre-meta hint">${meta}</span></li>`;
+      };
+      const section = (title, list, cls = '') =>
+        list && list.length
+          ? `<div class="cre-section ${cls}"><h4>${esc(title)} <span class="hint">${list.length}</span></h4><ul class="cre-list">${list
+              .slice(0, 12)
+              .map(row)
+              .join('')}</ul></div>`
+          : '';
+      const b = data.buckets || {};
+      const sections = [
+        section('⚠ Detractors — outreach candidates', b.detractors, 'cre-detractors'),
+        section('Rising', b.rising),
+        section('Influencers', b.influencers),
+        section('Advocates', b.advocates),
+        section('Dormant — re-engage', b.dormant),
+      ]
+        .filter(Boolean)
+        .join('');
+      const ivs = Array.isArray(data.interventions) ? data.interventions : [];
+      const ivHtml = ivs.length
+        ? `<div class="cre-section"><h4>Interventions log <span class="hint">${ivs.length}</span></h4><ul class="cre-list">${ivs
+            .slice(0, 20)
+            .map(
+              (iv) =>
+                `<li class="cre-row"><span class="cre-name">${esc(iv.creator || '')}</span><span class="cre-meta hint">${[
+                  esc(iv.date || ''),
+                  esc(iv.owner || ''),
+                  esc(iv.channel || ''),
+                  esc(iv.outcome || ''),
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}</span></li>`
+            )
+            .join('')}</ul></div>`
+        : `<div class="cre-section"><h4>Interventions log</h4><p class="hint">No interventions logged yet. Use “Log / record in chat” to record outreach and outcomes.</p></div>`;
+      body.innerHTML = (sections || `<p class="hint">No notable movers right now.</p>`) + ivHtml;
+      _creatorsPanelLoaded = true;
+    } catch (err) {
+      body.innerHTML = `<p class="hint">Failed to load creators: ${esc(err.message || err)}</p>`;
     }
   }
 

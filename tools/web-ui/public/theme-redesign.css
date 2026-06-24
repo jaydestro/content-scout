@@ -149,7 +149,8 @@ html[data-theme] .site-header {
   height: var(--header-h);
   display: flex !important; /* beat theme-polish's display: contents */
   flex-direction: row;
-  align-items: stretch;
+  flex-wrap: nowrap; /* keep brand + nav on one row; nav scrolls if tight */
+  align-items: center;
   gap: 16px;
   padding: 0 16px;
   background: var(--bg-2) !important;
@@ -165,7 +166,7 @@ html[data-theme] .site-header::before {
 }
 
 /* Brand (left of the bar) */
-.site-header .banner {
+html[data-theme] .site-header .banner {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -174,6 +175,8 @@ html[data-theme] .site-header::before {
   border-bottom: 0;
   flex: 0 0 auto;
   width: auto;
+  height: var(--header-h); /* match the bar so the logo sits centered */
+  min-height: 0 !important; /* beat theme-production's min-height: var(--topbar-h) !important */
   position: static;
   background: none;
   box-shadow: none;
@@ -186,11 +189,12 @@ html[data-theme] .site-header::before {
   content: none !important;
 }
 .site-header .banner-logo {
-  width: 30px;
-  height: 30px;
+  width: 28px !important; /* beat theme-compact's 36px !important */
+  height: 28px !important;
   border-radius: 7px;
   flex: none;
   box-shadow: none;
+  object-fit: contain;
 }
 .site-header .banner-text {
   display: flex;

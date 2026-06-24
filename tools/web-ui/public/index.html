@@ -1279,8 +1279,15 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
       <section id="view-conversations" class="view">
         <h2>Conversations &amp; mentions</h2>
         <div class="view-toolbar" role="toolbar" aria-label="Conversation tools">
-          <button type="button" data-launch-cmd="scout-creators" data-launch-title="Creator trajectories" data-launch-desc="View creator trajectories, log outreach, track sentiment outcomes. (Best run in chat — this command is interactive.)" data-launch-chat-only="true">Creators &amp; interventions</button>
+          <button type="button" id="creators-toggle" aria-expanded="false" aria-controls="creators-panel">Creators &amp; interventions</button>
         </div>
+        <section id="creators-panel" class="creators-panel" hidden aria-label="Creator trajectories">
+          <div class="creators-panel-head">
+            <div id="creators-summary" class="creators-summary hint"></div>
+            <button type="button" id="creators-log-chat" class="secondary" data-launch-cmd="scout-creators" data-launch-title="Log creator intervention" data-launch-desc="Log outreach or record a sentiment outcome for a community creator. (Interactive — runs in chat.)" data-launch-chat-only="true">Log / record in chat</button>
+          </div>
+          <div id="creators-body" class="creators-body"><p class="hint">Loading creator intel…</p></div>
+        </section>
         <div class="conv-tabs" role="tablist" aria-label="Conversation type">
           <button type="button" class="conv-tab is-active" role="tab" aria-selected="true" data-conv-tab="all">All <span class="conv-tab-count" data-count-for="all">0</span></button>
           <button type="button" class="conv-tab" role="tab" aria-selected="false" data-conv-tab="conversations">Conversations <span class="conv-tab-count" data-count-for="conversations">0</span></button>

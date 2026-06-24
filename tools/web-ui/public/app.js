@@ -31,7 +31,15 @@ const { gotoView } = initNavigation({
   loadTools,
   loadSocial,
   loadSlugOptions,
-  loadDashboard,
+  loadDashboard: () => {
+    // dashboard.js renders the hero/stats/latest-report, but the Community
+    // signals + intel cards are owned by intel.js, which only auto-loads on
+    // hashchange. gotoView uses history.replaceState (no hashchange fires),
+    // so kick the intel cards manually — otherwise Community signals stays
+    // stuck on skeletons until a manual page refresh.
+    window.contentScoutIntel?.loadIntelCards?.();
+    return loadDashboard();
+  },
   loadConversations: () => {
     // intel.js owns this view but only auto-loads on hashchange. gotoView
     // uses history.replaceState (no hashchange fires), so kick it manually.

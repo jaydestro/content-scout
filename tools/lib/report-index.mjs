@@ -48,12 +48,32 @@ function normalizeName(name) {
     .trim();
 }
 
+// Strip inline markdown (links, emphasis) while PRESERVING case — used for
+// display fields like an author name lifted from a `[Name](url)` table cell.
+function stripMdInline(s) {
+  return String(s || '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[`*_]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Ensure a date string carries a 4-digit year so Date.parse anchors it to the
+// correct year. Rows like "Jun 19" (no year) otherwise parse as 2001 and sink
+// to the bottom of every chronological view. Falls back to the report's own
+// year when the row omits one.
+function ensureYear(dateStr, year) {
+  const s = String(dateStr || '').trim();
+  if (!s || /\b\d{4}\b/.test(s)) return s;
+  return Number.isFinite(Date.parse(`${s} ${year}`)) ? `${s} ${year}` : s;
+}
+
 function isTeamMemberSection(section) {
   return /team\s+member\s+mentions/i.test(String(section || ''));
 }
 
 function isConversationSection(section) {
-  return /conversations|community questions|mentions|social/i.test(String(section || ''))
+  return /conversations|community questions|mentions|social|mindshare/i.test(String(section || ''))
     && !isTeamMemberSection(section);
 }
 
@@ -623,6 +643,7 @@ export function parseReport(raw, fileName, options = {}) {
   const lines = raw.split(/\r?\n/);
   const slugMatch = fileName.match(/^\d{4}-\d{2}-\d{2}-\d{4}-(.+)-content\.md$/);
   const slug = slugMatch ? slugMatch[1] : '';
+  const reportYear = (fileName.match(/^(\d{4})-/) || [])[1] || String(new Date().getFullYear());
   const genMatch = raw.match(/\*\*Generated:\*\*\s*([^\n]+)/);
   const generatedAt = genMatch ? genMatch[1].trim() : '';
 
@@ -652,7 +673,7 @@ export function parseReport(raw, fileName, options = {}) {
             authorHandle: handleFromUrl(e.url),
           });
           conversations.push({
-            date: e.date,
+            date: ensureYear(e.date, reportYear),
             platform: e.platform,
             author: e.author,
             summary: e.summary,
@@ -689,7 +710,7 @@ export function parseReport(raw, fileName, options = {}) {
     if (!/^\s*\|[\s:|-]+\|\s*$/.test(next)) continue;
     const headers = splitMarkdownTableRow(line).map((s) => s.trim().toLowerCase());
     const idx = (names) => headers.findIndex((h) => names.includes(h));
-    const titleIdx = idx(['title', 'topic', 'session', 'summary', 'post', 'thread', 'discussion', 'mention']);
+    const titleIdx = idx(['title', 'topic', 'session', 'summary', 'post', 'thread', 'discussion', 'mention', 'signal']);
     const linkIdx = idx(['link', 'url']);
     const dateIdx = idx(['date']);
     const epIdx = idx(['ep', 'score']);
@@ -701,7 +722,7 @@ export function parseReport(raw, fileName, options = {}) {
     const communityIdx = idx(['community']);
     const engagementIdx = idx(['engagement']);
     const isTeamMember = isTeamMemberSection(currentSection);
-    const isConversation = !isTeamMember && (sentimentIdx >= 0 || /conversations|community questions|mentions/i.test(currentSection));
+    const isConversation = !isTeamMember && (sentimentIdx >= 0 || isConversationSection(currentSection));
 
     let j = i + 2;
     while (j < lines.length && /^\s*\|/.test(lines[j])) {
@@ -718,8 +739,20 @@ export function parseReport(raw, fileName, options = {}) {
       const communityCell = communityIdx >= 0 ? cells[communityIdx] || '' : '';
       const engagementCell = engagementIdx >= 0 ? cells[engagementIdx] || '' : '';
 
-      const linkMatch = linkCell.match(/\((https?:\/\/[^\s)]+)\)/);
-      const url = linkMatch ? linkMatch[1] : '';
+      // Newer social/mindshare tables embed the post URL inside the author
+      // cell (`[Name](https://...)`) rather than a dedicated link column, so
+      // fall back across the cells most likely to carry it.
+      const urlFromCell = (s) => {
+        const m = String(s || '').match(/\((https?:\/\/[^\s)]+)\)/) ||
+          String(s || '').match(/(https?:\/\/[^\s)|]+)/);
+        return m ? m[1] : '';
+      };
+      const url =
+        urlFromCell(linkCell) ||
+        urlFromCell(authorCell) ||
+        urlFromCell(titleCell) ||
+        urlFromCell(summaryCell);
+      const authorClean = stripMdInline(authorCell);
       const title = titleCell
         .replace(/\\\|/g, '|')
         .replace(/\s+/g, ' ')
@@ -741,14 +774,14 @@ export function parseReport(raw, fileName, options = {}) {
         const community = (communityCell || '').replace(/[`*_]/g, '').trim().toLowerCase();
         const isProduct =
           /^(official|product|first[\s-]?party|microsoft|brand|company)$/.test(community) ||
-          isProductAuthor(authorCell, {
+          isProductAuthor(authorClean, {
             ...options,
             authorHandle: handleFromUrl(url),
           });
         conversations.push({
-          date: dateCell,
+          date: ensureYear(dateCell, reportYear),
           platform: platformFromUrl(url) || sourceCell || 'Unknown',
-          author: authorCell || '',
+          author: authorClean,
           summary: summaryCell || title,
           sentiment,
           community: isProduct ? 'product' : 'community',

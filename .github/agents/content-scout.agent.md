@@ -1123,8 +1123,9 @@ Where the platform exposes them, also include engagement metrics (likes/upvotes/
 
 ### Official SDK & Repo Activity
 <!-- Releases, notable PRs, and changes from the official GitHub org(s). -->
-| # | Date | Item | Repo | Language | SDK | Tags | EP | Link | Posts |
-|---|------|------|------|----------|-----|------|----|------|-------|
+<!-- Stars is the repo's star count (use 0 if not a standalone repo, n/a if unknown). Keep all 11 columns so Link/Posts don't shift. -->
+| # | Date | Item | Repo | Language | SDK | Stars | Tags | EP | Link | Posts |
+|---|------|------|------|----------|-----|-------|------|----|------|-------|
 
 ## Community Content
 <!-- Third-party content from anyone outside the official channels and team. -->

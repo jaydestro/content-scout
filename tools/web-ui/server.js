@@ -19,6 +19,7 @@ import { suggestReply, getReplyProvider } from './lib/reply-suggest.js';
 import { searchCorpus } from '../lib/corpus-search.mjs';
 import { extractDocMeta } from '../lib/doc-meta.mjs';
 import { responseCache } from '../lib/response-cache.mjs';
+import { getCopilotModels, warmCopilotModels } from './lib/copilot-models.mjs';
 import { probeUrl } from '../lib/url-validate.mjs';
 import {
   runSeoAudit,
@@ -45,6 +46,8 @@ import {
   stateFilePath,
   resolveStateRead,
   resolveStateWrite,
+  SCOUT_STATE_DIR,
+  LEGACY_SCOUT_STATE_DIR,
   browserScanReadDirs,
   BROWSER_SCAN_DIR as BROWSER_SCAN_SIDECAR_DIR,
   LEGACY_BROWSER_SCAN_DIR,
@@ -164,11 +167,14 @@ const MODEL_FLAG = {
 
 // Curated suggestions surfaced in the UI dropdown. Each entry carries a short
 // label plus `reasoning` and `context` metadata so the picker can show what
-// each model is good at and how much it can hold. Free-text is always allowed
-// (the UI offers an "Other…" entry) so volatile/preview model ids we don't
-// hard-code still work, and "Agent default" leaves the CLI's built-in choice.
-// CLIs rename model ids often, so treat these as guidance — if a run errors on
-// an unknown id, switch to "Other…" or "Agent default".
+// each model is good at and how much it can hold. These are NOT a live query of
+// the CLI — the actual set of models a CLI accepts is fetched at runtime and
+// depends on your account/plan, and the CLIs have no offline "list models"
+// command. Free-text is always allowed (the UI offers an "Other…" entry) so
+// volatile/preview model ids we don't hard-code still work, and "Agent default"
+// (copilot also accepts the "auto" id) leaves the CLI's built-in choice. CLIs
+// rename model ids often, so treat these as guidance — if a run errors on an
+// unknown id, switch to "Other…", "auto", or "Agent default".
 const MODEL_SUGGESTIONS = {
   claude: [
     { id: 'haiku', label: 'Haiku', reasoning: 'Fast, light reasoning', context: '200K' },
@@ -176,9 +182,11 @@ const MODEL_SUGGESTIONS = {
     { id: 'opus', label: 'Opus', reasoning: 'Deepest reasoning', context: '200K' },
   ],
   copilot: [
-    { id: 'gpt-5', label: 'GPT-5', reasoning: 'Strong general reasoning', context: '128K' },
+    { id: 'auto', label: 'Auto', reasoning: 'Let Copilot pick the best model' },
     { id: 'claude-sonnet-4.5', label: 'Claude Sonnet 4.5', reasoning: 'Balanced, extended thinking', context: '200K' },
-    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', reasoning: 'Strong reasoning, huge context', context: '1M' },
+    { id: 'claude-opus-4.5', label: 'Claude Opus 4.5', reasoning: 'Deepest reasoning', context: '200K' },
+    { id: 'gpt-5.1', label: 'GPT-5.1', reasoning: 'Strong general reasoning', context: '128K' },
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', reasoning: 'Huge context', context: '1M' },
   ],
   codex: [
     { id: 'gpt-5-codex', label: 'GPT-5 Codex', reasoning: 'Agentic coding reasoning', context: '128K' },
@@ -199,6 +207,19 @@ const MODEL_SUGGESTIONS = {
 // injection. Anything outside this set disables injection rather than risking a
 // malformed or abusable command.
 const MODEL_SAFE_RE = /^[A-Za-z0-9._:@/-]+$/;
+
+// Resolve the model suggestion list for an agent. For Copilot we try to
+// inherit the live, plan-specific list from the CLI's ACP server; on any
+// failure we fall back to the curated static list above.
+async function modelSuggestionsFor(agentId) {
+  if (agentId === 'copilot') {
+    try {
+      const live = await getCopilotModels();
+      if (live && live.length) return live;
+    } catch { /* fall through to static */ }
+  }
+  return MODEL_SUGGESTIONS[agentId] || [];
+}
 
 function injectModel(runner, agent, model) {
   if (!runner || !model) return runner;
@@ -931,6 +952,7 @@ app.get('/api/status', async (_req, res) => {
     getRunner(),
     detectExternalActivity(),
   ]);
+  const modelOptions = await modelSuggestionsFor(settings.agent);
   res.json({
     repoRoot: REPO_ROOT,
     runner: runnerInfo.runner || null,
@@ -941,7 +963,7 @@ app.get('/api/status', async (_req, res) => {
     model: settings.model || null,
     modelSupported: !!MODEL_FLAG[settings.agent] && runnerInfo.source !== 'env',
     modelFlag: MODEL_FLAG[settings.agent] || null,
-    modelOptions: MODEL_SUGGESTIONS[settings.agent] || [],
+    modelOptions,
     hasConfigs: configs.length > 0,
     configCount: configs.length,
     externalActivity,
@@ -949,14 +971,15 @@ app.get('/api/status', async (_req, res) => {
   });
 });
 
-app.get('/api/agents', (_req, res) => {
-  res.json({
-    agents: Object.values(AGENT_PRESETS).map(({ id, label, runner, install, note }) => ({
+app.get('/api/agents', async (_req, res) => {
+  const agents = await Promise.all(
+    Object.values(AGENT_PRESETS).map(async ({ id, label, runner, install, note }) => ({
       id, label, runner, install, note,
       modelFlag: MODEL_FLAG[id] || null,
-      modelSuggestions: MODEL_SUGGESTIONS[id] || [],
+      modelSuggestions: await modelSuggestionsFor(id),
     })),
-  });
+  );
+  res.json({ agents });
 });
 
 app.get('/api/settings', async (_req, res) => {
@@ -2809,9 +2832,16 @@ app.get('/api/conversations', async (req, res) => {
           (c.author || '').toLowerCase().includes(needle)
       );
     }
+    const _convMs = (d) => {
+      const t = Date.parse(d || '');
+      return Number.isFinite(t) ? t : 0;
+    };
     convs = convs
       .slice()
-      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      .sort(
+        (a, b) =>
+          _convMs(b.date) - _convMs(a.date) || (b.date || '').localeCompare(a.date || '')
+      );
     // Pass 1: dedupe by exact key (URL or composite). Same conversation
     // appears in multiple report files — keep the newest occurrence and
     // collect the other report names in `dupReports`.
@@ -3225,6 +3255,113 @@ app.get('/api/authors', async (req, res) => {
   }
 });
 
+// Creator trajectories + interventions, read straight from the persistent
+// creators.json so the web UI can SHOW this intel inline instead of only
+// launching the interactive chat command. External-community lens: the
+// company's own people are excluded (same as /api/authors).
+app.get('/api/creators', async (req, res) => {
+  try {
+    const idx = await getIndex();
+    let slug = String(req.query.slug || '').trim();
+    if (!slug) {
+      // Default to the slug that appears in the most reports (the primary
+      // product being tracked in this workspace).
+      const counts = new Map();
+      for (const r of idx.reports) {
+        if (r.slug) counts.set(r.slug, (counts.get(r.slug) || 0) + 1);
+      }
+      slug = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+    }
+    if (!slug) {
+      return res.json({ slug: '', missing: true, counts: {}, buckets: {}, interventions: [] });
+    }
+    // Per-slug creators.json lives under scout-state/{slug}/. Prefer the
+    // new .local/state location, fall back to the legacy reports/.scout-state.
+    let file = null;
+    for (const dir of [SCOUT_STATE_DIR, LEGACY_SCOUT_STATE_DIR]) {
+      const candidate = path.join(dir, slug, 'creators.json');
+      try {
+        await fs.access(candidate);
+        file = candidate;
+        break;
+      } catch {}
+    }
+    if (!file) {
+      return res.json({ slug, missing: true, counts: {}, buckets: {}, interventions: [] });
+    }
+    let store;
+    try {
+      store = JSON.parse(await fs.readFile(file, 'utf8'));
+    } catch {
+      return res.json({ slug, error: 'parse', counts: {}, buckets: {}, interventions: [] });
+    }
+    const all = Object.values(store.creators || {});
+    const community = all.filter((c) => c && !c.is_team_member);
+    const shape = (c) => {
+      const sent = (c.sentiment_classification?.current || 'neutral').toLowerCase();
+      const interventions = Array.isArray(c.interventions) ? c.interventions : [];
+      return {
+        handle: c.handle || '',
+        name: c.display_name || c.handle || '(unknown)',
+        platform: c.platform || '',
+        url: c.profile_url || '',
+        trajectory: (c.trajectory || 'new').toLowerCase(),
+        sentiment: sent,
+        prevSentiment: (c.sentiment_classification?.previous || '').toLowerCase() || null,
+        firstSeen: c.first_seen || '',
+        lastSeen: c.last_seen || '',
+        isInfluencer: !!c.is_influencer,
+        postsAll: c.totals?.posts_all ?? (Array.isArray(c.posts) ? c.posts.length : 0),
+        posts30d: c.totals?.posts_30d || 0,
+        interventionCount: interventions.length,
+        lastIntervention: interventions.length ? interventions[interventions.length - 1] : null,
+      };
+    };
+    const shaped = community.map(shape);
+    const byActivity = (a, b) =>
+      b.postsAll - a.postsAll || (b.lastSeen || '').localeCompare(a.lastSeen || '');
+    const isAdvocate = (s) => s === 'positive' || s === 'supporter' || s === 'advocate';
+    const buckets = {
+      rising: shaped.filter((c) => c.trajectory === 'rising').sort(byActivity),
+      dormant: shaped.filter((c) => c.trajectory === 'dormant').sort(byActivity),
+      influencers: shaped.filter((c) => c.isInfluencer).sort(byActivity),
+      advocates: shaped.filter((c) => isAdvocate(c.sentiment)).sort(byActivity),
+      detractors: shaped.filter((c) => c.sentiment === 'negative').sort(byActivity),
+    };
+    const counts = {
+      total: shaped.length,
+      rising: buckets.rising.length,
+      dormant: buckets.dormant.length,
+      influencers: buckets.influencers.length,
+      advocates: buckets.advocates.length,
+      detractors: buckets.detractors.length,
+    };
+    // Flatten any logged interventions into a single reverse-chronological log.
+    const interventions = [];
+    for (const c of shaped) {
+      const src = community.find((x) => (x.handle || '') === c.handle);
+      const list = Array.isArray(src?.interventions) ? src.interventions : [];
+      for (const iv of list) {
+        interventions.push({
+          creator: c.name,
+          platform: c.platform,
+          url: c.url,
+          date: iv.date || iv.logged_at || '',
+          owner: iv.owner || '',
+          channel: iv.channel || '',
+          note: iv.note || iv.summary || '',
+          outcome: iv.outcome || '',
+        });
+      }
+    }
+    interventions.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    res.json({ slug, counts, buckets, interventions, builtAt: idx.builtAt });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+// Source health: which sources contributed and which were skipped last scan.
 app.get('/api/source-health', async (_req, res) => {
   try {
     const idx = await getIndex();
@@ -5038,6 +5175,9 @@ app.listen(PORT, HOST, async () => {
   console.log(`Repo root: ${REPO_ROOT}`);
   console.log(`Bind: ${HOST}${HOST === '0.0.0.0' ? ' (LAN-exposed — set SCOUT_HOST=127.0.0.1 to restrict)' : ' (loopback only)'}`);
   console.log(`Runner: ${runner || '(none — pick an agent on the Setup view)'}${source !== 'none' ? ` [${source}]` : ''}`);
+  // Warm the live Copilot model list (ACP handshake takes ~10s) so the Setup
+  // picker inherits the agent's real models without blocking the first request.
+  warmCopilotModels().catch(() => {});
   // Health check: warn if any command-prompt files referenced by the UI are
   // missing from disk, AND warn if any command-style prompt files exist on
   // disk that the UI doesn't know about (likely orphans from a removed feature
