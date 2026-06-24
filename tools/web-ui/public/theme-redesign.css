@@ -900,25 +900,16 @@ select:focus-visible {
   color: var(--muted-2);
 }
 
-/* reading measure for prose; let structural blocks span full width */
+/* Report/tool content fills the panel width. The rendered markdown is wrapped
+   in a single `.doc-content` div, so the old `#reports-body > *` reading-measure
+   pinned the ENTIRE report to ~74ch (~568px) regardless of window size — it
+   only ever loosened structural blocks that were direct children, which they no
+   longer are. Let the wrappers and all content span the full pane (GitHub-style;
+   the panel padding supplies comfortable gutters). */
 #reports-body.markdown > *,
-#tools-body.markdown > * {
-  max-width: 74ch;
-}
-#reports-body.markdown > h1,
-#reports-body.markdown > h2,
-#reports-body.markdown > hr,
-#reports-body.markdown > table,
-#reports-body.markdown > pre,
-#reports-body.markdown > blockquote,
-#reports-body.markdown > img,
-#tools-body.markdown > h1,
-#tools-body.markdown > h2,
-#tools-body.markdown > hr,
-#tools-body.markdown > table,
-#tools-body.markdown > pre,
-#tools-body.markdown > blockquote,
-#tools-body.markdown > img {
+#tools-body.markdown > *,
+#reports-body.markdown .doc-content > *,
+#tools-body.markdown .doc-content > * {
   max-width: 100%;
 }
 

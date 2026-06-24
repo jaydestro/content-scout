@@ -115,4 +115,62 @@ export function renderDocBody(article, { name, html, kind }) {
     </div>
     <div class="doc-content">${html}</div>
   `;
+  if (kind === 'reports') wireReportPostLinks(article.querySelector('.doc-content'));
+}
+
+// In rendered reports the "Posts" column uses a bare in-page anchor
+// (`[posts](#N)`, where N is the item number). Left alone, clicking one just
+// pushes a junk hash onto the SPA URL (e.g. /#11) and does nothing. Intercept
+// those numeric `#N` anchors and route to the Social view's "Create posts for
+// me" form, pre-filled with the row's source link + title so the user can
+// generate posts in one click. Non-numeric in-page anchors (e.g. a table of
+// contents like `#partitioning`) are left untouched.
+function wireReportPostLinks(content) {
+  if (!content) return;
+  content.addEventListener('click', (e) => {
+    const a = e.target.closest('a[href]');
+    if (!a || !content.contains(a)) return;
+    if (!/^#\d+$/.test(a.getAttribute('href') || '')) return;
+    e.preventDefault();
+    const { url, title } = extractReportRowContext(a);
+    routeToSocialGenerate(url, title);
+  });
+}
+
+// Pull the source URL + a human title out of the table row that owns the
+// clicked "posts" link. The first http(s) link in the row is the canonical
+// content URL; the title is the longest cell that isn't a date or pure number.
+function extractReportRowContext(a) {
+  const row = a.closest('tr');
+  if (!row) return { url: '', title: '' };
+  const url =
+    [...row.querySelectorAll('a[href^="http"]')]
+      .map((el) => el.getAttribute('href'))
+      .find(Boolean) || '';
+  const title =
+    [...row.children]
+      .map((td) => td.textContent.trim())
+      .filter((t) => t && !/^\d{4}-\d{2}-\d{2}$/.test(t) && !/^\d+$/.test(t))
+      .sort((x, y) => y.length - x.length)[0] || '';
+  return { url, title };
+}
+
+// Switch to the Social view and pre-fill the "Create posts for me" form.
+function routeToSocialGenerate(url, title) {
+  const navBtn = document.querySelector('nav button[data-view="social"]');
+  if (navBtn) navBtn.click();
+  else window.location.hash = '#social';
+  // Let the view render, then prefill the generate form.
+  setTimeout(() => {
+    const urlInput = document.getElementById('social-gen-url');
+    const ctxInput = document.getElementById('social-gen-context');
+    if (urlInput) {
+      urlInput.value = url || '';
+      urlInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    if (ctxInput && title && !ctxInput.value.trim()) ctxInput.value = `Source: ${title}`;
+    const card = document.querySelector('#view-social .social-generate');
+    card?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    (urlInput || card)?.focus?.();
+  }, 150);
 }
