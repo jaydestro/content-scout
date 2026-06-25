@@ -81,6 +81,7 @@
         </div>
         <button class="rq-close" id="rq-close" aria-label="Close">${ICONS.close}</button>
       </header>
+      <div class="rq-agent" id="rq-agent-slot"></div>
       <div class="rq-body">
         <ul class="rq-list" id="rq-list"></ul>
         <div class="rq-detail" id="rq-detail" hidden>
@@ -94,6 +95,17 @@
       </div>
     `;
     document.body.appendChild(drawer);
+
+    // Relocate the agent/runner status pill out of the header (where it
+    // crowded the nav) into the Operations drawer. loadStatus() still targets
+    // it by id, so it keeps updating wherever the node lives.
+    const agentSlot = drawer.querySelector('#rq-agent-slot');
+    const pill = document.getElementById('status-pill');
+    if (agentSlot && pill) {
+      agentSlot.appendChild(pill);
+    } else if (agentSlot) {
+      agentSlot.remove();
+    }
 
     drawer.querySelector('#rq-close').addEventListener('click', closeDrawer);
     drawer.querySelector('#rq-back').addEventListener('click', backToList);

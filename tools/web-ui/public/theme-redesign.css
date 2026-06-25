@@ -1433,6 +1433,72 @@ html[data-theme] #dash-social-activity .dash-needs-head {
   flex-wrap: wrap;
 }
 html[data-theme] #dash-social-activity .dash-needs-head strong { font-size: 0.82rem; }
+
+/* ============================================================================
+   12. RESPONSIVE HEADER — nav buttons grow/shrink so no option is ever cut off,
+       and the agent/runner status pill lives in the Operations drawer.
+   ========================================================================== */
+
+/* The agent/runner status pill now lives inside the Operations drawer header
+   instead of the top bar (frees room for nav). */
+html[data-theme] #runs-drawer .rq-agent {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+}
+html[data-theme] #runs-drawer .rq-agent:empty {
+  display: none;
+}
+html[data-theme] #runs-drawer .rq-agent #status-pill,
+html[data-theme] #runs-drawer .rq-agent .pill {
+  margin: 0;
+  width: 100%;
+  font-size: 0.8rem;
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* Let the nav shrink gap a touch but never fragment labels into ellipsis —
+   labels are shown in full above the icon-only breakpoint, hidden below it. */
+html[data-theme] nav[aria-label="Primary"] > button .nav-label,
+html[data-theme] nav[aria-label="Primary"] .help-nav-btn .nav-label {
+  text-overflow: clip;
+}
+
+/* Stage 1 — reclaim space from the brand tagline + theme-toggle label, and
+   collapse the primary nav to icon-only so every destination stays visible
+   (tooltips/titles keep them labelled). One clean breakpoint, no half-clipped
+   labels. */
+@media (max-width: 1280px) {
+  html[data-theme] .site-header .banner-tagline { display: none; }
+  html[data-theme] .header-actions .theme-toggle-label { display: none; }
+  html[data-theme] .header-actions .theme-toggle { padding: 0.4rem; }
+  html[data-theme] nav[aria-label="Primary"] > button .nav-label,
+  html[data-theme] nav[aria-label="Primary"] .help-nav-btn .nav-label {
+    display: none;
+  }
+  html[data-theme] nav[aria-label="Primary"] > button,
+  html[data-theme] nav[aria-label="Primary"] .help-nav-btn {
+    padding: 0 10px;
+    gap: 0;
+  }
+}
+
+/* Stage 2 — very narrow: shrink the brand block + icon spacing so all icons
+   stay visible without horizontal scrolling. */
+@media (max-width: 720px) {
+  html[data-theme] .site-header .banner-title { font-size: 1rem; }
+  html[data-theme] nav[aria-label="Primary"] > button,
+  html[data-theme] nav[aria-label="Primary"] .help-nav-btn {
+    padding: 0 7px;
+  }
+  html[data-theme] nav[aria-label="Primary"] > button .icon,
+  html[data-theme] nav[aria-label="Primary"] .help-nav-btn .icon {
+    width: 16px;
+    height: 16px;
+  }
+}
 html[data-theme] #dash-social-activity .dash-needs-tone {
   margin-left: auto;
   font-size: 0.64rem;
