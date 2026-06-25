@@ -347,12 +347,15 @@ async function fetchDevblogsAuthor(url, timeoutMs = 15000) {
   return '';
 }
 
-// Enrich official DevBlogs rows that still lack a real author (not covered by
-// the RSS feed) by fetching the byline from each post page. Cached on disk;
-// only successful lookups are cached so misses retry.
+// Enrich official Microsoft blog rows that still lack a real author (older
+// DevBlogs posts not covered by the RSS feed, plus azure.microsoft.com blog
+// posts) by fetching the byline from each post page. Cached on disk; only
+// successful lookups are cached so misses retry.
 async function enrichDevblogsAuthors(rows, reportsDir) {
   const targets = rows.filter(
-    (r) => /devblogs\.microsoft\.com/i.test(r.url || '') && !cleanAuthor(r.author)
+    (r) =>
+      /devblogs\.microsoft\.com|azure\.microsoft\.com/i.test(r.url || '') &&
+      !cleanAuthor(r.author)
   );
   if (!targets.length) return;
   const cacheFile = path.join(reportsDir, '.roundup-author-cache.json');
@@ -376,9 +379,11 @@ async function enrichDevblogsAuthors(rows, reportsDir) {
       }
       if (name) {
         r.author = name;
-        if (!r.sourceUrl) {
+        if (!r.sourceUrl && /devblogs\.microsoft\.com/i.test(r.url)) {
           r.source = 'DevBlogs';
           r.sourceUrl = 'https://devblogs.microsoft.com/cosmosdb/';
+        } else if (!r.source || r.source === '—') {
+          r.source = /azure\.microsoft\.com/i.test(r.url) ? 'Azure Blog' : r.source;
         }
       }
     }
