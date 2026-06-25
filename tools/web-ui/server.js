@@ -40,6 +40,13 @@ import {
 } from '../lib/report-index.mjs';
 import { isHiringContent } from '../browser-scan/lib/hiring-filter.mjs';
 import {
+  generateMonthlyRoundup,
+  listRoundups,
+  availableMonths,
+  currentMonthKey,
+  monthLabel,
+} from '../lib/roundup.mjs';
+import {
   SENTIMENT_OVERRIDES_FILE,
   WEB_SETTINGS_FILE,
   STATE_DIR,
@@ -371,10 +378,32 @@ function bulkTimestamp(d = new Date()) {
 // those files aren't always written by every variant of `/scout-post`
 // and (b) cross-file relative links don't resolve cleanly in every
 // markdown viewer the user might use. One file in, one file out.
+//
+// The summary is written INCREMENTALLY — re-run after every item finalizes,
+// not just once at the end — so an interrupted or restarted bulk still leaves
+// a partial file on disk (the prior behavior wrote nothing until every item
+// closed, so a mid-run restart lost the whole batch). The filename is keyed to
+// the bulk's start time, so each rewrite overwrites the same file. A small
+// re-entrancy guard coalesces overlapping rewrites.
 async function writeBulkSummary(bulkId) {
   const bulk = bulkRuns.get(bulkId);
-  if (!bulk || bulk.summaryWritten) return;
-  bulk.summaryWritten = true;
+  if (!bulk) return;
+  if (bulk._summaryWriting) {
+    bulk._summaryDirty = true;
+    return;
+  }
+  bulk._summaryWriting = true;
+  try {
+    do {
+      bulk._summaryDirty = false;
+      await writeBulkSummaryOnce(bulk, bulkId);
+    } while (bulk._summaryDirty);
+  } finally {
+    bulk._summaryWriting = false;
+  }
+}
+
+async function writeBulkSummaryOnce(bulk, bulkId) {
   const ts = bulkTimestamp(new Date(bulk.startedAt));
   const slug = bulk.slug || 'unscoped';
   const fname = `${ts}-${slug}-bulk-${bulk.command}-summary.md`;
@@ -385,13 +414,19 @@ async function writeBulkSummary(bulkId) {
   const resolved = await Promise.all(bulk.items.map((item) => resolveItemPostBody(item)));
   const successCount = resolved.filter((r) => r.body).length;
   const missingCount = bulk.items.length - successCount;
+  const remaining = bulk.items.filter((i) => i.status === 'running' || i.status === 'queued').length;
+  const inProgress = remaining > 0 && !bulk.cancelled;
   const lines = [];
   lines.push(`# Bulk \`/${bulk.command}\` — all posts`);
   lines.push('');
   lines.push(`- **Bulk id:** \`${bulkId}\``);
   lines.push(`- **Subject:** ${slug}`);
   lines.push(`- **Started:** ${bulk.startedAt}`);
-  lines.push(`- **Finished:** ${new Date().toISOString()}`);
+  lines.push(
+    inProgress
+      ? `- **Status:** ⏳ In progress — ${remaining} of ${bulk.items.length} still running (updated ${new Date().toISOString()})`
+      : `- **Finished:** ${new Date().toISOString()}`
+  );
   lines.push(`- **URLs submitted:** ${bulk.items.length}`);
   lines.push(`- **Posts generated:** ${successCount}`);
   lines.push(`- **URLs without a post:** ${missingCount}`);
@@ -2076,6 +2111,91 @@ app.get('/api/reports/:name', async (req, res) => {
     res.json(await readMarkdown(REPORTS_DIR, req.params.name));
   } catch (err) {
     res.status(404).json({ error: String(err.message || err) });
+  }
+});
+
+// --- Monthly roundup -----------------------------------------------
+// A roundup is one regenerable index per calendar month aggregating every
+// pointable content artifact (videos, blogs/articles, official evangelism,
+// code samples) from that month's scan reports. The file name is keyed to the
+// month, so regenerating overwrites in place instead of creating a new dated
+// report. See tools/lib/roundup.mjs.
+
+async function topicNameForSlug(slug) {
+  try {
+    const cfg = await readConfig(slug);
+    const m = (cfg.raw || '').match(/^\s*-\s*\*\*Name:\*\*\s*(.+)$/m);
+    if (m) return m[1].trim();
+  } catch {}
+  return slug;
+}
+
+// The official blog RSS feed for a slug, used as the authoritative source for
+// the roundup's Official section. Reads the `**Official blog RSS:**` line, then
+// falls back to a `## Custom RSS Feeds` entry whose URL ends in `/feed/`.
+async function officialFeedForSlug(slug) {
+  try {
+    const cfg = await readConfig(slug);
+    const raw = cfg.raw || '';
+    const m = raw.match(/^\s*-\s*\*\*Official blog RSS:\*\*\s*(\S+)/m);
+    if (m) return m[1].trim();
+    const feeds = raw.match(/^##\s+Custom RSS Feeds[\s\S]*?(?=^##\s|$)/m);
+    if (feeds) {
+      const line = feeds[0].match(/\|\s*(https?:\/\/\S*\/feed\/?)\s*$/m);
+      if (line) return line[1].trim();
+    }
+  } catch {}
+  return '';
+}
+
+// List existing roundups + which months have reports + the current month.
+app.get('/api/roundups', async (req, res) => {
+  try {
+    const slug = String(req.query.slug || '').trim();
+    if (!isValidSlug(slug)) return res.status(400).json({ error: 'invalid slug' });
+    const [existing, months] = await Promise.all([
+      listRoundups(REPORTS_DIR, slug),
+      availableMonths(REPORTS_DIR, slug),
+    ]);
+    const current = currentMonthKey();
+    res.json({
+      slug,
+      currentMonth: current,
+      currentMonthLabel: monthLabel(current),
+      months: months.map((m) => ({ month: m, label: monthLabel(m) })),
+      roundups: existing.map((r) => ({ ...r, label: monthLabel(r.month) })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+// Generate (create or overwrite) the roundup for a slug + month. Month defaults
+// to the current calendar month so "Generate monthly roundup" just works.
+app.post('/api/roundup/generate', async (req, res) => {
+  try {
+    const slug = String((req.body && req.body.slug) || '').trim();
+    if (!isValidSlug(slug)) return res.status(400).json({ error: 'invalid slug' });
+    const monthRaw = String((req.body && req.body.month) || '').trim();
+    const month = /^\d{4}-\d{2}$/.test(monthRaw) ? monthRaw : currentMonthKey();
+    const topicName = await topicNameForSlug(slug);
+    const officialFeedUrl = await officialFeedForSlug(slug);
+    const result = await generateMonthlyRoundup({
+      reportsDir: REPORTS_DIR,
+      slug,
+      month,
+      topicName,
+      officialFeedUrl,
+    });
+    res.json({
+      ok: true,
+      fileName: result.fileName,
+      month: result.month,
+      monthLabel: monthLabel(result.month),
+      counts: result.counts,
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
   }
 });
 
@@ -4457,6 +4577,10 @@ app.post('/api/runs/bulk', express.json({ limit: '512kb' }), async (req, res) =>
   };
   bulkRuns.set(bulkId, bulkRecord);
 
+  // Write an initial in-progress stub immediately so the run is visible in the
+  // Social view from the start and survives an early interruption.
+  writeBulkSummary(bulkId).catch(() => {});
+
   const finalizeItem = (item, run) => {
     item.status = run ? run.status : 'error';
     const safeOutput = run ? safeRunOutput(run) : '';
@@ -4470,9 +4594,9 @@ app.post('/api/runs/bulk', express.json({ limit: '512kb' }), async (req, res) =>
       item.error = `Run exited with status: ${run.status}`;
     }
     bulkRecord.pending = Math.max(0, bulkRecord.pending - 1);
-    if (bulkRecord.pending === 0) {
-      writeBulkSummary(bulkId).catch(() => {});
-    }
+    // Persist the summary after EVERY item (not just at the end) so an
+    // interrupted or restarted bulk still leaves a partial file on disk.
+    writeBulkSummary(bulkId).catch(() => {});
   };
 
   let cursor = 0;
@@ -4487,9 +4611,7 @@ app.post('/api/runs/bulk', express.json({ limit: '512kb' }), async (req, res) =>
         bulkRecord.pending = Math.max(0, bulkRecord.pending - 1);
       }
       cursor = bulkRecord.items.length;
-      if (bulkRecord.pending === 0) {
-        writeBulkSummary(bulkId).catch(() => {});
-      }
+      writeBulkSummary(bulkId).catch(() => {});
       return;
     }
     if (cursor >= bulkRecord.items.length) return;
@@ -4517,9 +4639,7 @@ app.post('/api/runs/bulk', express.json({ limit: '512kb' }), async (req, res) =>
       item.status = 'error';
       item.error = (r.error && r.error.error) || 'Failed to start run.';
       bulkRecord.pending = Math.max(0, bulkRecord.pending - 1);
-      if (bulkRecord.pending === 0) {
-        writeBulkSummary(bulkId).catch(() => {});
-      }
+      writeBulkSummary(bulkId).catch(() => {});
       startNext().catch(() => {});
       return;
     }

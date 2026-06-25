@@ -132,7 +132,62 @@ export async function scanContentSites(browser, ctx) {
   }
 
   if (ownsPage) await page.close().catch(() => {});
-  return [...items.values()];
+
+  // Backfill publish dates for items whose search card didn't expose one
+  // (Tech Community search cards in particular omit dates, but the public
+  // article page carries a JSON-LD `datePublished`). Without a date the
+  // scout-scan date-gate can't place these in-window, so they silently drop.
+  const all = [...items.values()];
+  await backfillMissingDates(all);
+  return all;
+}
+
+// Cheap, login-free date backfill: fetch each dateless item's public page and
+// pull a publish date from JSON-LD `datePublished`, the OpenGraph
+// `article:published_time` meta, or a `<time datetime>` element. Bounded by
+// concurrency + a hard cap so a big result set can't stall the scan.
+async function fetchPublishedDate(url, timeoutMs = 8000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { 'user-agent': 'Mozilla/5.0 (ContentScout content-sites date-backfill)' },
+    });
+    if (!res.ok) return '';
+    const h = await res.text();
+    const m =
+      h.match(/<meta[^>]+(?:property|name)=["']article:published_time["'][^>]+content=["']([^"']+)/i) ||
+      h.match(/"datePublished"\s*:\s*"([^"]+)"/i) ||
+      h.match(/<time[^>]+datetime=["']([^"']+)/i);
+    if (!m) return '';
+    const d = new Date(m[1]);
+    if (Number.isNaN(d.getTime())) return '';
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  } catch {
+    return '';
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function backfillMissingDates(itemsArr, { concurrency = 4, max = 120 } = {}) {
+  const targets = itemsArr.filter((i) => !i.post_date).slice(0, max);
+  if (!targets.length) return;
+  const queue = [...targets];
+  let filled = 0;
+  async function worker() {
+    while (queue.length) {
+      const it = queue.shift();
+      const iso = await fetchPublishedDate(it.url);
+      if (iso) {
+        it.post_date = iso;
+        filled++;
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
+  console.log(`[browser-scan] content-sites: backfilled ${filled}/${targets.length} missing publish date(s)`);
 }
 
 async function scanOneSite(page, site, { searchTerms, maxPerTerm, outDir, items }) {
@@ -211,9 +266,11 @@ async function scanOneSite(page, site, { searchTerms, maxPerTerm, outDir, items 
         author_display: site.label,
         author_profile: null,
         author_bio: null,
-        // Listing/search pages rarely expose a reliable per-item date; the
-        // scout-scan pipeline fetches + date-gates each candidate anyway.
-        post_date: null,
+        // Date pulled from the search-result card when the site exposes one
+        // (Tech Community / DZone / C# Corner cards carry a <time> or a dated
+        // byline). Null when absent — the scout-scan pipeline still fetches +
+        // date-gates each candidate as a backstop.
+        post_date: it.date || null,
         title: it.title,
         body: '',
         engagement: { reactions: null, comments: null, reposts: null },
@@ -238,11 +295,65 @@ async function scanOneSite(page, site, { searchTerms, maxPerTerm, outDir, items 
 // Generic article-link extractor. Given the site's permalink pattern
 // (string → RegExp inside the page), collect anchors whose href matches,
 // taking the anchor's own text — or the nearest card heading — as the
-// title. Skips obvious nav/login chrome and caps per page.
+// title. Also pulls a publish date from the result card when the site
+// exposes one. Skips obvious nav/login chrome and caps per page.
 async function extractLinksOnPage(page, patternStr) {
   return page.evaluate((pStr) => {
     let re;
     try { re = new RegExp(pStr, 'i'); } catch { return []; }
+
+    // Convert a card's date text → ISO (YYYY-MM-DD). Handles absolute dates
+    // ("Jun 19, 2026", "2026-06-19") and relative ones ("2 weeks ago",
+    // "yesterday", "3h"). Returns '' when nothing parseable is found.
+    const toIso = (ms) => {
+      const d = new Date(ms);
+      return Number.isNaN(d.getTime())
+        ? ''
+        : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+    const parseDate = (raw) => {
+      const s = String(raw || '').trim();
+      if (!s) return '';
+      // Relative: "2 weeks ago", "3 days ago", "5h", "10m", "yesterday".
+      if (/^yesterday/i.test(s)) return toIso(Date.now() - 864e5);
+      if (/^(today|just now|moments? ago|now)/i.test(s)) return toIso(Date.now());
+      const rel = s.match(/(\d+)\s*(year|yr|month|mo|week|wk|day|d|hour|hr|h|minute|min|m)s?\b\s*(ago)?/i);
+      if (rel) {
+        const n = parseInt(rel[1], 10);
+        const u = rel[2].toLowerCase();
+        const mult =
+          /year|yr/.test(u) ? 365 * 864e5 :
+          /month|mo/.test(u) ? 30 * 864e5 :
+          /week|wk/.test(u) ? 7 * 864e5 :
+          /day|^d$/.test(u) ? 864e5 :
+          /hour|hr|^h$/.test(u) ? 36e5 :
+          60e3;
+        return toIso(Date.now() - n * mult);
+      }
+      // Absolute: trust Date.parse for "Jun 19, 2026" / "2026-06-19" etc.
+      const t = Date.parse(s);
+      return Number.isFinite(t) ? toIso(t) : '';
+    };
+    const dateFromCard = (card) => {
+      if (!card) return '';
+      // 1) A <time> element with a machine datetime is the most reliable.
+      const timeEl = card.querySelector('time[datetime], time[data-datetime]');
+      if (timeEl) {
+        const dt = timeEl.getAttribute('datetime') || timeEl.getAttribute('data-datetime');
+        const iso = parseDate(dt || timeEl.textContent || '');
+        if (iso) return iso;
+      }
+      // 2) Elements that look like a date/published byline.
+      const cand = card.querySelector(
+        '[class*="date" i],[class*="published" i],[class*="timestamp" i],[data-testid*="date" i]'
+      );
+      if (cand) {
+        const iso = parseDate(cand.getAttribute('title') || cand.textContent || '');
+        if (iso) return iso;
+      }
+      return '';
+    };
+
     const out = [];
     const seen = new Set();
     const NAV = /^(sign in|log in|login|register|sign up|home|search|menu|next|previous|read more|see all|more|follow)$/i;
@@ -253,14 +364,15 @@ async function extractLinksOnPage(page, patternStr) {
       const url = href.split('#')[0];
       if (seen.has(url)) continue;
       let title = (a.textContent || '').replace(/\s+/g, ' ').trim();
+      const card = a.closest('article, li, [class*="card" i], [class*="result" i], [class*="message" i]')
+        || a.closest('section, div');
       if (title.length < 8) {
-        const card = a.closest('article, li, section, div');
         const h = card ? card.querySelector('h1, h2, h3, h4') : null;
         if (h) title = (h.textContent || '').replace(/\s+/g, ' ').trim();
       }
       if (!title || title.length < 8 || NAV.test(title)) continue;
       seen.add(url);
-      out.push({ url, title });
+      out.push({ url, title, date: dateFromCard(card) });
       if (out.length >= 60) break; // hard per-page cap
     }
     return out;

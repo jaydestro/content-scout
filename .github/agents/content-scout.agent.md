@@ -283,6 +283,7 @@ The config file specifies which networks are enabled. For each enabled source, u
   - **Layer 1b — Google PSE (LEGACY, pre-2026 projects only):** Same legacy caveat as Reddit Layer 3b. Only runs if `BRAVE_SEARCH_API_KEY` is empty and PSE creds belong to a pre-2026 GCP project. Tag as `source: "linkedin-google-pse"`.
   - **Layer 2 — RSSHub feeds (free, opt-in via Custom RSS Feeds):** If the user has added `https://rsshub.app/linkedin/company/{slug}` or `https://rsshub.app/linkedin/posts/{handle}` entries under `## Custom RSS Feeds`, those are already scanned by the Custom RSS Feeds source. Tag provenance as `source: "linkedin-rsshub"`.
   - **Layer 3 — Direct web/fetch on permalinks:** If a LinkedIn URL is referenced from another source, fetch the public preview at `https://www.linkedin.com/posts/{slug}` or `https://www.linkedin.com/pulse/{slug}` with a real browser UA. Public posts/articles return enough HTML to extract title, author, and excerpt; private/connection-only posts return a login wall — drop those.
+  - **Permalink handling — never report a LinkedIn item as "unreachable" just because its only URL is a `/feed/sdui-post/` link.** LinkedIn's SDUI search does not expose a stable per-post permalink, so the browser-scan synthesizes a non-navigable `/feed/sdui-post/{hash}/` URL. When that is the only post URL, **fall back to the item's `author_profile`** (the sidecar captures a navigable `linkedin.com/in/{handle}/` or `/company/{slug}/posts/` URL) and link the item there with a note like "LinkedIn hides the public post link — opens {author}'s profile". Only list LinkedIn under "Sources That Could Not Be Reached" when **no** layer returned any items at all — not when items were found but lacked a clean permalink. Order of preference for the item link: real `/feed/update/urn:li:activity:{id}/` permalink › `author_profile` › plain text "no public link".
   - If no layer produces results, note it in "Sources That Could Not Be Reached". Print which layer(s) ran at the start of the LinkedIn scan.
 
 #### Social Source Data Requirements
@@ -459,14 +460,14 @@ When scanning sources via `web/fetch` or API calls, follow these rules to avoid 
 | InfoQ | No | — | Works fine |
 | DZone | No (browser) | Yes | **Browser-scan Layer 0** (`content-sites`, `subSource: dzone`) via real-browser `dzone.com/search` — bypasses the anonymous anti-bot 403. |
 | C# Corner | No (browser) | Yes | **Browser-scan Layer 0** (`content-sites`, `subSource: csharpcorner`) via real-browser `c-sharpcorner.com/search` — replaces the 500-ing RSS. |
-| Microsoft Tech Community | Sign-in (browser) | Yes | **Browser-scan Layer 0** (`content-sites`, `subSource: techcommunity`) via the logged-in CDP browser at `techcommunity.microsoft.com/search` — sign in once with `launch-edge.mjs`. Anonymous scraping still hits the login wall. |
+| Microsoft Tech Community | Sign-in (browser) | Yes | **Browser-scan Layer 0** (`content-sites`, `subSource: techcommunity`) via the logged-in CDP browser at `techcommunity.microsoft.com/search` — sign in once with `launch-edge.mjs`. Anonymous scraping still hits the login wall. **Publish dates** are populated by the `content-sites` scraper (card `<time>` first, then a login-free fetch of the article page's JSON-LD `datePublished` / `article:published_time`), so the date-gate can place each hit in-window instead of dropping it for a missing date. |
 | YouTube | API key | Yes (free) | YouTube scanning skipped |
 | GitHub | No (unauthenticated) | — | Lower rate limits (60 req/hr). Add a `GITHUB_TOKEN` for 5000 req/hr |
 | Stack Overflow | No | — | Works fine (public API v2.3) |
 | Reddit | None required (cascading scanner) | Yes | Layer 0 = logged-in browser scan via `tools/browser-scan` if a fresh sidecar exists → Layer 1 = `old.reddit.com` RSS → Layer 2 = `old.reddit.com` HTML scrape → Layer 3 = Brave Search API if `BRAVE_SEARCH_API_KEY` set (Layer 3b = legacy Google PSE for pre-2026 projects only) → Layer 4 = manual import via `/scout-reddit-import`. OAuth creds optional pre-Layer-1 upgrade. **Always attempted — never skipped for missing keys.** |
 | X/Twitter | None required (cascading scanner) | Optional ($200/mo Basic for Layer 1) | Layer 0 = logged-in browser scan via `tools/browser-scan` if a fresh sidecar exists → Layer 1 = authenticated API → Layer 2 = Brave Search API (Layer 2b = legacy PSE) → Layer 3 = RSSHub feeds via Custom RSS → Layer 4 = web/fetch on referenced permalinks. **Always attempted at whatever layers have what they need.** |
 | LinkedIn | None required (free layered scanner) | Yes | Layer 0 = logged-in browser scan via `tools/browser-scan` if a fresh sidecar exists → Layer 1 = Brave Search API for `linkedin.com/posts/* linkedin.com/pulse/*` (Layer 1b = legacy PSE) → Layer 2 = RSSHub via Custom RSS → Layer 3 = web/fetch on referenced permalinks. No paid LinkedIn API used. **Always attempted at whatever layers have what they need.** |
-| Google (News + Web) | None required (browser scan only) | Yes | Layer 0 = `tools/browser-scan` runs two passes over the same logged-in browser context: **Google News** (`news.google.com/search?…+when:…`) for editorial coverage, then **Google Web Search** (`www.google.com/search?…&tbs=qdr:…`) for blogs / docs / repos. Items merge into a single `*-google.json` sidecar with a `subSource` discriminator (`google-news` / `google-web`); `source` is `google-news-browser` / `google-web-browser`. Web pass items typically have `post_date: null` — the `qdr` bucket already limits the window. No API-layer fallback; the browser scan is the only Google source. |
+| Google (News + Web) | None required (browser scan only) | Yes | Layer 0 = `tools/browser-scan` runs two passes over the same logged-in browser context: **Google News** (`news.google.com/search?…+when:…`) for editorial coverage, then **Google Web Search** (`www.google.com/search?…&tbs=qdr:…`) for blogs / docs / repos. Items merge into a single `*-google.json` sidecar with a `subSource` discriminator (`google-news` / `google-web`); `source` is `google-news-browser` / `google-web-browser`. Web pass items typically have `post_date: null` — the `qdr` bucket already limits the window. **Google News RSS fallback:** when the rendered News pass times out for a term (common under the CDP context), the scanner auto-fetches `news.google.com/rss/search?q=…+when:…` (no render, no auth) and ingests those items with `source: "google-news-rss"` — so a News timeout no longer drops coverage. Only report Google News under "Sources That Could Not Be Reached" if BOTH the render and the RSS fallback return nothing. |
 | Hacker News | No | — | Works fine (Algolia API) |
 | Bluesky | App password | Yes (free) | Skipped only if `BLUESKY_HANDLE` or `BLUESKY_APP_PASSWORD` is missing. **If both are present, the agent MUST call `createSession` and run the search — "credentials present but API call not completed" is a bug, not an acceptable outcome.** |
 | Brave Search API | API key | Yes (2000/mo free) | Reddit Layer 3, LinkedIn Layer 1, X Layer 2 all skipped (cascade falls through to next layer or web/fetch fallback). |
@@ -783,6 +784,20 @@ A strict "seen once = forever skip" rule is too aggressive: if an item went vira
 When re-surfacing, **prefix the item title with `🔁 Re-surfaced — {growth-summary}`** (e.g., `🔁 Re-surfaced — upvotes 47 → 612 since 2026-04-15`) so the user understands why a familiar URL is back. Record the re-surface in `reports/.scout-state/{slug}/resurfaced.jsonl` (one JSON object per line: `{url, prior_run, prior_metric, current_metric, this_run}`) so future scans can show republish patterns.
 
 Do NOT re-surface for trivial deltas (a Reddit post going from 47 upvotes to 52 is noise). The 3× threshold is intentional friction.
+
+### Full Report is month-cumulative (a "Full Report" must be complete)
+
+The cross-month skip above must **never** gut the current month's report. A `-content.md` "Full Report" has to be comprehensive for its calendar month — a same-week re-scan must reproduce **everything already found this month** plus whatever is new, not a near-empty "only net-new" delta.
+
+When generating a report, after scanning + filtering this run's results:
+
+1. Find the most recent prior `*-{slug}-content.md` (+ its JSON sidecar) for the **same calendar month**, if one exists.
+2. **Carry forward every in-month item** from that prior report into this report. Re-validate each URL is still live (`tools/lib/url-validate.mjs`); drop only the dead ones.
+3. Add this run's net-new items on top.
+4. Deduplicate by normalized URL so each item appears exactly once, then renumber.
+
+The result: the latest `-content.md` for a month is always the full set of that month's qualifying content. `.seen-links.json` still prevents dragging **prior-month** items into this month and still drives the re-surface logic, but it must not cause an **in-month** item to be omitted from the current month's Full Report. (Cross-month reports stay scoped to their own month; only the current month is made cumulative.)
+
 
 ## Persistent Ecosystem State
 

@@ -14,9 +14,11 @@ const KIND_TABLE = [
   { match: /-posting-calendar\.md$/i,         id: 'calendar',     label: 'Calendar' },
   { match: /-alt-[^.]+\.md$/i,                id: 'alt-text',     label: 'Alt text' },
   { match: /-solo-[^.]*\.md$/i,               id: 'social-solo',  label: 'Solo post' },
+  { match: /-bulk-[^.]*-summary\.md$/i,       id: 'social-bulk',  label: 'Social posts (bulk)' },
   { match: /-social-posts\.md$/i,             id: 'social-bulk',  label: 'Social posts' },
   // reports/
   { match: /-content\.md$/i,                  id: 'content',      label: 'Full Report' },
+  { match: /-roundup\.md$/i,                  id: 'roundup',      label: 'Roundup' },
   { match: /-mindshare\.md$/i,                id: 'mindshare',    label: 'Mindshare' },
   { match: /-supplemental\.md$/i,             id: 'supplemental', label: 'Supplemental' },
   { match: /-seo[-.]/i,                       id: 'seo',          label: 'SEO' },
@@ -78,7 +80,10 @@ function cleanInlineMarkdown(text) {
 function extractSummary(raw) {
   const text = String(raw || '');
   // Try a "## Summary" / "## Overview" / "## TL;DR" / "## Highlights" block.
-  const blockRe = /^#{2,3}\s+(summary|overview|tl;?dr|highlights|executive summary)\s*$([\s\S]*?)(?=^#{1,3}\s|^---\s*$|\Z)/im;
+  // NOTE: the terminator uses `(?![\s\S])` for end-of-string — JS regex has no
+  // `\Z`, and with the /i flag a literal `\Z` degrades to a case-insensitive
+  // "z" match, which truncated summaries at their first "z" (e.g. "Azure" → "A").
+  const blockRe = /^#{2,3}\s+(summary|overview|tl;?dr|highlights|executive summary)\s*$([\s\S]*?)(?=^#{1,3}\s|^---\s*$|(?![\s\S]))/im;
   const block = text.match(blockRe);
   let body = block ? block[2] : '';
   if (!body) {
