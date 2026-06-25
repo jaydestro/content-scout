@@ -144,6 +144,7 @@ export function fillAskChip(kind) {
     cfp: `Find open Calls for Papers for ${slug} over the next 90 days. Prefer Sessionize / Pretalx / typeform-based CFPs over awards or "register interest" pages. Include deadline, audience fit, and submission URL.`,
     conf: `List upcoming developer-focused conferences in the next 6 months where ${slug} would land well — bias toward Linux Foundation events, KubeCon, language/runtime confs, and AI app-developer venues.`,
     summary: `Summarize the last 30 days of ${slug} mentions across reports. Group by topic tag, call out sentiment shifts, and flag any single-source spikes that need verification.`,
+    originality: 'Run an originality / AI-generated-content review on this URL: <paste URL>. Use `node tools/originality.mjs --json <url>` and report the 0-10 score, the read (Likely original / Mixed / Likely AI-generated), and the strongest AI-writing signals. Present it as a transparent review aid, not a definitive verdict.',
     recommend: `Based on the last 30 days of ${slug} activity across reports, recommend three blog or video topics we should publish in the next two weeks. For each, cite the signal that motivates it.`,
   };
   textarea.value = prompts[kind] || '';

@@ -1052,6 +1052,26 @@ Every numbered item gets an **Engagement Potential** score (1-5) in the report t
 
 Add an `EP` column to all numbered item tables (after Tags, before Link).
 
+### Originality Score (AI-generated-content review)
+
+When **Originality scoring** is enabled in the config (`- **Originality scoring:** on`), review how AI-generated each piece of **published, text-bearing content** looks and surface the result in the report. This is a transparent review aid built on the documented signs of AI writing (`.claude/skills/humanizer/SKILL.md`) — **not** a definitive AI detector or plagiarism check. Frame it that way; never assert a piece "is AI-generated", only how strongly it reads that way.
+
+How to score:
+
+- Use the deterministic scorer: `node tools/originality.mjs --json <url>` (it fetches the page, strips it to prose, and returns `{ score (0–10), rating, ratingLabel, wordCount, signals[] }`). Higher score = more original / human-written. You may also pipe text: `node tools/originality.mjs --json --text "…"`.
+- Only score content with enough real text (blogs, articles, tutorials, written posts, long-form). The scorer returns `insufficient-text` for titles/snippets under ~40 words — render those as `n/a` and do not guess.
+- Do NOT score pure social-conversation rows (tweets, short Reddit comments), code-only repos, or videos with no transcript — there's no prose to assess.
+
+Where it goes:
+
+- Add a dedicated `## Originality Review` section (only when the toggle is on AND at least one item was scored), placed near the other analytical sections (after `## Documentation Signals`). One row per scored content item:
+
+  `| # | Title | Author | Score | Read | Top AI-writing signals | Link |`
+
+  where **Score** is `N/10`, **Read** is the `ratingLabel` (`Likely original` / `Mixed signals` / `Likely AI-generated`), and **Top AI-writing signals** lists the 2–3 strongest `signals` (e.g., "AI vocabulary density, Em-dash overuse") or `—` when none fired.
+- In the summary "At a glance" block, add one line when scored: `Originality: {n} items reviewed — {a} likely original · {b} mixed · {c} likely AI-generated`.
+- Never drop or down-rank an item solely for a low originality score — it is informational. A low score on an official post is expected for routine announcements and is not a quality judgment.
+
 ### Sentiment Tagging
 
 All **Conversations & Mentions** items get a sentiment indicator:
