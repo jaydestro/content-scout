@@ -21,21 +21,30 @@
 
 import { promises as fs } from 'node:fs';
 import process from 'node:process';
-import { scoreOriginality, formatOriginality } from './lib/originality.mjs';
+import { scoreOriginality, formatOriginality, reviewAgainstDocs } from './lib/originality.mjs';
 import { htmlToText } from './lib/analytics.mjs';
 
+// Hosts treated as "official documentation" for the scraped-from-docs check.
+const DOC_HOSTS = /learn\.microsoft\.com|docs\.microsoft\.com|developer\.mozilla\.org|readthedocs\.io|\.github\.io/i;
+
 function parseArgs(argv) {
-  const out = { json: false, inputs: [], stdin: false, text: null, minWords: 40, timeoutMs: 12000, help: false };
+  const out = {
+    json: false, inputs: [], stdin: false, text: null, minWords: 40,
+    timeoutMs: 12000, help: false, docs: [], autoDocs: true,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--json') out.json = true;
     else if (a === '--text') out.text = argv[++i] || '';
+    else if (a === '--doc') out.docs.push(argv[++i] || '');
+    else if (a === '--no-auto-docs') out.autoDocs = false;
     else if (a === '--min') out.minWords = parseInt(argv[++i], 10) || 40;
     else if (a === '--timeout') out.timeoutMs = parseInt(argv[++i], 10) || 12000;
     else if (a === '-h' || a === '--help') out.help = true;
     else if (a === '-') out.stdin = true;
     else out.inputs.push(a);
   }
+  out.docs = out.docs.filter(Boolean);
   return out;
 }
 
@@ -45,7 +54,7 @@ async function readStdin() {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-async function fetchText(url, timeoutMs) {
+async function fetchHtml(url, timeoutMs) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -53,31 +62,60 @@ async function fetchText(url, timeoutMs) {
       signal: ctrl.signal,
       headers: { 'user-agent': 'Mozilla/5.0 (ContentScout originality)' },
     });
-    if (!res.ok) return { text: '', error: `HTTP ${res.status}` };
-    const html = await res.text();
-    return { text: htmlToText(html), error: null };
+    if (!res.ok) return { html: '', error: `HTTP ${res.status}` };
+    return { html: await res.text(), error: null };
   } catch (e) {
-    return { text: '', error: e.name === 'AbortError' ? 'timeout' : e.message };
+    return { html: '', error: e.name === 'AbortError' ? 'timeout' : e.message };
   } finally {
     clearTimeout(timer);
   }
 }
 
+// Pull documentation links out of a content page so we can check whether the
+// prose was lifted from docs it doesn't reword.
+function extractDocLinks(html, max = 3) {
+  const out = [];
+  const seen = new Set();
+  for (const m of String(html || '').matchAll(/href=["'](https?:\/\/[^"']+)["']/gi)) {
+    const u = m[1].split('#')[0];
+    if (DOC_HOSTS.test(u) && !seen.has(u)) {
+      seen.add(u);
+      out.push(u);
+      if (out.length >= max) break;
+    }
+  }
+  return out;
+}
+
 async function resolveInput(input, opts) {
   if (/^https?:\/\//i.test(input)) {
-    const { text, error } = await fetchText(input, opts.timeoutMs);
-    return { label: input, text, error };
+    const { html, error } = await fetchHtml(input, opts.timeoutMs);
+    return { label: input, raw: html, text: htmlToText(html), error };
   }
   try {
     const raw = await fs.readFile(input, 'utf8');
-    return { label: input, text: raw, error: null };
+    return { label: input, raw, text: raw, error: null };
   } catch {
-    // Treat as raw text if it isn't a readable path.
-    return { label: '(text)', text: input, error: null };
+    return { label: '(text)', raw: input, text: input, error: null };
   }
 }
 
-function printHuman(label, result, error) {
+// Fetch + run the docs-derivative review for a scored job.
+async function runDerivativeCheck(job, opts) {
+  let docUrls = [...opts.docs];
+  if (opts.autoDocs && job.raw) docUrls = docUrls.concat(extractDocLinks(job.raw));
+  docUrls = [...new Set(docUrls)].slice(0, 4);
+  if (!docUrls.length) return null;
+  const docs = [];
+  for (const u of docUrls) {
+    const { html } = await fetchHtml(u, opts.timeoutMs);
+    if (html) docs.push({ url: u, text: htmlToText(html) });
+  }
+  if (!docs.length) return null;
+  return reviewAgainstDocs(job.text, docs, { contentRaw: job.raw });
+}
+
+function printHuman(label, result, error, derivative) {
   if (error && !result) {
     console.log(`${label}\n  could not score: ${error}`);
     return;
@@ -90,18 +128,23 @@ function printHuman(label, result, error) {
   } else if (result.rating !== 'insufficient-text') {
     console.log('  Signals: none detected');
   }
+  if (derivative && derivative.checked) {
+    const t = derivative.top;
+    console.log(`  Docs check: ${derivative.verdictLabel} (top ${t.overlapPct}% verbatim overlap, longest run ${t.longestRun} words${t.attributed ? ', attributed' : ', no attribution'})`);
+    console.log(`    vs ${t.url}`);
+  }
 }
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (opts.help) {
-    console.log('Usage: node tools/originality.mjs [--json] [--text "..."] <url|file|->');
+    console.log('Usage: node tools/originality.mjs [--json] [--doc <url>]... [--text "..."] <url|file|->');
     return;
   }
 
   const jobs = [];
-  if (opts.text != null) jobs.push({ label: '(text)', text: opts.text, error: null });
-  if (opts.stdin) jobs.push({ label: '(stdin)', text: await readStdin(), error: null });
+  if (opts.text != null) jobs.push({ label: '(text)', raw: opts.text, text: opts.text, error: null });
+  if (opts.stdin) { const t = await readStdin(); jobs.push({ label: '(stdin)', raw: t, text: t, error: null }); }
   for (const input of opts.inputs) jobs.push(await resolveInput(input, opts));
 
   if (!jobs.length) {
@@ -109,17 +152,21 @@ async function main() {
     process.exit(2);
   }
 
-  const results = jobs.map((j) => ({
-    input: j.label,
-    error: j.error,
-    result: j.error && !j.text ? null : scoreOriginality(j.text, { minWords: opts.minWords }),
-  }));
+  const results = [];
+  for (const j of jobs) {
+    const result = j.error && !j.text ? null : scoreOriginality(j.text, { minWords: opts.minWords });
+    let derivative = null;
+    if (result && result.rating !== 'insufficient-text') {
+      derivative = await runDerivativeCheck(j, opts);
+    }
+    results.push({ input: j.label, error: j.error, result, derivative });
+  }
 
   if (opts.json) {
     console.log(JSON.stringify(results.length === 1 ? results[0] : results, null, 2));
     return;
   }
-  for (const r of results) printHuman(r.input, r.result, r.error);
+  for (const r of results) printHuman(r.input, r.result, r.error, r.derivative);
 }
 
 main().catch((err) => {

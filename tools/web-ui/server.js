@@ -47,6 +47,11 @@ import {
   monthLabel,
 } from '../lib/roundup.mjs';
 import {
+  scoreOriginality,
+  reviewAgainstDocs,
+  formatOriginality,
+} from '../lib/originality.mjs';
+import {
   SENTIMENT_OVERRIDES_FILE,
   WEB_SETTINGS_FILE,
   STATE_DIR,
@@ -5288,6 +5293,129 @@ app.post('/api/analytics/seo', express.json(), async (req, res) => {
   }
 });
 
+// Originality / AI-generated-content review for one or more URLs. Scores how
+// human-written each reads (signs-of-AI-writing heuristics) and checks whether
+// the prose was lifted near-verbatim from official documentation without
+// attribution. Writes a dated `-originality.md` report so it lands in the
+// Tools browse list (same pattern as the SEO audit). Pure Node, no LLM.
+const DOC_HOSTS_RE = /learn\.microsoft\.com|docs\.microsoft\.com|developer\.mozilla\.org|readthedocs\.io|\.github\.io/i;
+
+function extractDocLinksFromHtml(html, max = 3) {
+  const out = [];
+  const seen = new Set();
+  for (const m of String(html || '').matchAll(/href=["'](https?:\/\/[^"']+)["']/gi)) {
+    const u = m[1].split('#')[0];
+    if (DOC_HOSTS_RE.test(u) && !seen.has(u)) {
+      seen.add(u);
+      out.push(u);
+      if (out.length >= max) break;
+    }
+  }
+  return out;
+}
+
+async function fetchPageText(url, timeoutMs = 12000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { 'user-agent': 'Mozilla/5.0 (compatible; ContentScout/1.0 originality)' },
+      redirect: 'follow',
+    });
+    if (!r.ok) return { html: '', text: '', error: `HTTP ${r.status}` };
+    const html = await r.text();
+    return { html, text: htmlToText(html), error: null };
+  } catch (e) {
+    return { html: '', text: '', error: e.name === 'AbortError' ? 'timeout' : String(e.message || e) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+app.post('/api/analytics/originality', express.json(), async (req, res) => {
+  try {
+    const { urls, docUrls, slug } = req.body || {};
+    if (!Array.isArray(urls) || urls.length === 0) {
+      return res.status(400).json({ error: 'urls array is required' });
+    }
+    const targets = urls.slice(0, 5).map((u) => String(u).trim()).filter(Boolean);
+    const manualDocs = Array.isArray(docUrls)
+      ? docUrls.slice(0, 5).map((u) => String(u).trim()).filter(Boolean)
+      : [];
+
+    const items = [];
+    for (const url of targets) {
+      const page = await fetchPageText(url);
+      if (page.error && !page.text) {
+        items.push({ url, error: page.error });
+        continue;
+      }
+      const result = scoreOriginality(page.text);
+      let derivative = null;
+      if (result.rating !== 'insufficient-text') {
+        const docUrlSet = [...new Set(manualDocs.concat(extractDocLinksFromHtml(page.html)))].slice(0, 4);
+        const docs = [];
+        for (const du of docUrlSet) {
+          const dp = await fetchPageText(du);
+          if (dp.text) docs.push({ url: du, text: dp.text });
+        }
+        if (docs.length) derivative = reviewAgainstDocs(page.text, docs, { contentRaw: page.html });
+      }
+      items.push({ url, result, derivative });
+    }
+
+    // Build the report markdown.
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const safeSlug = isValidSlug(slug) ? slug : 'content';
+    const fileName = `${stamp}-${safeSlug}-originality.md`;
+    const scored = items.filter((i) => i.result && i.result.rating !== 'insufficient-text');
+    const counts = {
+      original: scored.filter((i) => i.result.rating === 'likely-original').length,
+      mixed: scored.filter((i) => i.result.rating === 'mixed').length,
+      ai: scored.filter((i) => i.result.rating === 'likely-ai').length,
+      copied: items.filter((i) => i.derivative && i.derivative.verdict === 'copied-unattributed').length,
+    };
+    const esc = (s) => String(s == null ? '' : s).replace(/\|/g, '\\|').replace(/\s+/g, ' ').trim();
+    const md = [];
+    md.push(`# Originality Review — ${safeSlug}`);
+    md.push('');
+    md.push(`**Generated:** ${now.toISOString()}`);
+    md.push(`**URLs reviewed:** ${items.length} (${scored.length} scored)`);
+    md.push(`**At a glance:** ${counts.original} likely original · ${counts.mixed} mixed · ${counts.ai} likely AI-generated · ${counts.copied} copied from docs without attribution`);
+    md.push('');
+    md.push('> Transparent review aid based on the documented signs of AI writing plus a verbatim-overlap check against official documentation. Not a definitive AI detector or plagiarism tool — a low score is informational, not a verdict.');
+    md.push('');
+    md.push('| # | URL | Score | Read | Top AI-writing signals | Docs check |');
+    md.push('|---|-----|-------|------|------------------------|------------|');
+    items.forEach((it, i) => {
+      if (it.error) {
+        md.push(`| ${i + 1} | ${esc(it.url)} | — | could not fetch | — | ${esc(it.error)} |`);
+        return;
+      }
+      const r = it.result;
+      const score = r.rating === 'insufficient-text' ? 'n/a' : `${r.score}/10`;
+      const read = r.ratingLabel;
+      const sigs = r.signals && r.signals.length ? esc(r.signals.slice(0, 3).map((s) => s.label).join(', ')) : '—';
+      let docs = '—';
+      if (it.derivative && it.derivative.checked) {
+        const t = it.derivative.top;
+        docs = esc(`${it.derivative.verdictLabel} (${t.overlapPct}% overlap${t.attributed ? ', attributed' : ', no attribution'})`);
+      }
+      md.push(`| ${i + 1} | ${esc(it.url)} | ${score} | ${esc(read)} | ${sigs} | ${docs} |`);
+    });
+    md.push('');
+
+    await fs.mkdir(REPORTS_DIR, { recursive: true });
+    await fs.writeFile(path.join(REPORTS_DIR, fileName), md.join('\n'), 'utf8');
+    res.json({ ok: true, fileName, counts, reviewed: items.length });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
 app.listen(PORT, HOST, async () => {
   const { runner, source } = await getRunner();
   const displayHost = HOST === '0.0.0.0' ? 'localhost' : HOST;
@@ -5308,6 +5436,7 @@ app.listen(PORT, HOST, async () => {
     'scout-creators.prompt.md', 'scout-doctor.prompt.md', 'scout-keys.prompt.md',
     'scout-seo.prompt.md', 'scout-reddit-import.prompt.md',
     'scout-alt.prompt.md', 'scout-vision.prompt.md',
+    'scout-originality.prompt.md',
   ];
   let diskFiles = [];
   try { diskFiles = await fs.readdir(PROMPTS_DIR); } catch { /* ignore */ }

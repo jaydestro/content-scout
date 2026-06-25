@@ -183,3 +183,101 @@ export function formatOriginality(result) {
   if (!result || result.rating === 'insufficient-text') return 'n/a (too short)';
   return `${result.score}/10 · ${result.ratingLabel}`;
 }
+
+// ---------------------------------------------------------------------------
+// Documentation-derivative check: is the content scraped/copied near-verbatim
+// from official documentation, without attribution or rewording?
+// ---------------------------------------------------------------------------
+
+function normalizeForShingles(text) {
+  return toProse(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Build a Set of overlapping n-word shingles (default 8-grams) — long enough
+// that incidental phrase matches are rare, so a high overlap means real copying.
+function shingles(text, n = 8) {
+  const words = normalizeForShingles(text).split(' ').filter(Boolean);
+  const set = new Set();
+  for (let i = 0; i + n <= words.length; i++) {
+    set.add(words.slice(i, i + n).join(' '));
+  }
+  return set;
+}
+
+// What fraction of the CONTENT's n-grams also appear verbatim in the doc, plus
+// the longest run of consecutive shared words (a strong copy signal).
+export function compareTexts(contentText, docText, n = 8) {
+  const cShingles = shingles(contentText, n);
+  if (cShingles.size === 0) return { overlapPct: 0, shared: 0, total: 0, longestRun: 0 };
+  const dShingles = shingles(docText, n);
+  let shared = 0;
+  for (const s of cShingles) if (dShingles.has(s)) shared++;
+  const overlapPct = Math.round((shared / cShingles.size) * 1000) / 10;
+
+  // Longest consecutive shared-word run (approx, via shared shingle chains).
+  const cWords = normalizeForShingles(contentText).split(' ').filter(Boolean);
+  let longestRun = 0;
+  let run = 0;
+  for (let i = 0; i + n <= cWords.length; i++) {
+    if (dShingles.has(cWords.slice(i, i + n).join(' '))) {
+      run = run === 0 ? n : run + 1;
+      if (run > longestRun) longestRun = run;
+    } else {
+      run = 0;
+    }
+  }
+  return { overlapPct, shared, total: cShingles.size, longestRun };
+}
+
+// Does the content attribute a doc — i.e. link to it or name its host? When it
+// does, heavy overlap is far less concerning (it's quoting a cited source).
+function isAttributed(contentRaw, docUrl) {
+  const raw = String(contentRaw || '').toLowerCase();
+  let host = '';
+  try { host = new URL(docUrl).hostname.replace(/^www\./, '').toLowerCase(); } catch {}
+  if (host && raw.includes(host)) return true;
+  // Also count a direct link to the exact doc URL.
+  return docUrl && raw.includes(String(docUrl).toLowerCase());
+}
+
+// Review content against one or more official docs. Returns the worst-case
+// (highest-overlap) match and a plain verdict.
+//   docs: [{ url, text }]
+//   contentRaw: original content (markdown/html) used for the attribution check
+export function reviewAgainstDocs(contentText, docs = [], { contentRaw = '' } = {}) {
+  const results = [];
+  for (const d of docs) {
+    if (!d || !d.text) continue;
+    const cmp = compareTexts(contentText, d.text);
+    results.push({
+      url: d.url || '',
+      overlapPct: cmp.overlapPct,
+      longestRun: cmp.longestRun,
+      attributed: isAttributed(contentRaw || contentText, d.url || ''),
+    });
+  }
+  if (!results.length) {
+    return { checked: 0, top: null, verdict: 'not-checked', verdictLabel: 'No documentation compared' };
+  }
+  results.sort((a, b) => b.overlapPct - a.overlapPct);
+  const top = results[0];
+
+  let verdict = 'original-wording';
+  let verdictLabel = 'Original wording';
+  if (top.overlapPct >= 25 && !top.attributed) {
+    verdict = 'copied-unattributed';
+    verdictLabel = 'Heavy verbatim overlap with docs, no attribution';
+  } else if (top.overlapPct >= 25 && top.attributed) {
+    verdict = 'quotes-attributed-docs';
+    verdictLabel = 'Reproduces docs but cites the source';
+  } else if (top.overlapPct >= 10) {
+    verdict = 'some-overlap';
+    verdictLabel = 'Some shared phrasing with docs';
+  }
+  return { checked: results.length, top, results, verdict, verdictLabel };
+}
+

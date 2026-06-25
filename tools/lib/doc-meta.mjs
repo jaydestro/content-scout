@@ -22,6 +22,7 @@ const KIND_TABLE = [
   { match: /-mindshare\.md$/i,                id: 'mindshare',    label: 'Mindshare' },
   { match: /-supplemental\.md$/i,             id: 'supplemental', label: 'Supplemental' },
   { match: /-seo[-.]/i,                       id: 'seo',          label: 'SEO' },
+  { match: /-originality\.md$/i,              id: 'originality',  label: 'Originality' },
   { match: /-cfps?\.md$/i,                    id: 'cfp',          label: 'CFPs' },
   { match: /-conferences?\.md$/i,             id: 'conference',   label: 'Conference' },
 ];

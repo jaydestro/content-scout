@@ -2,8 +2,8 @@ import { $, api, escapeAttr } from '../lib/core.js';
 import { wireListFilter, renderDocListItem, renderDocBody } from '../lib/doc-list.js';
 import { setReportsPayload } from './report-state.js';
 
-const TOOLS_TABS = ['seo', 'ask'];
-const TOOLS_KIND = { seo: ['seo'] };
+const TOOLS_TABS = ['seo', 'originality', 'ask'];
+const TOOLS_KIND = { seo: ['seo'], originality: ['originality'] };
 let toolsActiveTab = 'seo';
 let toolsEventsWired = false;
 let askRunnerWired = false;
@@ -70,6 +70,24 @@ function renderToolsActionBar(tab) {
       </div>
     `;
     $('btn-seo-compute')?.addEventListener('click', () => computeAnalytics('seo'));
+  } else if (tab === 'originality') {
+    bar.innerHTML = `
+      <div class="seo-audit">
+        <label class="seo-audit__urls">
+          <span>URLs <span class="hint">(one per line, max 5) — reviews how AI-generated each reads + checks for un-attributed copying from docs</span></span>
+          <textarea id="orig-urls" rows="3" placeholder="https://example.com/blog-post&#10;https://example.com/article"></textarea>
+        </label>
+        <label class="seo-audit__urls">
+          <span>Compare against docs <span class="hint">(optional, one per line — doc links in the content are auto-detected too)</span></span>
+          <textarea id="orig-docs" rows="2" placeholder="https://learn.microsoft.com/..."></textarea>
+        </label>
+        <div class="seo-audit__actions">
+          <button type="button" id="btn-orig-compute">Review now</button>
+          <span class="hint" id="analytics-status"></span>
+        </div>
+      </div>
+    `;
+    $('btn-orig-compute')?.addEventListener('click', () => computeAnalytics('originality'));
   } else {
     bar.innerHTML = '';
   }
@@ -93,6 +111,21 @@ async function computeAnalytics(kind) {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ urls, slug, rewrites: true }),
+      });
+    } else if (kind === 'originality') {
+      const raw = $('orig-urls')?.value || '';
+      const urls = raw.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+      if (urls.length === 0) {
+        if (status) status.textContent = 'enter at least one URL';
+        return;
+      }
+      const docRaw = $('orig-docs')?.value || '';
+      const docUrls = docRaw.split(/\r?\n/).map((v) => v.trim()).filter(Boolean);
+      if (status) status.textContent = 'Reviewing originality + docs…';
+      response = await fetch('/api/analytics/originality', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ urls, docUrls, slug }),
       });
     } else return;
     const data = await response.json();

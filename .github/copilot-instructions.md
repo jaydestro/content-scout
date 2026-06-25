@@ -33,6 +33,7 @@ Grouped the same way as the web UI Reports view — **Reports** (dated scan arti
 |-------|---------|-------------|-------------|
 | Reports | scout scan | `.github/prompts/scout-scan.prompt.md` | Search sources, filter, generate report. Auto-persists dated CFP and Conference snapshot reports when run via the web UI. Includes the Reddit manual-import sub-flow (`scout-reddit-import.prompt.md`) when automated Reddit layers are blocked. |
 | Tools | scout seo | `.github/prompts/scout-seo.prompt.md` | SEO audit + recommendations for one or more URLs |
+| Tools | scout originality | `.github/prompts/scout-originality.prompt.md` | Review how AI-generated a URL's content reads + check for un-attributed copying from official docs. Also one-click in the web UI under Tools → Originality. |
 | Content | scout post | `.github/prompts/scout-post.prompt.md` | Generate social posts from URL or report item. Includes the alt-text sub-flow (`scout-alt.prompt.md`) when an image needs accessible alt text. **Always run the humanizer pass** (`.claude/skills/humanizer/SKILL.md`) on every variant before saving — required final step, not optional. |
 | Content | scout calendar | `.github/prompts/scout-calendar.prompt.md` | Weekly posting schedule |
 | Content | scout creators | `.github/prompts/scout-creators.prompt.md` | View creator trajectories, log interventions, track sentiment outcomes |
