@@ -33,6 +33,13 @@ In addition to the 6 named blog platforms above, the agent also checks **Blogspo
 
 The 6 named platforms above are scanned by RSS/tag, which only finds blogs *hosted on those platforms*. To catch **self-hosted and vendor blogs** (e.g., `benday.com/blog`, `savilltech.com`, `build5nines.com`), every scan also runs an **unrestricted Brave web search** for each product term (no `site:` filter), discards hosts already covered by a dedicated layer, and treats the remaining results as candidate blog posts (date-gated, relevancy-checked, scored). Requires `BRAVE_SEARCH_API_KEY` in `.env` (falls back to legacy Google PSE for pre-2026 projects). Authors listed in the config watchlist with a known blog domain additionally get a targeted `site:{domain}` query.
 
+### Date handling & fallbacks
+
+Two reliability behaviors keep in-window posts from being dropped at the date gate:
+
+- **Content-site date backfill** — results from Tech Community, DZone, C# Corner, and Hashnode carry their publish date from the result card; when a card omits it, the scanner backfills the missing date via a login-free fetch of the article page, so date-less items aren't discarded.
+- **Google News RSS fallback** — if the rendered Google News pass times out, the scan falls back to the Google News RSS feed (a day-based `when:` window, where `1m` reads as one minute) so the source still contributes results.
+
 ---
 
 ## Custom Sources

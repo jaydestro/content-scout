@@ -30,6 +30,7 @@ Every value-creating operation has a slash command:
 | `/scout-calendar` | Build a weekly posting schedule |
 | `/scout-creators` | View creator trajectories, log interventions |
 | `/scout-seo` | SEO audit + recommendations for a URL |
+| `/scout-originality` | Originality / AI-generated-content review for a URL, incl. verbatim-overlap check against official docs |
 | `/scout-doctor` | Validate config, `.env`, source reachability |
 | `/scout-keys` | Add/fix API credentials (sub-flow of `/scout-doctor`) |
 | `/scout-vision` | Configure the vision provider for alt text |
@@ -50,7 +51,7 @@ startup.
 > |---|---|
 > | `/scout-scan` (+ `custom`) | Scan |
 > | `/scout-doctor`, `/scout-onboard` | Setup |
-> | `/scout-seo` | Reports |
+> | `/scout-seo`, `/scout-originality` | Tools |
 > | `/scout-calendar` | Social posts |
 > | `/scout-creators` | Conversations |
 >
@@ -74,6 +75,12 @@ chat can't do well:
   editor with per-key reachability tests.
 - **Inline rendering** — Markdown reports and social-post bundles with
   embedded images, rendered in-page.
+- **Monthly roundup** — the **Reports → Roundup** tab regenerates a
+  per-calendar-month content index (official / video / article / repo)
+  with a month picker and one-click **Generate monthly roundup** button.
+- **Tools workbench** — the **Tools** view bundles SEO audits, the
+  Originality review (AI-writing signals + docs-overlap check), and a
+  free-form **Ask** box, saving dated outputs into a browsable list.
 - **In-files search palette** — ⌘/Ctrl-K across `reports/` and
   `social-posts/` with snippet previews.
 - **Browser-scan control panel** — Layer 0 launcher, login-status

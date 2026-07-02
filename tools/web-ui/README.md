@@ -35,7 +35,13 @@ keys, and launch scans / custom searches from a browser.
 - **Run** — launch `/scout-scan`, `/scout-post`, `/scout-calendar`,
   or a custom prompt against **All subjects**
   or any individual subject. Output streams live via server-sent events.
-- **Reports** — browse and render every file in `reports/`.
+- **Reports** — browse and render every file in `reports/`, split across
+  **Full Report / Mindshare / CFPs & Events / Roundup** tabs. The Roundup tab
+  regenerates a monthly content index in place (month picker + **Generate
+  monthly roundup** button).
+- **Tools** — **SEO** audits, an **Originality** review (AI-writing signals +
+  a verbatim-overlap check against official docs), and a free-form **Ask** box.
+  Dated outputs land in a browsable list.
 - **Social posts** — browse and render every file in `social-posts/`.
 
 You can still run `/scout-onboard` inside your editor's chat — both paths

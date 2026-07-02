@@ -40,7 +40,7 @@ Open the repo in your AI chat tool and run `/scout-onboard` (VS Code) or say "sc
 | `/scout-post` | Generate social posts from a URL or report item |
 | `/scout-calendar` | Create a weekly posting schedule |
 
-Plus `/scout-creators`, `/scout-doctor`, `/scout-keys`, `/scout-seo`, `/scout-reddit-import`, `/scout-alt`, `/scout-vision` — see [docs/EDITORS.md](docs/EDITORS.md).
+Plus `/scout-creators`, `/scout-doctor`, `/scout-keys`, `/scout-seo`, `/scout-originality`, `/scout-reddit-import`, `/scout-alt`, `/scout-vision` — see [docs/EDITORS.md](docs/EDITORS.md).
 
 ## What it scans
 
@@ -58,6 +58,14 @@ All API keys are optional — without them, the agent skips those sources. Keys 
 Content Scout vendors the [humanizer](https://github.com/blader/humanizer) skill (MIT) at [.claude/skills/humanizer/SKILL.md](.claude/skills/humanizer/SKILL.md) and runs every generated social post through it before saving. The skill strips the common tells of AI-generated copy — promotional adjectives, AI-vocabulary words ("delve", "underscore", "showcase"), significance inflation, em-dash overuse, negative parallelisms, and chatbot openers like "Excited to share…". Posts read like a practitioner wrote them, not like an LLM autocompleted a marketing brief.
 
 No setup is required — the skill is part of the repo and loads automatically with `/scout-post` and `/scout-scan`. If your editor lists user-level skills separately and prefers them over repo-vendored ones, install the upstream skill from `https://github.com/blader/humanizer` and the same patterns will apply.
+
+### Originality review
+
+The same signals that power the humanizer drive an **originality review**. Turn on **Originality scoring** in your config and `/scout-scan` adds a transparent 0-10 read of how human-written vs. AI-generated each text-bearing item looks (never a verdict — it never drops or down-ranks an item). For a one-off check, run `/scout-originality` (or the web UI **Tools → Originality** tab) on any URL: it scores the AI-writing signals *and* runs a verbatim-overlap check against the official docs so you can tell original analysis from repackaged documentation.
+
+### Monthly roundup
+
+Content Scout can roll every in-month content report into a single **monthly roundup** — one regenerable index per calendar month (official posts, videos, articles, and sample repos), deduped and with author bylines filled in. Generate it from the web UI's **Reports → Roundup** tab; it saves to `reports/{YYYY-MM}-{slug}-roundup.md` and overwrites in place each time you regenerate.
 
 ## Roles
 

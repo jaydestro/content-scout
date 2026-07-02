@@ -87,6 +87,9 @@ social-posts/                              # Generated posts, calendars, thumbna
 tools/web-ui/                              # Local browser dashboard (Express server on :4477)
 tools/web-ui/lib/closed-conversations.js   # Storage layer for dismissed conversation rows
 tools/conversations-cli.mjs                # Helper script for closing/listing conversations from the terminal
+tools/lib/roundup.mjs                      # Monthly roundup generator (one regenerable index per calendar month)
+tools/lib/originality.mjs                  # Originality scorer + documentation-overlap detector (compareTexts / reviewAgainstDocs)
+tools/originality.mjs                      # Originality CLI (--json, repeatable --doc <url>)
 tools/browser-scan/                        # Logged-in browser scraper (Edge/Chrome/Brave/etc. via CDP) for X / LinkedIn / Reddit Layer 0
 .github/team-members.md.example            # Template for team-member exclusion list (copy to team-members.md, gitignored)
 .env.example                               # API key template (copy to .env)
@@ -100,5 +103,7 @@ tools/browser-scan/                        # Logged-in browser scraper (Edge/Chr
 - `/api/vision-config` — read/write the same vision keys; backs the dedicated **Vision** card on the Configs page (and `/scout-vision`).
 - `/api/closed-conversations` — list/add/remove dismissed Conversations & mentions rows. State lives in `reports/.closed-conversations.json` and is shared with `tools/conversations-cli.mjs`.
 - `/api/runs/scan` — Step 0 runs `node tools/browser-scan/index.mjs scan --slug {slug}` (Auto / Force / Skip modes from the Run-view "Browser scan (Layer 0)" fieldset) before invoking the agent.
+- `/api/roundups` (GET) + `/api/roundup/generate` (POST) — list available monthly roundups and (re)generate one in place for a `{slug, month?}`. Backs the **Reports → Roundup** tab; the roundup doc itself is served by the existing `GET /api/reports/:name`.
+- `/api/analytics/originality` (POST) — score a URL's AI-writing signals and run a verbatim-overlap check against official docs (auto-detected + supplied). Backs the **Tools → Originality** tab; saves a dated `-originality.md` report into the Tools browse list.
 - The dashboard's **At-a-glance** tiles are click-through and route to the relevant detail view.
 
