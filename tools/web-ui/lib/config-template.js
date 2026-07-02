@@ -166,6 +166,7 @@ export function renderConfigTemplate(opts) {
     `- **Report section ordering:** ${ordering}`,
     `- **Engagement scoring:** on`,
     `- **Conversation sentiment:** on`,
+    `- **Originality scoring:** on`,
     `- **Feature request flagging:** ${on(f.featureRequests)}`,
     `- **Unanswered question tracking:** ${on(f.unansweredQuestions)}`,
     `- **Rising contributors:** ${on(f.risingContributors)}`,

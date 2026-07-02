@@ -51,6 +51,14 @@ This guide walks you through a full demo of Content Scout, showing both the agen
   - Validates config, API keys, and persistent state
   - Reports any issues or missing keys
 
+### 1.7 Originality Review
+- **Command:** `/scout-originality`
+- **What happens:**
+  - Scores how AI-generated a URL's prose reads (0-10, with the strongest signals)
+  - Runs a verbatim-overlap check against official docs and returns a verdict
+    (`original-wording` / `some-overlap` / `quotes-attributed-docs` / `copied-unattributed`)
+  - Saves a dated `-originality.md` report
+
 ---
 
 ## 2. Web UI Surface (`tools/web-ui/`)
@@ -61,6 +69,8 @@ This guide walks you through a full demo of Content Scout, showing both the agen
 
 ### 2.2 Visual Features
 - **Dashboards:** Sentiment summary, source health, action items, authors view
+- **Reports tabs:** Full Report, Mindshare, CFPs & Events, and a **Roundup** tab that regenerates a monthly content index in place
+- **Tools:** SEO audits, Originality review (AI-writing signals + docs-overlap check), and a free-form Ask box
 - **Bulk Operations:** Multi-subject scan via CSV, bulk close/reopen, muted account import
 - **Live Run Streaming:** Real-time log panel for `/scout-*` commands
 - **Visual Triage:** Conversations panel with bulk-select, mentions browser, muted-accounts manager

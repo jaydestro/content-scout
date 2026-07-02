@@ -137,6 +137,12 @@ Repositories have additional requirements:
 
 When only one product is configured, the slug is optional in filenames for backward compatibility.
 
+### Originality Scoring (optional)
+
+Turn on **Originality scoring** in your config and each `/scout-scan` adds an `## Originality Review` section (plus an at-a-glance line) that rates how human-written vs. AI-generated each text-bearing item reads. The score is a deterministic 0-10 read grounded in the humanizer skill's documented signs of AI writing — AI-vocabulary density, em-dash overuse, rule-of-three, negative parallelisms, superficial "-ing" analysis, promotional language, and more.
+
+It is a transparent review aid, **not** a verdict: a low score never drops or down-ranks an item, and titles/snippets return "insufficient text" rather than a guess. For a one-off check outside a scan, use `/scout-originality` (below).
+
 ### Conversation Tracking
 
 Forums and social platforms are scanned separately from blog/article content. Conversations are tracked but not promoted as report items:
@@ -226,6 +232,35 @@ Spreads your top content items across a posting schedule.
 ### Output
 
 Saved to `social-posts/{YYYY-MM}-{slug}-posting-calendar.md` with a day-by-day schedule showing which item to post on which platform.
+
+---
+
+## Monthly Roundup
+
+A **monthly roundup** rolls every in-month content report into a single, regenerable index — one file per calendar month, keyed to the month rather than a dated run, so regenerating **overwrites in place**.
+
+- **Buckets** — official posts, videos, articles, and sample repos. Conversation rows (Reddit, X, LinkedIn, Bluesky, Hacker News, Stack Overflow) are dropped; content is deduplicated by canonical URL.
+- **Bylines** — official authors come from the DevBlogs RSS feed, with backfill from post meta/JSON-LD for older posts (including `azure.microsoft.com` blogs). YouTube creators and channel links resolve via oEmbed.
+- **Where** — generate it from the web UI's **Reports → Roundup** tab (month picker + **Generate monthly roundup** button). Output lands at `reports/{YYYY-MM}-{slug}-roundup.md` and appears in the Reports list filtered to the Roundup tab.
+
+The generator keeps things fast and does **not** validate URLs — run `node tools/validate-urls.mjs reports/{YYYY-MM}-{slug}-roundup.md` afterward if you want to flag dead links.
+
+---
+
+## Originality Review (`/scout-originality`)
+
+An on-demand review of a single URL — how AI-generated its prose reads, and whether it copies from official docs without attribution.
+
+### Input
+
+- A URL to review
+- Optional: one or more official-doc URLs to compare against (repeatable). Doc links already present in the content are auto-discovered.
+
+### Output
+
+- An **AI-writing read** — the same 0-10 originality score used by scans, with the strongest signals called out.
+- A **documentation-overlap verdict** — `original-wording`, `some-overlap`, `quotes-attributed-docs`, or `copied-unattributed`, based on an 8-gram shingle overlap and the longest shared run against the docs.
+- A dated `-originality.md` report saved into the Tools browse list (web UI **Tools → Originality**, or the `/scout-originality` command).
 
 ---
 

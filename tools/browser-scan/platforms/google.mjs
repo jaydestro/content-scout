@@ -211,6 +211,85 @@ export async function scanGoogle(browser, ctx) {
   return [...items.values()];
 }
 
+// Minimal XML entity decode for the RSS fallback.
+function decodeXmlEntities(s) {
+  return String(s || '')
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;|&#x27;|&apos;/gi, "'")
+    .replace(/&nbsp;/g, ' ')
+    .trim();
+}
+
+// Google News RSS fallback. The logged-in CDP context frequently times out
+// rendering news.google.com/search; the public RSS endpoint renders nothing,
+// needs no auth, and almost never fails — so we use it to recover coverage for
+// any term whose rendered pass timed out. Items are shaped identically to the
+// scraped ones (subSource "google-news") so the downstream pipeline can't tell
+// the difference; only `source` differs ("google-news-rss").
+async function fetchGoogleNewsRss(query, days, { sinceMs, maxPerTerm }) {
+  // Google News RSS `when:` wants day/hour units — it reads `1m` as 1 MINUTE
+  // (the rendered SERP reads it as 1 month), so always express the window in
+  // days. Clamp to [1, 365].
+  const win = Math.min(Math.max(Math.ceil(days || 30), 1), 365);
+  const feedUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(`${query} when:${win}d`)}&hl=en-US&gl=US&ceid=US:en`;
+  let xml = '';
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000);
+    const res = await fetch(feedUrl, {
+      signal: ctrl.signal,
+      headers: { 'user-agent': 'Mozilla/5.0 (ContentScout browser-scan google-news-rss)' },
+    });
+    clearTimeout(timer);
+    if (!res.ok) return [];
+    xml = await res.text();
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const m of xml.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+    const block = m[1];
+    const rawTitle = (block.match(/<title>([\s\S]*?)<\/title>/) || [])[1] || '';
+    const link = ((block.match(/<link>([\s\S]*?)<\/link>/) || [])[1] || '').trim();
+    const pub = (block.match(/<pubDate>([\s\S]*?)<\/pubDate>/) || [])[1] || '';
+    const srcName = (block.match(/<source[^>]*>([\s\S]*?)<\/source>/) || [])[1] || '';
+    const title0 = decodeXmlEntities(rawTitle);
+    if (!link || !title0) continue;
+    // RSS titles are "Headline - Publisher"; peel off the trailing publisher.
+    let title = title0;
+    let publisher = decodeXmlEntities(srcName) || null;
+    const dash = title0.lastIndexOf(' - ');
+    if (dash > 0) {
+      if (!publisher) publisher = title0.slice(dash + 3).trim();
+      title = title0.slice(0, dash).trim();
+    }
+    const t = pub ? Date.parse(pub) : NaN;
+    if (sinceMs && Number.isFinite(t) && t < sinceMs) continue;
+    out.push({
+      platform: 'google-news',
+      subSource: 'google-news',
+      url: link,
+      author_handle: null,
+      author_display: publisher,
+      author_profile: null,
+      author_bio: null,
+      post_date: Number.isFinite(t) ? new Date(t).toISOString() : null,
+      title,
+      body: '',
+      engagement: { reactions: null, comments: null, reposts: null },
+      thread_context: null,
+      scraped_at: new Date().toISOString(),
+      source: 'google-news-rss',
+    });
+    if (out.length >= (maxPerTerm || 25)) break;
+  }
+  return out;
+}
+
 async function scanGoogleNewsPass(page, { searchTerms, sinceMs, maxPerTerm, outDir, when, items }) {
   for (const term of searchTerms) {
     const query = buildSearchQuery(term, 'google-news');
@@ -231,9 +310,23 @@ async function scanGoogleNewsPass(page, { searchTerms, sinceMs, maxPerTerm, outD
       break;
     }
     if (state === 'timeout') {
-      console.warn(`[browser-scan] google-news: no results rendered for "${term}" (timeout)`);
+      console.warn(`[browser-scan] google-news: no results rendered for "${term}" (timeout) — trying RSS fallback`);
       await dumpDebug(page, outDir, term, 'timeout-news');
-      await sleep(3000);
+      const rssDays = sinceMs ? Math.ceil((Date.now() - sinceMs) / 86400000) : 30;
+      const rss = await fetchGoogleNewsRss(query, rssDays, { sinceMs, maxPerTerm });
+      let recovered = 0;
+      for (const item of rss) {
+        if (!item.url || items.has(item.url)) continue;
+        item.search_term = term;
+        items.set(item.url, item);
+        if (++recovered >= maxPerTerm) break;
+      }
+      console.warn(
+        recovered
+          ? `[browser-scan] google-news: RSS fallback recovered ${recovered} item(s) for "${term}"`
+          : `[browser-scan] google-news: RSS fallback found nothing for "${term}"`
+      );
+      await sleep(2000);
       continue;
     }
 

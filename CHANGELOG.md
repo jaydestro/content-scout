@@ -4,6 +4,26 @@ All notable changes to Content Scout are tracked here.
 
 This project uses a product changelog version stream until formal release tags are cut. Minor feature releases use `0.x.0`; major fix bundles also receive their own `0.x.0` entry so every important fix has a durable version number.
 
+## [0.29.0] - 2026-07-02
+
+Monthly roundup, content-originality review, responsive navigation, and scan-source hardening (`feature/roundup-techcommunity-scan`).
+
+### Versioned Features and Fixes
+
+| Version | Type | Area | Change |
+| --- | --- | --- | --- |
+| 0.29.0 | Minor feature | Reports / Monthly roundup | A regenerable per-calendar-month content index (`tools/lib/roundup.mjs`): **one file per month** (`reports/{YYYY-MM}-{slug}-roundup.md`) that overwrites in place, aggregating every in-month content report into official / video / article / repo buckets (social rows dropped) and deduping by canonical URL. Official bylines come from the DevBlogs RSS feed with author backfill from post meta/JSON-LD (now including `azure.microsoft.com` blogs); YouTube creators + channel links resolve via oEmbed. Surfaced as a 4th **Reports** tab (Full Report / Mindshare / CFPs & Events / **Roundup**) with a month picker and **Generate monthly roundup** button; new `GET /api/roundups` + `POST /api/roundup/generate` endpoints. Robust date extraction stops cross-month leakage and the redundant Reports quick-pick dropdown was removed. |
+| 0.28.0 | Minor feature | Tools / Originality review | New **Tools → Originality** tab and `/scout-originality` command: paste a URL (plus optional official-doc URLs) and Content Scout scores AI-writing signals **and** runs a verbatim-overlap check against official docs (auto-detected doc links + any supplied). The documentation-derivative detector in `tools/lib/originality.mjs` (`compareTexts` = 8-gram shingle overlap + longest shared run; `reviewAgainstDocs` = worst-case match + attribution check) returns a verdict — `original-wording` / `some-overlap` / `quotes-attributed-docs` / `copied-unattributed` — and saves a dated `-originality.md` report. New `POST /api/analytics/originality` endpoint; the CLI gains a repeatable `--doc <url>` flag plus auto-discovery of doc links in the content. |
+| 0.27.0 | Minor feature | Scans / Originality scoring | Optional **Originality scoring** config toggle: when on, `/scout-scan` rates how human-written vs. AI-generated each text-bearing item reads — a deterministic 0-10 score grounded in the humanizer skill's documented signs of AI writing (AI-vocabulary density, em-dash overuse, rule-of-three, negative parallelisms, superficial "-ing" analysis, promotional language, and more) — and adds a `## Originality Review` section plus an at-a-glance line. Framed as a transparent review aid: never a definitive AI verdict, and it never drops or down-ranks an item for a low score. Titles/snippets return `insufficient-text` so it never guesses. |
+| 0.26.0 | Minor feature | Web UI / Navigation | The header nav collapses to icon-only at ≤1280px (a clean breakpoint with no clipped labels) and tightens further at ≤720px, so no destination is ever cut off on narrow windows. The agent/runner status pill moves out of the header into the **Operations** drawer; at-a-glance activity stays on the Operations badge. |
+| 0.25.0 | Major fix | Bulk runs + scan sources | Bulk social-post runs persist their summary **incrementally** (initial stub + after every item) instead of only when all items close, so an interrupted or restarted run still leaves a file in `social-posts/`; the summary writer is now re-entrant. Scan sources hardened: Google News falls back to RSS when the rendered pass times out (the RSS `when:` window reads `1m` as one minute); Tech Community / content-sites extracts publish dates from result cards and backfills missing ones via a login-free article-page fetch, so the date gate surfaces in-window posts instead of dropping date-less items. Full Report is now month-cumulative (carries forward all in-month items) and LinkedIn `sdui-post` items fall back to `author_profile` instead of being marked unreachable. |
+
+### Validation
+
+- Originality scorer calibrated: human voice 10/10, genuine posts 8-9/10, heavy AI patterns 3/10, short titles n/a. Documentation-overlap check: original prose 0%, identical text 100%.
+- Originality endpoint + Tools tab tested end-to-end in the browser.
+- Monthly roundup verified for June 2026 (72 items — 20 official / 30 videos / 16 blogs / 6 samples — from 41 source reports).
+
 ## [0.24.0] - 2026-06-11
 
 Browser-scan coverage for the four content sources the API/RSS layers can't reach.

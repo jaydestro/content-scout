@@ -2,8 +2,8 @@ import { $, api, escapeAttr } from '../lib/core.js';
 import { wireListFilter, renderDocListItem, renderDocBody } from '../lib/doc-list.js';
 import { setReportsPayload } from './report-state.js';
 
-const TOOLS_TABS = ['seo', 'ask'];
-const TOOLS_KIND = { seo: ['seo'] };
+const TOOLS_TABS = ['seo', 'originality', 'ask'];
+const TOOLS_KIND = { seo: ['seo'], originality: ['originality'] };
 let toolsActiveTab = 'seo';
 let toolsEventsWired = false;
 let askRunnerWired = false;
@@ -70,6 +70,24 @@ function renderToolsActionBar(tab) {
       </div>
     `;
     $('btn-seo-compute')?.addEventListener('click', () => computeAnalytics('seo'));
+  } else if (tab === 'originality') {
+    bar.innerHTML = `
+      <div class="seo-audit">
+        <label class="seo-audit__urls">
+          <span>URLs <span class="hint">(one per line, max 5) — reviews how AI-generated each reads + checks for un-attributed copying from docs</span></span>
+          <textarea id="orig-urls" rows="3" placeholder="https://example.com/blog-post&#10;https://example.com/article"></textarea>
+        </label>
+        <label class="seo-audit__urls">
+          <span>Compare against docs <span class="hint">(optional, one per line — doc links in the content are auto-detected too)</span></span>
+          <textarea id="orig-docs" rows="2" placeholder="https://learn.microsoft.com/..."></textarea>
+        </label>
+        <div class="seo-audit__actions">
+          <button type="button" id="btn-orig-compute">Review now</button>
+          <span class="hint" id="analytics-status"></span>
+        </div>
+      </div>
+    `;
+    $('btn-orig-compute')?.addEventListener('click', () => computeAnalytics('originality'));
   } else {
     bar.innerHTML = '';
   }
@@ -93,6 +111,21 @@ async function computeAnalytics(kind) {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ urls, slug, rewrites: true }),
+      });
+    } else if (kind === 'originality') {
+      const raw = $('orig-urls')?.value || '';
+      const urls = raw.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+      if (urls.length === 0) {
+        if (status) status.textContent = 'enter at least one URL';
+        return;
+      }
+      const docRaw = $('orig-docs')?.value || '';
+      const docUrls = docRaw.split(/\r?\n/).map((v) => v.trim()).filter(Boolean);
+      if (status) status.textContent = 'Reviewing originality + docs…';
+      response = await fetch('/api/analytics/originality', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ urls, docUrls, slug }),
       });
     } else return;
     const data = await response.json();
@@ -144,6 +177,7 @@ export function fillAskChip(kind) {
     cfp: `Find open Calls for Papers for ${slug} over the next 90 days. Prefer Sessionize / Pretalx / typeform-based CFPs over awards or "register interest" pages. Include deadline, audience fit, and submission URL.`,
     conf: `List upcoming developer-focused conferences in the next 6 months where ${slug} would land well — bias toward Linux Foundation events, KubeCon, language/runtime confs, and AI app-developer venues.`,
     summary: `Summarize the last 30 days of ${slug} mentions across reports. Group by topic tag, call out sentiment shifts, and flag any single-source spikes that need verification.`,
+    originality: 'Run an originality / AI-generated-content review on this URL: <paste URL>. Use `node tools/originality.mjs --json <url>` and report the 0-10 score, the read (Likely original / Mixed / Likely AI-generated), and the strongest AI-writing signals. Present it as a transparent review aid, not a definitive verdict.',
     recommend: `Based on the last 30 days of ${slug} activity across reports, recommend three blog or video topics we should publish in the next two weeks. For each, cite the signal that motivates it.`,
   };
   textarea.value = prompts[kind] || '';

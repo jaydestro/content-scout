@@ -1244,3 +1244,17 @@ body.cmd-modal-open { overflow: hidden; }
   font-family: var(--mono, monospace);
   user-select: all;
 }
+
+/* Monthly roundup controls (Reports → Roundup tab) */
+#reports-action-bar .roundup-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+#reports-action-bar .roundup-month-field {
+  margin: 0;
+}
+#reports-action-bar #roundup-status {
+  align-self: center;
+}

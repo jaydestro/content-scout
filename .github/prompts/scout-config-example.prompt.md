@@ -16,6 +16,7 @@ Apply this configuration to the Content Scout agent. Copy this file, rename it t
 - **Report section ordering:** {e.g., "community first", "competitors first", "SDK first"}
 - **Engagement scoring:** {on/off — adds 1-5 engagement potential score to each item}
 - **Conversation sentiment:** {on/off — classifies conversations as positive/neutral/negative}
+- **Originality scoring:** {on/off — adds an AI-generated-content "originality" score (0-10) to text-bearing content items via tools/originality.mjs}
 - **Feature request flagging:** {on/off — flags feature requests and pain points from forums}
 - **Unanswered question tracking:** {on/off — tracks questions with no answers}
 - **Rising contributors:** {on/off — tracks new and growing community contributors}

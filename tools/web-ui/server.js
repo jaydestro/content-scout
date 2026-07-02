@@ -40,6 +40,18 @@ import {
 } from '../lib/report-index.mjs';
 import { isHiringContent } from '../browser-scan/lib/hiring-filter.mjs';
 import {
+  generateMonthlyRoundup,
+  listRoundups,
+  availableMonths,
+  currentMonthKey,
+  monthLabel,
+} from '../lib/roundup.mjs';
+import {
+  scoreOriginality,
+  reviewAgainstDocs,
+  formatOriginality,
+} from '../lib/originality.mjs';
+import {
   SENTIMENT_OVERRIDES_FILE,
   WEB_SETTINGS_FILE,
   STATE_DIR,
@@ -371,10 +383,32 @@ function bulkTimestamp(d = new Date()) {
 // those files aren't always written by every variant of `/scout-post`
 // and (b) cross-file relative links don't resolve cleanly in every
 // markdown viewer the user might use. One file in, one file out.
+//
+// The summary is written INCREMENTALLY — re-run after every item finalizes,
+// not just once at the end — so an interrupted or restarted bulk still leaves
+// a partial file on disk (the prior behavior wrote nothing until every item
+// closed, so a mid-run restart lost the whole batch). The filename is keyed to
+// the bulk's start time, so each rewrite overwrites the same file. A small
+// re-entrancy guard coalesces overlapping rewrites.
 async function writeBulkSummary(bulkId) {
   const bulk = bulkRuns.get(bulkId);
-  if (!bulk || bulk.summaryWritten) return;
-  bulk.summaryWritten = true;
+  if (!bulk) return;
+  if (bulk._summaryWriting) {
+    bulk._summaryDirty = true;
+    return;
+  }
+  bulk._summaryWriting = true;
+  try {
+    do {
+      bulk._summaryDirty = false;
+      await writeBulkSummaryOnce(bulk, bulkId);
+    } while (bulk._summaryDirty);
+  } finally {
+    bulk._summaryWriting = false;
+  }
+}
+
+async function writeBulkSummaryOnce(bulk, bulkId) {
   const ts = bulkTimestamp(new Date(bulk.startedAt));
   const slug = bulk.slug || 'unscoped';
   const fname = `${ts}-${slug}-bulk-${bulk.command}-summary.md`;
@@ -385,13 +419,19 @@ async function writeBulkSummary(bulkId) {
   const resolved = await Promise.all(bulk.items.map((item) => resolveItemPostBody(item)));
   const successCount = resolved.filter((r) => r.body).length;
   const missingCount = bulk.items.length - successCount;
+  const remaining = bulk.items.filter((i) => i.status === 'running' || i.status === 'queued').length;
+  const inProgress = remaining > 0 && !bulk.cancelled;
   const lines = [];
   lines.push(`# Bulk \`/${bulk.command}\` — all posts`);
   lines.push('');
   lines.push(`- **Bulk id:** \`${bulkId}\``);
   lines.push(`- **Subject:** ${slug}`);
   lines.push(`- **Started:** ${bulk.startedAt}`);
-  lines.push(`- **Finished:** ${new Date().toISOString()}`);
+  lines.push(
+    inProgress
+      ? `- **Status:** ⏳ In progress — ${remaining} of ${bulk.items.length} still running (updated ${new Date().toISOString()})`
+      : `- **Finished:** ${new Date().toISOString()}`
+  );
   lines.push(`- **URLs submitted:** ${bulk.items.length}`);
   lines.push(`- **Posts generated:** ${successCount}`);
   lines.push(`- **URLs without a post:** ${missingCount}`);
@@ -2076,6 +2116,91 @@ app.get('/api/reports/:name', async (req, res) => {
     res.json(await readMarkdown(REPORTS_DIR, req.params.name));
   } catch (err) {
     res.status(404).json({ error: String(err.message || err) });
+  }
+});
+
+// --- Monthly roundup -----------------------------------------------
+// A roundup is one regenerable index per calendar month aggregating every
+// pointable content artifact (videos, blogs/articles, official evangelism,
+// code samples) from that month's scan reports. The file name is keyed to the
+// month, so regenerating overwrites in place instead of creating a new dated
+// report. See tools/lib/roundup.mjs.
+
+async function topicNameForSlug(slug) {
+  try {
+    const cfg = await readConfig(slug);
+    const m = (cfg.raw || '').match(/^\s*-\s*\*\*Name:\*\*\s*(.+)$/m);
+    if (m) return m[1].trim();
+  } catch {}
+  return slug;
+}
+
+// The official blog RSS feed for a slug, used as the authoritative source for
+// the roundup's Official section. Reads the `**Official blog RSS:**` line, then
+// falls back to a `## Custom RSS Feeds` entry whose URL ends in `/feed/`.
+async function officialFeedForSlug(slug) {
+  try {
+    const cfg = await readConfig(slug);
+    const raw = cfg.raw || '';
+    const m = raw.match(/^\s*-\s*\*\*Official blog RSS:\*\*\s*(\S+)/m);
+    if (m) return m[1].trim();
+    const feeds = raw.match(/^##\s+Custom RSS Feeds[\s\S]*?(?=^##\s|$)/m);
+    if (feeds) {
+      const line = feeds[0].match(/\|\s*(https?:\/\/\S*\/feed\/?)\s*$/m);
+      if (line) return line[1].trim();
+    }
+  } catch {}
+  return '';
+}
+
+// List existing roundups + which months have reports + the current month.
+app.get('/api/roundups', async (req, res) => {
+  try {
+    const slug = String(req.query.slug || '').trim();
+    if (!isValidSlug(slug)) return res.status(400).json({ error: 'invalid slug' });
+    const [existing, months] = await Promise.all([
+      listRoundups(REPORTS_DIR, slug),
+      availableMonths(REPORTS_DIR, slug),
+    ]);
+    const current = currentMonthKey();
+    res.json({
+      slug,
+      currentMonth: current,
+      currentMonthLabel: monthLabel(current),
+      months: months.map((m) => ({ month: m, label: monthLabel(m) })),
+      roundups: existing.map((r) => ({ ...r, label: monthLabel(r.month) })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+// Generate (create or overwrite) the roundup for a slug + month. Month defaults
+// to the current calendar month so "Generate monthly roundup" just works.
+app.post('/api/roundup/generate', async (req, res) => {
+  try {
+    const slug = String((req.body && req.body.slug) || '').trim();
+    if (!isValidSlug(slug)) return res.status(400).json({ error: 'invalid slug' });
+    const monthRaw = String((req.body && req.body.month) || '').trim();
+    const month = /^\d{4}-\d{2}$/.test(monthRaw) ? monthRaw : currentMonthKey();
+    const topicName = await topicNameForSlug(slug);
+    const officialFeedUrl = await officialFeedForSlug(slug);
+    const result = await generateMonthlyRoundup({
+      reportsDir: REPORTS_DIR,
+      slug,
+      month,
+      topicName,
+      officialFeedUrl,
+    });
+    res.json({
+      ok: true,
+      fileName: result.fileName,
+      month: result.month,
+      monthLabel: monthLabel(result.month),
+      counts: result.counts,
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
   }
 });
 
@@ -4457,6 +4582,10 @@ app.post('/api/runs/bulk', express.json({ limit: '512kb' }), async (req, res) =>
   };
   bulkRuns.set(bulkId, bulkRecord);
 
+  // Write an initial in-progress stub immediately so the run is visible in the
+  // Social view from the start and survives an early interruption.
+  writeBulkSummary(bulkId).catch(() => {});
+
   const finalizeItem = (item, run) => {
     item.status = run ? run.status : 'error';
     const safeOutput = run ? safeRunOutput(run) : '';
@@ -4470,9 +4599,9 @@ app.post('/api/runs/bulk', express.json({ limit: '512kb' }), async (req, res) =>
       item.error = `Run exited with status: ${run.status}`;
     }
     bulkRecord.pending = Math.max(0, bulkRecord.pending - 1);
-    if (bulkRecord.pending === 0) {
-      writeBulkSummary(bulkId).catch(() => {});
-    }
+    // Persist the summary after EVERY item (not just at the end) so an
+    // interrupted or restarted bulk still leaves a partial file on disk.
+    writeBulkSummary(bulkId).catch(() => {});
   };
 
   let cursor = 0;
@@ -4487,9 +4616,7 @@ app.post('/api/runs/bulk', express.json({ limit: '512kb' }), async (req, res) =>
         bulkRecord.pending = Math.max(0, bulkRecord.pending - 1);
       }
       cursor = bulkRecord.items.length;
-      if (bulkRecord.pending === 0) {
-        writeBulkSummary(bulkId).catch(() => {});
-      }
+      writeBulkSummary(bulkId).catch(() => {});
       return;
     }
     if (cursor >= bulkRecord.items.length) return;
@@ -4517,9 +4644,7 @@ app.post('/api/runs/bulk', express.json({ limit: '512kb' }), async (req, res) =>
       item.status = 'error';
       item.error = (r.error && r.error.error) || 'Failed to start run.';
       bulkRecord.pending = Math.max(0, bulkRecord.pending - 1);
-      if (bulkRecord.pending === 0) {
-        writeBulkSummary(bulkId).catch(() => {});
-      }
+      writeBulkSummary(bulkId).catch(() => {});
       startNext().catch(() => {});
       return;
     }
@@ -5168,6 +5293,129 @@ app.post('/api/analytics/seo', express.json(), async (req, res) => {
   }
 });
 
+// Originality / AI-generated-content review for one or more URLs. Scores how
+// human-written each reads (signs-of-AI-writing heuristics) and checks whether
+// the prose was lifted near-verbatim from official documentation without
+// attribution. Writes a dated `-originality.md` report so it lands in the
+// Tools browse list (same pattern as the SEO audit). Pure Node, no LLM.
+const DOC_HOSTS_RE = /learn\.microsoft\.com|docs\.microsoft\.com|developer\.mozilla\.org|readthedocs\.io|\.github\.io/i;
+
+function extractDocLinksFromHtml(html, max = 3) {
+  const out = [];
+  const seen = new Set();
+  for (const m of String(html || '').matchAll(/href=["'](https?:\/\/[^"']+)["']/gi)) {
+    const u = m[1].split('#')[0];
+    if (DOC_HOSTS_RE.test(u) && !seen.has(u)) {
+      seen.add(u);
+      out.push(u);
+      if (out.length >= max) break;
+    }
+  }
+  return out;
+}
+
+async function fetchPageText(url, timeoutMs = 12000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { 'user-agent': 'Mozilla/5.0 (compatible; ContentScout/1.0 originality)' },
+      redirect: 'follow',
+    });
+    if (!r.ok) return { html: '', text: '', error: `HTTP ${r.status}` };
+    const html = await r.text();
+    return { html, text: htmlToText(html), error: null };
+  } catch (e) {
+    return { html: '', text: '', error: e.name === 'AbortError' ? 'timeout' : String(e.message || e) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+app.post('/api/analytics/originality', express.json(), async (req, res) => {
+  try {
+    const { urls, docUrls, slug } = req.body || {};
+    if (!Array.isArray(urls) || urls.length === 0) {
+      return res.status(400).json({ error: 'urls array is required' });
+    }
+    const targets = urls.slice(0, 5).map((u) => String(u).trim()).filter(Boolean);
+    const manualDocs = Array.isArray(docUrls)
+      ? docUrls.slice(0, 5).map((u) => String(u).trim()).filter(Boolean)
+      : [];
+
+    const items = [];
+    for (const url of targets) {
+      const page = await fetchPageText(url);
+      if (page.error && !page.text) {
+        items.push({ url, error: page.error });
+        continue;
+      }
+      const result = scoreOriginality(page.text);
+      let derivative = null;
+      if (result.rating !== 'insufficient-text') {
+        const docUrlSet = [...new Set(manualDocs.concat(extractDocLinksFromHtml(page.html)))].slice(0, 4);
+        const docs = [];
+        for (const du of docUrlSet) {
+          const dp = await fetchPageText(du);
+          if (dp.text) docs.push({ url: du, text: dp.text });
+        }
+        if (docs.length) derivative = reviewAgainstDocs(page.text, docs, { contentRaw: page.html });
+      }
+      items.push({ url, result, derivative });
+    }
+
+    // Build the report markdown.
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const safeSlug = isValidSlug(slug) ? slug : 'content';
+    const fileName = `${stamp}-${safeSlug}-originality.md`;
+    const scored = items.filter((i) => i.result && i.result.rating !== 'insufficient-text');
+    const counts = {
+      original: scored.filter((i) => i.result.rating === 'likely-original').length,
+      mixed: scored.filter((i) => i.result.rating === 'mixed').length,
+      ai: scored.filter((i) => i.result.rating === 'likely-ai').length,
+      copied: items.filter((i) => i.derivative && i.derivative.verdict === 'copied-unattributed').length,
+    };
+    const esc = (s) => String(s == null ? '' : s).replace(/\|/g, '\\|').replace(/\s+/g, ' ').trim();
+    const md = [];
+    md.push(`# Originality Review — ${safeSlug}`);
+    md.push('');
+    md.push(`**Generated:** ${now.toISOString()}`);
+    md.push(`**URLs reviewed:** ${items.length} (${scored.length} scored)`);
+    md.push(`**At a glance:** ${counts.original} likely original · ${counts.mixed} mixed · ${counts.ai} likely AI-generated · ${counts.copied} copied from docs without attribution`);
+    md.push('');
+    md.push('> Transparent review aid based on the documented signs of AI writing plus a verbatim-overlap check against official documentation. Not a definitive AI detector or plagiarism tool — a low score is informational, not a verdict.');
+    md.push('');
+    md.push('| # | URL | Score | Read | Top AI-writing signals | Docs check |');
+    md.push('|---|-----|-------|------|------------------------|------------|');
+    items.forEach((it, i) => {
+      if (it.error) {
+        md.push(`| ${i + 1} | ${esc(it.url)} | — | could not fetch | — | ${esc(it.error)} |`);
+        return;
+      }
+      const r = it.result;
+      const score = r.rating === 'insufficient-text' ? 'n/a' : `${r.score}/10`;
+      const read = r.ratingLabel;
+      const sigs = r.signals && r.signals.length ? esc(r.signals.slice(0, 3).map((s) => s.label).join(', ')) : '—';
+      let docs = '—';
+      if (it.derivative && it.derivative.checked) {
+        const t = it.derivative.top;
+        docs = esc(`${it.derivative.verdictLabel} (${t.overlapPct}% overlap${t.attributed ? ', attributed' : ', no attribution'})`);
+      }
+      md.push(`| ${i + 1} | ${esc(it.url)} | ${score} | ${esc(read)} | ${sigs} | ${docs} |`);
+    });
+    md.push('');
+
+    await fs.mkdir(REPORTS_DIR, { recursive: true });
+    await fs.writeFile(path.join(REPORTS_DIR, fileName), md.join('\n'), 'utf8');
+    res.json({ ok: true, fileName, counts, reviewed: items.length });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
 app.listen(PORT, HOST, async () => {
   const { runner, source } = await getRunner();
   const displayHost = HOST === '0.0.0.0' ? 'localhost' : HOST;
@@ -5188,6 +5436,7 @@ app.listen(PORT, HOST, async () => {
     'scout-creators.prompt.md', 'scout-doctor.prompt.md', 'scout-keys.prompt.md',
     'scout-seo.prompt.md', 'scout-reddit-import.prompt.md',
     'scout-alt.prompt.md', 'scout-vision.prompt.md',
+    'scout-originality.prompt.md',
   ];
   let diskFiles = [];
   try { diskFiles = await fs.readdir(PROMPTS_DIR); } catch { /* ignore */ }
