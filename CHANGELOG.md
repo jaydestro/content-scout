@@ -4,6 +4,20 @@ All notable changes to Content Scout are tracked here.
 
 This project uses a product changelog version stream until formal release tags are cut. Minor feature releases use `0.x.0`; major fix bundles also receive their own `0.x.0` entry so every important fix has a durable version number.
 
+## [0.30.0] - 2026-07-02
+
+Competitor sentiment & market-signal tracking.
+
+### Versioned Features and Fixes
+
+| Version | Type | Area | Change |
+| --- | --- | --- | --- |
+| 0.30.0 | Minor feature | Reports / Competitor signals | `/scout-scan` now populates a `## Competitor & Market Signals` section when **Competitor tracking** is on and the config's `## Competitors` section lists products: per-competitor content volume, community sentiment (toward the competitor), switching signals (migrations to/from, scored from our product's perspective), and notable announcements — matched by competitor name + aliases across conversation sources and the competitor's own blog/release-notes, inline in the single content report. The web UI **Reports** view gains a **Competitors** tab that lists standalone `-competitors.md` deep-dive reports and slices the Competitor & Market Signals section out of content reports (mirroring the Mindshare / CFPs & Events tabs). `tools/lib/doc-meta.mjs` classifies `-competitors.md` as kind "Competitors" and detects the section for tab filtering. |
+
+### Validation
+
+- Report classification + section detection verified against a generated `-competitors.md` report and a content report carrying the section.
+
 ## [0.29.0] - 2026-07-02
 
 Monthly roundup, content-originality review, responsive navigation, and scan-source hardening (`feature/roundup-techcommunity-scan`).

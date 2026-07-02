@@ -25,6 +25,7 @@ const KIND_TABLE = [
   { match: /-originality\.md$/i,              id: 'originality',  label: 'Originality' },
   { match: /-cfps?\.md$/i,                    id: 'cfp',          label: 'CFPs' },
   { match: /-conferences?\.md$/i,             id: 'conference',   label: 'Conference' },
+  { match: /-competitors?\.md$/i,             id: 'competitors',  label: 'Competitors' },
 ];
 
 export function detectKind(name) {
@@ -35,7 +36,7 @@ export function detectKind(name) {
 // Filenames look like: 2026-05-21-1004-azure-cosmos-db-content.md
 // Capture the stamp + slug so the UI can group runs and surface the
 // subject independent of the wordy H1 title.
-const FILENAME_RE = /^(\d{4}-\d{2}-\d{2})-(\d{4})-(.+?)-(content|mindshare|supplemental|cfps?|conferences?|social-posts|posting-calendar|alt-.+|solo[-.].+|seo[-.].+)\.md$/i;
+const FILENAME_RE = /^(\d{4}-\d{2}-\d{2})-(\d{4})-(.+?)-(content|mindshare|supplemental|competitors?|cfps?|conferences?|social-posts|posting-calendar|alt-.+|solo[-.].+|seo[-.].+)\.md$/i;
 
 export function parseFilename(name) {
   const m = String(name || '').match(FILENAME_RE);
@@ -129,6 +130,7 @@ function extractDateRange(raw) {
 const SECTION_MATCHERS = {
   mindshare: /^#{2,3}\s+mindshare\b/im,
   cfp: /^#{2,3}\s+(open calls for papers|cfps?\b|calls? for papers\b|conferences?\b|conference content\b)/im,
+  competitors: /^#{2,3}\s+(competitor|competitive)\b/im,
 };
 
 function extractSectionFlags(raw) {
@@ -136,6 +138,7 @@ function extractSectionFlags(raw) {
   return {
     mindshare: SECTION_MATCHERS.mindshare.test(text),
     cfp: SECTION_MATCHERS.cfp.test(text),
+    competitors: SECTION_MATCHERS.competitors.test(text),
   };
 }
 
