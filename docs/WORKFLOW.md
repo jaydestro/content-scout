@@ -143,6 +143,12 @@ Turn on **Originality scoring** in your config and each `/scout-scan` adds an `#
 
 It is a transparent review aid, **not** a verdict: a low score never drops or down-ranks an item, and titles/snippets return "insufficient text" rather than a guess. For a one-off check outside a scan, use `/scout-originality` (below).
 
+### Competitor Signals (optional)
+
+Turn on **Competitor tracking** and list rivals under `## Competitors` in your config (each a bold name plus optional `Aliases:`), and every `/scout-scan` adds a `## Competitor & Market Signals` section. The browser-scan Layer 0 runs a **competitor pass** over Reddit and X — writing a `{stamp}-competitors.json` sidecar with each mention tagged by the matched competitor — and the agent adds Hacker News, Stack Overflow, Bluesky, and each rival's own blog/release-notes. Each competitor gets a row scoring content volume, sentiment *toward that competitor*, switching signals (migrations to/from, from your product's perspective), and notable announcements.
+
+Because it runs inside the normal scan, a **monthly competitor pass happens automatically alongside your monthly mindshare** — there's no separate command. The web UI's **Reports → Competitors** tab surfaces the section (and any standalone deep-dive `-competitors.md` reports).
+
 ### Conversation Tracking
 
 Forums and social platforms are scanned separately from blog/article content. Conversations are tracked but not promoted as report items:

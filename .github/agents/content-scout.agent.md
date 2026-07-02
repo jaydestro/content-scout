@@ -1249,6 +1249,8 @@ Where the platform exposes them, also include engagement metrics (likes/upvotes/
 How to populate (when Competitor tracking is on): the competitors come from the config's `## Competitors`
 section. Match each competitor by name AND its listed aliases across the scanned conversation sources
 (Reddit / X / LinkedIn / Bluesky / HN / Stack Overflow) plus the competitor's own blog / release-notes.
+Reddit + X mentions come pre-matched from the browser-scan `{stamp}-competitors.json` sidecar (each item
+carries `.competitor` + `.platform`); HN / Stack Overflow / Bluesky come from per-alias API queries.
 - Content Volume: rough count of in-window mentions (High / Medium / Low or a number).
 - Sentiment: community stance TOWARD THAT COMPETITOR (🟢 favorable / ⚪ mixed / 🔴 unfavorable) — this is the
   one place sentiment is about a competitor rather than our product.

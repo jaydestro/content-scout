@@ -4,6 +4,21 @@ All notable changes to Content Scout are tracked here.
 
 This project uses a product changelog version stream until formal release tags are cut. Minor feature releases use `0.x.0`; major fix bundles also receive their own `0.x.0` entry so every important fix has a durable version number.
 
+## [0.31.0] - 2026-07-02
+
+Competitor queries wired into the browser-scan conversations layer.
+
+### Versioned Features and Fixes
+
+| Version | Type | Area | Change |
+| --- | --- | --- | --- |
+| 0.31.0 | Minor feature | Browser scan / Competitor pass | New shared `tools/lib/competitors.mjs` parses the config's `## Competitors` section (bold name + `Aliases:`) into structured entries and provides query-term building + word-boundary matching/tagging. The browser-scan now runs a **competitor pass** over Reddit + X when competitors are configured: it queries the competitor names/aliases, keeps only items that name a tracked competitor, tags each with the matched `competitor`, and writes a `{stamp}-competitors.json` sidecar (plus a `competitors` block in `{stamp}-meta.json`). Because the browser-scan runs as Step 0 of every `/scout-scan`, the competitor pass happens **automatically alongside the monthly mindshare run** — no separate command. `/scout-scan` + agent docs ingest the sidecar into the `## Competitor & Market Signals` section and add Hacker News / Stack Overflow / Bluesky per-alias API coverage. Flags: `--no-competitors`, `--max-competitor-terms N` (default 12). |
+
+### Validation
+
+- New `tools/web-ui/test/competitors.test.js` (6 tests): parsing, alias handling, query-term building, word-boundary matching (no "Atlas" → "Atlassian" false positive), and item tagging.
+- `node --check` on the browser-scan orchestrator + a live `loadConfig` parse of the real config (8 competitors) confirm the wiring.
+
 ## [0.30.0] - 2026-07-02
 
 Competitor sentiment & market-signal tracking.
