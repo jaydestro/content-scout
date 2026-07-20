@@ -134,6 +134,87 @@ test('parseReportFromJson drops conversations that duplicate canonical YouTube i
   assert.equal(parsed.sentimentTotals.positive, 0);
 });
 
+test('parseReportFromJson exposes competitor aggregates without changing primary sentiment totals', () => {
+  const competitorMention = {
+    competitor: 'Amazon DynamoDB',
+    competitorSentiment: 'negative',
+    competitorSentimentConfidence: 'high',
+    platform: 'reddit',
+    timestamp: '2026-07-20T12:00:00Z',
+    url: 'https://reddit.com/r/databases/comments/1/example',
+    switchingDirection: 'competitor_to_primary',
+  };
+  const competitorAggregates = {
+    mentions: 1,
+    byCompetitor: {
+      'Amazon DynamoDB': {
+        mentions: 1,
+        sentiments: { positive: 0, neutral: 0, negative: 1, mixed: 0, unknown: 0 },
+        bySource: { reddit: 1 },
+      },
+    },
+    bySource: { reddit: { mentions: 1 } },
+  };
+  const parsed = parseReportFromJson({
+    generated_at: '2026-07-20',
+    items: [],
+    competitor_mentions: [competitorMention],
+    competitor_aggregates: competitorAggregates,
+    competitor_source_failures: [{ source: 'x', error: 'unavailable' }],
+  }, '2026-07-20-1200-test-product-content.md');
+
+  assert.deepEqual(parsed.competitorMentions, [competitorMention]);
+  assert.deepEqual(parsed.competitorAggregates, competitorAggregates);
+  assert.deepEqual(parsed.competitorSourceFailures, [{ source: 'x', error: 'unavailable' }]);
+  assert.deepEqual(parsed.sentimentTotals, {
+    positive: 0,
+    neutral: 0,
+    negative: 0,
+    mixed: 0,
+    unknown: 0,
+  });
+});
+
+test('parseReportFromJson normalizes malformed competitor metadata to stable defaults', () => {
+  const parsed = parseReportFromJson({
+    generated_at: '2026-07-20',
+    items: [],
+    competitor_mentions: {},
+    competitor_aggregates: 'broken',
+    competitor_source_failures: { source: 'x', error: 'unavailable' },
+  }, '2026-07-20-1200-test-product-content.md');
+
+  assert.deepEqual(parsed.competitorMentions, []);
+  assert.deepEqual(parsed.competitorAggregates, {
+    mentions: 0,
+    byCompetitor: {},
+    bySource: {},
+  });
+  assert.deepEqual(parsed.competitorSourceFailures, []);
+});
+
+test('parseReport exposes default competitor fields for legacy markdown reports', () => {
+  const report = `
+**Generated:** 2026-07-20
+
+## Official Content
+
+| # | Date | Title | Channel | Tags | EP | Link |
+|---|------|-------|---------|------|----|------|
+| 1 | 2026-07-20 | Example post | Blog | \`#tag\` | 5 | [link](https://example.com/post) |
+`;
+
+  const parsed = parseReport(report, '2026-07-20-1200-test-product-content.md');
+
+  assert.deepEqual(parsed.competitorMentions, []);
+  assert.deepEqual(parsed.competitorAggregates, {
+    mentions: 0,
+    byCompetitor: {},
+    bySource: {},
+  });
+  assert.deepEqual(parsed.competitorSourceFailures, []);
+});
+
 test('parseReport marks official account conversation rows as product-side', () => {
   const report = `
 **Generated:** 2026-05-08

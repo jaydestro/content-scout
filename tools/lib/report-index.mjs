@@ -22,7 +22,8 @@
 //
 // The return shape of parseReport / parseReportFromJson is identical so
 // callers can treat them interchangeably:
-//   { slug, generatedAt, items, conversations, sentimentTotals, skippedSources }
+//   { slug, generatedAt, items, conversations, sentimentTotals, skippedSources,
+//     competitorMentions, competitorAggregates, competitorSourceFailures }
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -37,6 +38,27 @@ const SENTIMENT_KEYS = ['positive', 'neutral', 'negative', 'mixed', 'unknown'];
 
 function emptySentimentTotals() {
   return { positive: 0, neutral: 0, negative: 0, mixed: 0, unknown: 0 };
+}
+
+function emptyCompetitorAggregates() {
+  return { mentions: 0, byCompetitor: {}, bySource: {} };
+}
+
+function normalizeCompetitorAggregates(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return emptyCompetitorAggregates();
+  }
+  return {
+    mentions: Number.isFinite(value.mentions) ? value.mentions : 0,
+    byCompetitor:
+      value.byCompetitor && typeof value.byCompetitor === 'object' && !Array.isArray(value.byCompetitor)
+        ? value.byCompetitor
+        : {},
+    bySource:
+      value.bySource && typeof value.bySource === 'object' && !Array.isArray(value.bySource)
+        ? value.bySource
+        : {},
+  };
 }
 
 function normalizeName(name) {
@@ -634,6 +656,9 @@ export function parseReportFromJson(rawOrObj, fileName, options = {}) {
     conversations: filteredConversations,
     sentimentTotals: sentimentTotalsFor(filteredConversations),
     skippedSources,
+    competitorMentions: Array.isArray(data.competitor_mentions) ? data.competitor_mentions : [],
+    competitorAggregates: normalizeCompetitorAggregates(data.competitor_aggregates),
+    competitorSourceFailures: Array.isArray(data.competitor_source_failures) ? data.competitor_source_failures : [],
   };
 }
 
@@ -833,6 +858,9 @@ export function parseReport(raw, fileName, options = {}) {
     conversations: filteredConversations,
     sentimentTotals: sentimentTotalsFor(filteredConversations),
     skippedSources,
+    competitorMentions: [],
+    competitorAggregates: emptyCompetitorAggregates(),
+    competitorSourceFailures: [],
   };
 }
 

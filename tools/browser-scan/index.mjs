@@ -31,6 +31,7 @@ import { loadConfig } from './lib/config.mjs';
 import { ensureProfileDir, launchEdge, attachEdge, newPage } from './lib/browser.mjs';
 import { filterHiring, categorizeRoles, ROLE_ORDER } from './lib/hiring-filter.mjs';
 import { browserScanSlugDir } from '../lib/paths.mjs';
+import { analyzeCompetitorSources, competitorQueryTerms } from '../lib/competitors.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -67,9 +68,13 @@ Usage:
                       [--port 9222]                    (cdp port)
                       [--days 30] [--max-per-term 25] [--headed]
                       [--since YYYY-MM-DD] [--until YYYY-MM-DD]
+                      [--no-competitors] [--max-competitor-terms 12]
       --since/--until pin the scan to an exact date range (e.g. one
       calendar month); the Google Web pass maps it to a precise
       tbs=cdr:1,cd_min:…,cd_max:… filter. Default is a rolling --days window.
+      When the config has a "## Competitors" section, a competitor pass runs
+      over Reddit + X and writes a {stamp}-competitors.json sidecar
+      (--no-competitors skips it).
 
   node index.mjs login --platform x|linkedin|reddit|google|content-sites    (LEGACY launch-mode only)
 
@@ -180,7 +185,10 @@ if (command === 'launch') {
   const windowNote = (flags.since || flags.until)
     ? `${new Date(sinceMs).toISOString().slice(0, 10)}…${new Date(untilMs).toISOString().slice(0, 10)}`
     : `${days}d window`;
-  console.log(`[browser-scan] Loaded config "${slug}" — ${config.searchTerms.length} search terms, ${windowNote}, mode=${mode}`);
+  const competitorNote = Array.isArray(config.competitors) && config.competitors.length
+    ? `, ${config.competitors.length} competitors`
+    : '';
+  console.log(`[browser-scan] Loaded config "${slug}" — ${config.searchTerms.length} search terms${competitorNote}, ${windowNote}, mode=${mode}`);
 
   const stamp = formatStamp(new Date());
   const outDir = browserScanSlugDir(slug);
@@ -289,6 +297,79 @@ if (command === 'launch') {
     console.log(`[browser-scan] ${platform}: ${kept.length} items${droppedNote} → ${path.relative(ROOT, outFile)}`);
   }
 
+  // ---- competitor pass (conversations layer, filtered by config `## Competitors`) ----
+  // Additive + defensive: reuses the same logged-in tab and the same platform
+  // scanners, but queries the configured competitor names/aliases instead of the
+  // product terms, tags each hit with the matched competitor, and writes a
+  // combined {stamp}-competitors.json sidecar that the agent folds into the
+  // report's Competitor & Market Signals section. Gated on competitors being
+  // configured; disable with --no-competitors. Wrapped so a failure here never
+  // affects the product sidecars written above.
+  let metaCompetitors = null;
+  const competitorsEnabled = !flags['no-competitors'] && config.competitorTracking
+    && Array.isArray(config.competitors) && config.competitors.length > 0;
+  if (competitorsEnabled) {
+    // Only the conversation platforms browser-scan covers. HN / Stack Overflow /
+    // Bluesky competitor queries run in the agent's API layer (see scout-scan).
+    const convoPlatforms = requested.filter((p) => p === 'reddit' || p === 'x');
+    const compTerms = competitorQueryTerms(config.competitors, {
+      max: Number(flags['max-competitor-terms'] || 12),
+    });
+    if (convoPlatforms.length && compTerms.length) {
+      console.log(`[browser-scan] competitor pass — ${config.competitors.length} competitors, ${compTerms.length} query terms over ${convoPlatforms.join(', ')}`);
+      const competitorSources = [];
+      for (const platform of convoPlatforms) {
+        let handle = sharedHandle;
+        let ownsHandle = false;
+        try {
+          if (mode === 'launch') {
+            const profileDir = ensureProfileDir(__dirname, platform);
+            if (!hasSession(profileDir)) {
+              competitorSources.push({ source: platform, items: [] });
+              continue;
+            }
+            handle = await launchEdge({ profileDir, headed });
+            ownsHandle = true;
+          }
+          const ctx = {
+            searchTerms: compTerms,
+            sinceMs,
+            untilMs,
+            maxPerTerm: Math.min(maxPerTerm, 15),
+            slug,
+            outDir,
+            page: mode === 'cdp' ? sharedPage : undefined,
+          };
+          let items = [];
+          if (platform === 'x') items = await scanX(handle, ctx);
+          else if (platform === 'reddit') items = await scanReddit(handle, ctx);
+          for (const it of items) { it.platform = platform; }
+          competitorSources.push({ source: platform, items: filterHiring(items).kept });
+        } catch (e) {
+          console.error(`[browser-scan] competitor/${platform}: error — ${e.message}`);
+          competitorSources.push({ source: platform, error: e });
+        } finally {
+          if (ownsHandle) await handle.browser.close().catch(() => {});
+        }
+      }
+      // Keep only items that actually name a tracked competitor; tag each with
+      // the matched competitor(s). Then drop hiring/recruiting as elsewhere.
+      const analyzed = analyzeCompetitorSources(competitorSources, config.competitors, {
+        primaryProduct: [config.primaryProduct, ...config.searchTerms].filter(Boolean),
+      });
+      const compFile = path.join(outDir, `${stamp}-competitors.json`);
+      fs.writeFileSync(compFile, JSON.stringify(analyzed.items, null, 2));
+      metaCompetitors = {
+        names: config.competitors.map((c) => c.name),
+        queryTerms: compTerms.length,
+        platforms: convoPlatforms,
+        ...analyzed.aggregates,
+        sourceFailures: analyzed.sourceFailures,
+      };
+      console.log(`[browser-scan] competitors: ${analyzed.items.length} tagged mentions → ${path.relative(ROOT, compFile)}`);
+    }
+  }
+
   // Write the meta sidecar (always, even when zero drops, so absence of the
   // file means "no scan ran" rather than "scan ran but zeros").
   const totalDropped = Object.values(hiringDropped).reduce((a, b) => a + b, 0);
@@ -302,6 +383,7 @@ if (command === 'launch') {
     hiringDroppedByMonth,
     hiringRolesByMonth,
     hiringRoleOrder: ROLE_ORDER,
+    competitors: metaCompetitors,
   }, null, 2));
 
   // In CDP mode we do NOT close the user's Edge — they own it. Just
