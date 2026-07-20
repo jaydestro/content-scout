@@ -222,22 +222,29 @@ here — the open-web Brave layer already covers those.
 
 ### Competitor pass (one sidecar, tagged by competitor)
 
-When the loaded config has a `## Competitors` section, the scanner runs an
-extra **competitor pass** over Reddit and X after the main passes. It queries
+When the loaded config has `Competitor tracking` set to `on` and a
+`## Competitors` section, the scanner runs an extra **competitor pass** over
+Reddit and X after the main passes. It queries
 the configured competitor names + aliases (built by `competitorQueryTerms` in
 `tools/lib/competitors.mjs`), keeps only items that actually name a tracked
 competitor, and tags each with the matched competitor. Results merge into one
-`*-competitors.json` sidecar, shaped like the platform items above plus two
+`*-competitors.json` sidecar, shaped like the platform items above plus these
 fields:
 
 | Field | Meaning |
 |---|---|
 | `competitor` | The primary tracked competitor the item mentions (canonical name from config) |
 | `competitorMatches` | All tracked competitors the item mentions |
+| `competitorSentiments` | Target-scoped sentiment and confidence for every matched competitor |
+| `competitorSentiment` / `competitorSentimentConfidence` | Convenience fields for the primary match |
+| `switchingDirection` | `competitor_to_primary`, `primary_to_competitor`, `competitor_to_competitor`, or `none` |
+| `timestamp` / `url` | Normalized scan timestamp and original permalink |
 
 The `{stamp}-meta.json` sidecar also gains a `competitors` block —
-`{ names, queryTerms, platforms, mentions, byCompetitor }` — for at-a-glance
-counts. The agent folds these into the report's **Competitor & Market
+`{ names, queryTerms, platforms, mentions, byCompetitor, bySource,
+sourceFailures }` — for isolated sentiment/mention aggregates and non-fatal
+source errors. Competitor sentiment is never included in primary-product
+sentiment totals. The agent folds these into the report's **Competitor & Market
 Signals** section (never the content sections or Mindshare). Disable with
 `--no-competitors`; cap the query set with `--max-competitor-terms N`
 (default 12). Hacker News / Stack Overflow / Bluesky competitor coverage runs
