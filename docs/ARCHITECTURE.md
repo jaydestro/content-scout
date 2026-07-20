@@ -25,6 +25,38 @@ Content Scout can dispatch work to specialized subagents during `scout-scan` for
 
 If subagents aren't available, the main agent runs everything sequentially. The subagent architecture is an optimization, not a requirement.
 
+## Local Storage
+
+Content Scout uses SQLite as its default local operational store. The web UI
+creates `.local/state/content-scout.db` on first start, applies versioned schema
+migrations, and idempotently imports existing reports, social-post drafts, and
+subject configs. SQLite runs in WAL mode with foreign keys and a busy timeout;
+it requires no server, connection string, or credentials.
+
+The database stores artifact metadata and content, subject references, FTS5
+search data, and durable parsed-index snapshots. Generated images and large raw
+browser captures remain files; SQLite stores their metadata rather than binary
+blobs. Markdown and JSON remain portable import/export and archive formats,
+not the normal dashboard/search query path.
+
+Storage operations are available from the repository root:
+
+```powershell
+node tools/storage.mjs status
+node tools/storage.mjs import
+node tools/storage.mjs verify
+node tools/storage.mjs backup
+node tools/storage.mjs restore --input .local/state/backups/content-scout-<timestamp>.db
+node tools/storage.mjs export --output .local/exports/latest
+node tools/storage.mjs retention
+```
+
+Retention defaults to a non-destructive dry run. Applying a plan can remove old
+run history, excess backups, and aged raw browser captures; reports, social
+drafts, configs, and generated images are protected from automatic deletion.
+Measured current and synthetic-corpus results are documented in
+[SQLite Storage Benchmarks](SQLITE-BENCHMARKS.md).
+
 ## Quality Filter
 
 Every piece of content must pass:

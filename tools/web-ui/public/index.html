@@ -596,6 +596,11 @@ My Podcast | podcast | https://example.com/podcast.rss"></textarea>
         <div class="card setup-tools">
           <h3>Setup tools</h3>
           <p class="hint">Once the wizard's done, use these to verify and revisit setup.</p>
+          <div class="setup-storage-status" aria-live="polite">
+            <h4>Local storage</h4>
+            <div id="setup-storage-status" class="hint">Checking SQLite storage…</div>
+            <button id="setup-storage-refresh" type="button" class="secondary">Refresh storage status</button>
+          </div>
           <div class="view-toolbar" role="toolbar" aria-label="Setup tools">
             <button type="button" data-launch-cmd="scout-doctor" data-launch-title="Health check" data-launch-desc="Validate config, .env keys, source reachability, and state integrity.">Run health check</button>
             <button type="button" data-launch-cmd="scout-onboard" data-launch-title="Onboarding wizard" data-launch-desc="The onboarding wizard is interactive — run it in your AI chat (Copilot Chat or Claude Code) by typing /scout-onboard." data-launch-chat-only="true">Re-run onboarding (in chat)</button>

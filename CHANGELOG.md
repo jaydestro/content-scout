@@ -4,6 +4,32 @@ All notable changes to Content Scout are tracked here.
 
 This project uses a product changelog version stream until formal release tags are cut. Minor feature releases use `0.x.0`; major fix bundles also receive their own `0.x.0` entry so every important fix has a durable version number.
 
+## [0.32.0] - 2026-07-20
+
+SQLite becomes the automatic local operational store.
+
+### Versioned Features and Fixes
+
+| Version | Type | Area | Change |
+| --- | --- | --- | --- |
+| 0.32.0 | Minor feature | Storage / Setup | The web UI now requires Node.js 22.13+ and uses built-in `node:sqlite` with no server, credentials, or native database dependency. First startup creates the gitignored `.local/state/content-scout.db`, enables WAL/foreign keys/busy timeout, applies transactional versioned migrations, and idempotently imports existing subject configs, reports, social drafts, sentiment overrides, generated-image metadata, and browser-capture metadata. SQLite stores FTS5 content plus normalized reports, items, conversations, sentiment/competitor fields, creators, sources, run history, and durable parsed-index snapshots. Report/social listings, reads, search, and dashboard indexes use SQLite after startup reconciliation. Markdown/JSON remain deterministic import/export and archive formats; image/capture binaries stay on disk. Setup shows migration/storage status and recovery details. |
+| 0.32.0 | Minor feature | Storage / Recovery | New `node tools/storage.mjs` commands provide `init`, `import`, `status`, `verify`, `backup`, `restore`, `export`, and dry-run-first `retention`. Migrations checkpoint and back up before upgrades; corrupt databases are quarantined and rebuilt from retained files. Retention never silently deletes reports, social drafts, configs, or generated images. |
+
+### Upgrade and rollback
+
+- Upgrade Node.js to 22.13 or later before starting the web UI.
+- Existing files are preserved during automatic import. Verify with `node tools/storage.mjs verify`.
+- Create a checkpointed backup with `node tools/storage.mjs backup`.
+- Restore one with `node tools/storage.mjs restore --input <backup.db>`.
+- For rollback to a file-backed release, stop the server and retain or export Markdown/JSON with `node tools/storage.mjs export --output <directory>`; no source files are deleted by migration.
+
+### Validation
+
+- Full Express integration covers automatic setup, reports, search, normalized dashboard endpoints, persisted run history, and restart hydration.
+- Schema 1–4 upgrade fixtures verify migration to schema 7 plus pre-migration backup.
+- Forced WAL contention verifies concurrent reads and bounded competing writes.
+- Measured SQLite search: 85 ms vs. 245 ms file search on the current corpus; 2.4 ms vs. 403 ms at 500 artifacts; 30 ms vs. 1,985 ms at 5,000 artifacts. See `docs/SQLITE-BENCHMARKS.md`.
+
 ## [0.31.0] - 2026-07-02
 
 Competitor queries wired into the browser-scan conversations layer.

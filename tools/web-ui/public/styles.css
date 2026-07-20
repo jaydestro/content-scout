@@ -1165,6 +1165,19 @@ li.filter-empty::before {
 .card.setup-tools {
   margin-top: 1.5rem;
 }
+.setup-storage-status {
+  padding: 0.85rem 0;
+  margin-bottom: 1rem;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.setup-storage-status h4 { margin: 0 0 0.4rem; }
+.setup-storage-status .hint > div { margin: 0.2rem 0; }
+.setup-storage-status code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.setup-storage-status button { margin-top: 0.65rem; }
 
 /* --- Modal command runner ----------------------------------------- */
 body.cmd-modal-open { overflow: hidden; }

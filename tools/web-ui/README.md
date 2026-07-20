@@ -50,6 +50,10 @@ either way.
 
 ## Install & start
 
+Requires Node.js 22.13 or later. Content Scout uses the built-in `node:sqlite`
+module, so no database server, credentials, or native database package is
+required.
+
 ```
 cd tools/web-ui
 npm install
@@ -57,6 +61,26 @@ npm start
 ```
 
 Then open http://localhost:4477.
+
+On first start, the server creates `.local/state/content-scout.db`, applies
+schema migrations, and imports existing `reports/` and `social-posts/`
+Markdown files. Import is idempotent and never deletes the source files.
+
+Storage recovery and portability commands run from the repository root:
+
+```powershell
+node tools/storage.mjs status
+node tools/storage.mjs import
+node tools/storage.mjs verify
+node tools/storage.mjs backup
+node tools/storage.mjs restore --input .local/state/backups/content-scout-<timestamp>.db
+node tools/storage.mjs export --output .local/exports/latest
+node tools/storage.mjs retention
+```
+
+Retention is a dry run unless `--apply` is passed. It may prune old run history,
+backups, and aged raw browser captures according to explicit limits; reports,
+social drafts, configs, and generated images are always protected.
 
 Change the port with `PORT=5000 npm start`.
 

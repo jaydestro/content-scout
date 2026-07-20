@@ -95,10 +95,11 @@ setInterval(() => {
 let agentChoice = null;
 let agentMetaById = {};
 async function loadSetup() {
-  const [{ agents }, settings, status] = await Promise.all([
+  const [{ agents }, settings, status, storage] = await Promise.all([
     api('/api/agents'),
     api('/api/settings'),
     api('/api/status'),
+    api('/api/storage/status').catch((error) => ({ error: error.message })),
   ]);
   cachedStatus = status;
   agentChoice = settings.agent || status.agent || null;
@@ -142,6 +143,7 @@ async function loadSetup() {
   $('agent-custom-wrap').hidden = agentChoice !== 'custom';
   if (settings.agent === 'custom') $('agent-custom-runner').value = settings.runner || '';
   renderModelPicker(agentChoice, settings.model || '', locked);
+  renderStorageStatus(storage);
 
   // Section 2 status
   $('setup-config-status').innerHTML = status.hasConfigs
@@ -161,6 +163,44 @@ async function loadSetup() {
   // Section 3: env keys — editable
   await renderEnvEditor();
 }
+
+function renderStorageStatus(storage) {
+  const target = $('setup-storage-status');
+  if (!target) return;
+  if (!storage || storage.error) {
+    target.innerHTML = `<span class="warn-text">SQLite status unavailable: ${escape(storage?.error || 'unknown error')}</span>`;
+    return;
+  }
+  const imported = storage.initialImport || {};
+  const importSummary = [
+    `${storage.subjects || 0} subject${storage.subjects === 1 ? '' : 's'}`,
+    `${storage.reports || 0} reports`,
+    `${storage.socialPosts || 0} social drafts`,
+    `${storage.assets || 0} asset records`,
+  ].join(' · ');
+  const changed = ['reports', 'social', 'configs']
+    .reduce((sum, key) => sum + Number(imported[key]?.imported || 0), 0);
+  const recovery = storage.recovery
+    ? `<div class="warn-text">Recovered a damaged database. The original was quarantined at <code>${escape(storage.recovery.quarantinePath)}</code>.</div>`
+    : '';
+  target.innerHTML = `
+    <div><span class="ok">SQLite ready</span> · schema ${escape(storage.schemaVersion)} · ${escape(storage.journalMode || '')}</div>
+    <div>${escape(importSummary)}</div>
+    <div>Database: <code>${escape(storage.dbPath)}</code></div>
+    <div>${changed ? `${changed} file${changed === 1 ? '' : 's'} imported during this startup.` : 'Existing workspace is synchronized.'}</div>
+    ${recovery}
+  `;
+}
+
+$('setup-storage-refresh')?.addEventListener('click', async () => {
+  const target = $('setup-storage-status');
+  if (target) target.textContent = 'Checking SQLite storage…';
+  try {
+    renderStorageStatus(await api('/api/storage/status'));
+  } catch (error) {
+    renderStorageStatus({ error: error.message });
+  }
+});
 
 async function renderEnvEditor() {
   try {

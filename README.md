@@ -19,13 +19,20 @@ Then pick a path:
 
 ### Web UI (browser dashboard)
 
+Requires Node.js 22.13 or later.
+
 ```
 cd tools/web-ui
 npm install
 npm start
 ```
 
-Open <http://localhost:4477>. Walks you through a 9-step onboarding wizard, saves your config, and lets you launch scans, view reports, and manage `.env` keys. See [tools/web-ui/README.md](tools/web-ui/README.md) for the full reference.
+Open <http://localhost:4477>. On first start, Content Scout creates a local
+SQLite database at `.local/state/content-scout.db` and imports any existing
+reports, social drafts, and configs automatically. No database server or
+credentials are required. The onboarding wizard then saves your config and
+lets you launch scans, view reports, and manage `.env` keys. See
+[tools/web-ui/README.md](tools/web-ui/README.md) for the full reference.
 
 ### Editor / chat
 
