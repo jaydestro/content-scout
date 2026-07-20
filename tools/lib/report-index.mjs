@@ -22,7 +22,8 @@
 //
 // The return shape of parseReport / parseReportFromJson is identical so
 // callers can treat them interchangeably:
-//   { slug, generatedAt, items, conversations, sentimentTotals, skippedSources }
+//   { slug, generatedAt, items, conversations, sentimentTotals, skippedSources,
+//     competitorMentions, competitorAggregates, competitorSourceFailures }
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -634,6 +635,11 @@ export function parseReportFromJson(rawOrObj, fileName, options = {}) {
     conversations: filteredConversations,
     sentimentTotals: sentimentTotalsFor(filteredConversations),
     skippedSources,
+    competitorMentions: Array.isArray(data.competitor_mentions) ? data.competitor_mentions : [],
+    competitorAggregates: data.competitor_aggregates || { mentions: 0, byCompetitor: {}, bySource: {} },
+    competitorSourceFailures: Array.isArray(data.competitor_source_failures)
+      ? data.competitor_source_failures
+      : [],
   };
 }
 

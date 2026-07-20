@@ -31,7 +31,7 @@ import { loadConfig } from './lib/config.mjs';
 import { ensureProfileDir, launchEdge, attachEdge, newPage } from './lib/browser.mjs';
 import { filterHiring, categorizeRoles, ROLE_ORDER } from './lib/hiring-filter.mjs';
 import { browserScanSlugDir } from '../lib/paths.mjs';
-import { competitorQueryTerms, tagCompetitorItems } from '../lib/competitors.mjs';
+import { analyzeCompetitorSources, competitorQueryTerms } from '../lib/competitors.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -306,7 +306,7 @@ if (command === 'launch') {
   // configured; disable with --no-competitors. Wrapped so a failure here never
   // affects the product sidecars written above.
   let metaCompetitors = null;
-  const competitorsEnabled = !flags['no-competitors']
+  const competitorsEnabled = !flags['no-competitors'] && config.competitorTracking
     && Array.isArray(config.competitors) && config.competitors.length > 0;
   if (competitorsEnabled) {
     // Only the conversation platforms browser-scan covers. HN / Stack Overflow /
@@ -317,14 +317,17 @@ if (command === 'launch') {
     });
     if (convoPlatforms.length && compTerms.length) {
       console.log(`[browser-scan] competitor pass — ${config.competitors.length} competitors, ${compTerms.length} query terms over ${convoPlatforms.join(', ')}`);
-      const rawCompItems = [];
+      const competitorSources = [];
       for (const platform of convoPlatforms) {
         let handle = sharedHandle;
         let ownsHandle = false;
         try {
           if (mode === 'launch') {
             const profileDir = ensureProfileDir(__dirname, platform);
-            if (!hasSession(profileDir)) continue;
+            if (!hasSession(profileDir)) {
+              competitorSources.push({ source: platform, items: [] });
+              continue;
+            }
             handle = await launchEdge({ profileDir, headed });
             ownsHandle = true;
           }
@@ -341,29 +344,29 @@ if (command === 'launch') {
           if (platform === 'x') items = await scanX(handle, ctx);
           else if (platform === 'reddit') items = await scanReddit(handle, ctx);
           for (const it of items) { it.platform = platform; }
-          rawCompItems.push(...items);
+          competitorSources.push({ source: platform, items: filterHiring(items).kept });
         } catch (e) {
           console.error(`[browser-scan] competitor/${platform}: error — ${e.message}`);
+          competitorSources.push({ source: platform, error: e });
         } finally {
           if (ownsHandle) await handle.browser.close().catch(() => {});
         }
       }
       // Keep only items that actually name a tracked competitor; tag each with
       // the matched competitor(s). Then drop hiring/recruiting as elsewhere.
-      const tagged = tagCompetitorItems(rawCompItems, config.competitors);
-      const { kept } = filterHiring(tagged);
+      const analyzed = analyzeCompetitorSources(competitorSources, config.competitors, {
+        primaryProduct: [config.primaryProduct, ...config.searchTerms].filter(Boolean),
+      });
       const compFile = path.join(outDir, `${stamp}-competitors.json`);
-      fs.writeFileSync(compFile, JSON.stringify(kept, null, 2));
-      const byCompetitor = {};
-      for (const it of kept) byCompetitor[it.competitor] = (byCompetitor[it.competitor] || 0) + 1;
+      fs.writeFileSync(compFile, JSON.stringify(analyzed.items, null, 2));
       metaCompetitors = {
         names: config.competitors.map((c) => c.name),
         queryTerms: compTerms.length,
         platforms: convoPlatforms,
-        mentions: kept.length,
-        byCompetitor,
+        ...analyzed.aggregates,
+        sourceFailures: analyzed.sourceFailures,
       };
-      console.log(`[browser-scan] competitors: ${kept.length} tagged mentions → ${path.relative(ROOT, compFile)}`);
+      console.log(`[browser-scan] competitors: ${analyzed.items.length} tagged mentions → ${path.relative(ROOT, compFile)}`);
     }
   }
 

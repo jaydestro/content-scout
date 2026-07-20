@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { CONFIGS_DIR } from '../../lib/paths.mjs';
-import { parseCompetitors } from '../../lib/competitors.mjs';
+import { competitorTrackingEnabled, parseCompetitors } from '../../lib/competitors.mjs';
 
 export function loadConfig(root, slug) {
   // Config moved from .github/prompts/scout-config-{slug}.prompt.md to the
@@ -35,8 +35,14 @@ export function loadConfig(root, slug) {
     path: configPath,
     raw,
     searchTerms,
+    competitorTracking: competitorTrackingEnabled(raw),
     competitors: parseCompetitors(raw),
+    primaryProduct: extractProductName(raw),
   };
+}
+
+function extractProductName(md) {
+  return (String(md || '').match(/^#\s+scout-config:\s*(.+?)\s*$/mi) || [])[1] || '';
 }
 
 function extractSearchTerms(md) {

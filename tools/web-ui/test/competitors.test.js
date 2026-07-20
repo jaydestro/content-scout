@@ -1,8 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  analyzeCompetitorSources,
+  competitorTrackingEnabled,
   parseCompetitors,
   competitorQueryTerms,
+  detectSwitchingDirection,
   matchCompetitors,
   tagCompetitorItems,
 } from '../../lib/competitors.mjs';
@@ -49,6 +52,12 @@ test('parseCompetitors returns [] for "None tracked" and a missing section', () 
   assert.deepEqual(parseCompetitors('# config\n\n## Topics\n- foo\n'), []);
 });
 
+test('competitor tracking requires an explicit on toggle', () => {
+  assert.equal(competitorTrackingEnabled('- **Competitor tracking:** on'), true);
+  assert.equal(competitorTrackingEnabled('- **Competitor tracking:** off'), false);
+  assert.equal(competitorTrackingEnabled(SAMPLE_CONFIG), false);
+});
+
 test('competitorQueryTerms prefers distinctive names first and caps the list', () => {
   const competitors = parseCompetitors(SAMPLE_CONFIG);
   const terms = competitorQueryTerms(competitors, { max: 4 });
@@ -84,4 +93,84 @@ test('tagCompetitorItems tags matches and drops items mentioning no competitor',
   const c = tagged.find((t) => /2026\.2/.test(t.title));
   assert.ok(c.competitorMatches.includes('ScyllaDB'));
   assert.ok(c.competitorMatches.includes('Amazon DynamoDB'));
+});
+
+test('analyzeCompetitorSources deduplicates canonical URLs before classification', () => {
+  const competitors = parseCompetitors(SAMPLE_CONFIG);
+  let classifications = 0;
+  const result = analyzeCompetitorSources([
+    {
+      source: 'x',
+      items: [{ text: 'DynamoDB is great', url: 'https://twitter.com/user/status/1?utm_source=test' }],
+    },
+    {
+      source: 'reddit',
+      items: [{ text: 'DDB is great', url: 'https://x.com/user/status/1' }],
+    },
+  ], competitors, {
+    classify: () => {
+      classifications += 1;
+      return { sentiment: 'positive', confidence: 'high' };
+    },
+  });
+
+  assert.equal(result.items.length, 1);
+  assert.equal(classifications, 1);
+  assert.equal(result.aggregates.byCompetitor['Amazon DynamoDB'].mentions, 1);
+});
+
+test('competitor sentiment is isolated from primary-product sentiment', () => {
+  const competitors = parseCompetitors(SAMPLE_CONFIG);
+  const result = analyzeCompetitorSources([{
+    source: 'reddit',
+    items: [{
+      title: 'Cosmos DB is awful. DynamoDB is great.',
+      url: 'https://reddit.com/r/databases/comments/1/example',
+    }],
+  }], competitors, { primaryProduct: 'Cosmos DB' });
+
+  const item = result.items[0];
+  assert.equal(item.competitorSentiment, 'positive');
+  assert.equal(item.competitorSentimentConfidence, 'high');
+  assert.equal(item.switchingDirection, 'none');
+});
+
+test('switching direction stays separate from competitor sentiment', () => {
+  const competitors = parseCompetitors(SAMPLE_CONFIG);
+  assert.equal(
+    detectSwitchingDirection('We migrated from DynamoDB to Cosmos DB.', 'Cosmos DB', competitors),
+    'competitor_to_primary',
+  );
+  assert.equal(
+    detectSwitchingDirection('We switched from Cosmos DB to MongoDB Atlas.', 'Cosmos DB', competitors),
+    'primary_to_competitor',
+  );
+
+  const result = analyzeCompetitorSources([{
+    source: 'x',
+    items: [{
+      text: 'We moved from DynamoDB to MongoDB Atlas.',
+      url: 'https://x.com/user/status/2',
+      post_date: '2026-07-20T12:00:00Z',
+    }],
+  }], competitors, { primaryProduct: 'Cosmos DB' });
+  assert.equal(result.items[0].switchingDirection, 'competitor_to_competitor');
+  assert.equal(result.items[0].competitorSentiment, 'neutral');
+  assert.equal(result.items[0].timestamp, '2026-07-20T12:00:00Z');
+});
+
+test('partial competitor-source failure preserves successful results and aggregates', () => {
+  const competitors = parseCompetitors(SAMPLE_CONFIG);
+  const result = analyzeCompetitorSources([
+    { source: 'reddit', error: new Error('rate limited') },
+    {
+      source: 'x',
+      items: [{ text: 'ScyllaDB is fast', url: 'https://x.com/user/status/3' }],
+    },
+  ], competitors);
+
+  assert.equal(result.items.length, 1);
+  assert.deepEqual(result.sourceFailures, [{ source: 'reddit', error: 'rate limited' }]);
+  assert.equal(result.aggregates.bySource.x.mentions, 1);
+  assert.equal(result.aggregates.byCompetitor.ScyllaDB.sentiments.positive, 1);
 });
