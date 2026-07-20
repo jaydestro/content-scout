@@ -872,7 +872,64 @@ async function readMarkdown(dir, name) {
   }
   const file = safeJoin(dir, name);
   const raw = await fs.readFile(file, 'utf8');
+
+  // If the markdown already has a Competitor & Market Signals section, return
+  // it as-is. Otherwise, try to synthesise that section from the JSON sidecar
+  // so the Reports → Competitors tab shows structured data even when the
+  // agent wrote the sidecar but didn't embed the section in the markdown.
+  const hasCompetitorSection = /^#{2,3}\s+(competitor|competitive)\b/im.test(raw);
+  if (!hasCompetitorSection) {
+    try {
+      const jsonPath = safeJoin(dir, name.replace(/\.md$/, '.json'));
+      const jsonRaw = await fs.readFile(jsonPath, 'utf8');
+      const sidecar = JSON.parse(jsonRaw);
+      const agg = sidecar && sidecar.competitor_aggregates;
+      if (agg && (agg.mentions || 0) > 0) {
+        const appendix = buildCompetitorSectionMd(agg, sidecar.competitor_source_failures || []);
+        if (appendix) {
+          return { name, raw, html: marked.parse(raw + '\n\n' + appendix) };
+        }
+      }
+    } catch {
+      // JSON sidecar missing or malformed — fall through to plain markdown.
+    }
+  }
+
   return { name, raw, html: marked.parse(raw) };
+}
+
+// Generate a minimal markdown `## Competitor & Market Signals` section from
+// structured competitorAggregates so it can be extracted by the Competitors tab
+// and displayed in the full report view when the markdown doesn't have one.
+function buildCompetitorSectionMd(aggregates, sourceFailures) {
+  if (!aggregates || !aggregates.mentions) return '';
+  const byCompetitor = aggregates.byCompetitor || {};
+  const entries = Object.entries(byCompetitor)
+    .sort(([, a], [, b]) => (b.mentions || 0) - (a.mentions || 0));
+  if (!entries.length) return '';
+
+  const SENT_LABELS = {
+    positive: '🟢 Positive',
+    neutral: '⚪ Neutral',
+    mixed: '🟠 Mixed',
+    negative: '🔴 Negative',
+    unknown: '· Unknown',
+  };
+
+  const rows = entries.map(([name, data]) => {
+    const sentiments = data.sentiments || {};
+    const sentParts = ['positive', 'neutral', 'mixed', 'negative', 'unknown']
+      .filter((k) => sentiments[k] > 0)
+      .map((k) => `${SENT_LABELS[k]}: ${sentiments[k]}`);
+    const sources = Object.keys(data.bySource || {}).join(', ') || '—';
+    return `- **${name}**: ${data.mentions || 0} mention${(data.mentions || 0) === 1 ? '' : 's'} — ${sentParts.join(', ') || 'unclassified'} · Sources: ${sources}`;
+  });
+
+  const failureNote = (sourceFailures || []).length
+    ? `\n\n> ⚠️ Partial coverage — ${sourceFailures.length} source${sourceFailures.length === 1 ? '' : 's'} unavailable: ${sourceFailures.map((f) => f.source).join(', ')}`
+    : '';
+
+  return `## Competitor & Market Signals\n\n${rows.join('\n')}${failureNote}`;
 }
 
 // Parse a .env-style string into { key, value } entries. Preserves insertion order.
@@ -2753,6 +2810,8 @@ async function _buildIndex() {
       convoCount: parsed.conversations.length,
       sentimentTotals: parsed.sentimentTotals,
       skippedSources: parsed.skippedSources,
+      competitorAggregates: parsed.competitorAggregates,
+      competitorSourceFailures: parsed.competitorSourceFailures,
     });
     for (const it of parsed.items)
       items.push({
@@ -3552,6 +3611,47 @@ app.get('/api/sentiment-summary', async (_req, res) => {
           generatedAt: prior.generatedAt,
           totals: prior.sentimentTotals,
         },
+      });
+    }
+    res.json({ groups, builtAt: idx.builtAt });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+// Competitor sentiment summary — per-slug aggregates from the most recent
+// scan that carried competitor tracking data. Used by the dashboard competitor
+// signals card. Returns one group per configured subject; each group includes
+// the full competitorAggregates from the freshest scan with data plus any
+// source failures so the UI can show partial-coverage states.
+app.get('/api/competitor-sentiment', async (_req, res) => {
+  try {
+    const idx = await getIndex();
+    const bySlug = new Map();
+    for (const r of idx.reports) {
+      const list = bySlug.get(r.slug) || [];
+      list.push(r);
+      bySlug.set(r.slug, list);
+    }
+    const groups = [];
+    for (const [slug, list] of bySlug.entries()) {
+      list.sort((a, b) => (b.mtime || '').localeCompare(a.mtime || ''));
+      const newest = list[0];
+      // Prefer the most recent report that actually has competitor mentions so
+      // a later items-only scan doesn't blank the competitor card.
+      const withData = list.filter((r) => (r.competitorAggregates?.mentions || 0) > 0);
+      const latest = withData[0] || newest;
+      const emptyAggregates = { mentions: 0, byCompetitor: {}, bySource: {} };
+      groups.push({
+        slug,
+        reportName: latest.name,
+        generatedAt: latest.generatedAt,
+        // Also surface the true newest report name so the UI can flag when
+        // the competitor data shown is from an earlier scan.
+        newestReport: newest.name,
+        competitorAggregates: latest.competitorAggregates || emptyAggregates,
+        competitorSourceFailures: latest.competitorSourceFailures || [],
+        hasData: (latest.competitorAggregates?.mentions || 0) > 0,
       });
     }
     res.json({ groups, builtAt: idx.builtAt });

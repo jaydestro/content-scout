@@ -180,3 +180,59 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
   box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent) !important;
   border-radius: var(--scout-r-control);
 }
+
+/* ---------- 16. Competitor signals card ---------- */
+
+/* Distinguish the competitor card from the primary sentiment card
+   by using a subtly different border and a distinct section background.  */
+.dash-competitor-card {
+  border-left: 3px solid var(--accent-soft, #334);
+  margin-top: 1rem;
+}
+
+.comp-group {
+  margin: 0.75rem 0;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.comp-group:last-child { border-bottom: none; padding-bottom: 0; }
+.comp-group-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.4rem;
+}
+.comp-slug { font-size: 0.875rem; }
+.comp-no-data { font-style: italic; }
+.comp-partial-warning, .comp-stale-warning {
+  font-size: 0.75rem;
+  margin: 0.2rem 0;
+  color: var(--muted, #888);
+}
+
+.comp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  margin-top: 0.4rem;
+}
+.comp-table th {
+  text-align: left;
+  font-weight: 500;
+  padding: 3px 6px 3px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted, #888);
+  white-space: nowrap;
+}
+.comp-table td {
+  padding: 4px 6px 4px 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.comp-table tbody tr:last-child td { border-bottom: none; }
+.comp-name { font-weight: 500; }
+.comp-mentions { text-align: right; padding-right: 1rem; white-space: nowrap; }
+.comp-sentiment { white-space: nowrap; }
+.comp-sent-dot { margin-right: 0.35rem; }
+.comp-sources { max-width: 120px; word-break: break-word; }

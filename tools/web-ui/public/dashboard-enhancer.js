@@ -87,6 +87,7 @@
     renderSuggestions({ configs: configList, reports: reportList, social });
     renderLatestReport(reportList);
     loadCfpEvents(configList);
+    loadCompetitorSentiment();
     // Social activity / sentiment / creators / source health are owned by
     // intel.js. Do not add loaders for #dash-social-activity, #dash-sentiment,
     // #dash-creators, or #dash-source-health here — two writers on the same
@@ -342,7 +343,165 @@
 
   function renderStack() { /* removed — replaced with renderSuggestions */ }
 
-  // Friendly, actionable nudges built from state we already have.
+  // --- Competitor signals card ---
+  // Fetches /api/competitor-sentiment and renders a per-competitor breakdown
+  // showing mention volume, sentiment distribution, and switching signals.
+  // Kept visually and semantically separate from the primary-product sentiment
+  // card (#dash-sentiment) so the two are never conflated.
+  async function loadCompetitorSentiment() {
+    const host = $('dash-competitor-sentiment');
+    const meta = $('dash-competitor-sentiment-meta');
+    if (!host) return;
+
+    let data;
+    try {
+      data = await fetchJSON('/api/competitor-sentiment');
+    } catch (err) {
+      host.innerHTML = `<p class="hint">Couldn\u2019t load competitor signals: ${esc(err.message || err)}</p>`;
+      if (meta) meta.textContent = '';
+      return;
+    }
+
+    const groups = (data && Array.isArray(data.groups)) ? data.groups : [];
+
+    if (!groups.length) {
+      host.innerHTML = `<p class="hint">No reports yet \u2014 run a scan to surface competitor signals.</p>`;
+      if (meta) meta.textContent = '';
+      return;
+    }
+
+    // Check whether any group has competitor tracking data at all.
+    const anyWithData = groups.some((g) => g.hasData);
+    const totalMentions = groups.reduce((n, g) => n + (g.competitorAggregates?.mentions || 0), 0);
+
+    if (meta) {
+      meta.textContent = anyWithData
+        ? `${totalMentions} mention${totalMentions === 1 ? '' : 's'} across ${groups.length} subject${groups.length === 1 ? '' : 's'}`
+        : '';
+    }
+
+    if (!anyWithData) {
+      // All subjects either have no reports or have no competitor mentions.
+      host.innerHTML = `
+        <p class="hint">No competitor mentions found in your scan reports.</p>
+        <p class="hint" style="margin-top:0.25rem">Enable <strong>Competitor tracking</strong> in your config and run a scan to surface signals.</p>
+      `;
+      return;
+    }
+
+    const SENT_DOT = { positive: '🟢', neutral: '⚪', mixed: '🟠', negative: '🔴', unknown: '·' };
+    const SENT_ORDER = ['positive', 'neutral', 'mixed', 'negative', 'unknown'];
+
+    function sentimentBar(sentiments) {
+      if (!sentiments) return '';
+      const total = SENT_ORDER.reduce((n, k) => n + (sentiments[k] || 0), 0);
+      if (!total) return '<span class="hint">no classified mentions</span>';
+      return SENT_ORDER
+        .filter((k) => sentiments[k] > 0)
+        .map((k) => `<span class="comp-sent-dot" title="${k}: ${sentiments[k]}">${SENT_DOT[k] || '·'} ${sentiments[k]}</span>`)
+        .join(' ');
+    }
+
+    function switchingBadge(byCompetitor) {
+      // Switching signals surface as items whose switchingDirection is
+      // stored in the competitorMentions array (not in aggregates). The
+      // aggregates don't track switching direction, so we indicate source
+      // coverage instead as a proxy for signal richness.
+      const sources = Object.keys(byCompetitor).length;
+      return sources ? `<span class="hint">${sources} source${sources === 1 ? '' : 's'}</span>` : '';
+    }
+
+    // Navigate to Reports → Competitors tab for the given report name.
+    function openCompetitorsTab(reportName) {
+      const navBtn = document.querySelector('nav button[data-view="reports"]');
+      if (navBtn) navBtn.click();
+      setTimeout(() => {
+        const tabBtn = document.querySelector('#reports-tabs button[data-tab="competitors"]');
+        if (tabBtn) tabBtn.click();
+        if (reportName) {
+          setTimeout(() => {
+            const row = document.querySelector(`#reports-list li[data-name="${CSS.escape(reportName)}"]`);
+            if (row) row.click();
+          }, 120);
+        }
+      }, 120);
+    }
+
+    const sections = groups.map((g) => {
+      if (!g.hasData) {
+        return `
+          <section class="comp-group comp-group-empty">
+            <header class="comp-group-head">
+              <code class="comp-slug">${esc(g.slug)}</code>
+              <span class="hint comp-no-data">No competitor mentions in latest scan</span>
+            </header>
+          </section>`;
+      }
+
+      const agg = g.competitorAggregates || {};
+      const byCompetitor = agg.byCompetitor || {};
+      const failures = (g.competitorSourceFailures || []);
+      const isStale = g.reportName !== g.newestReport;
+
+      const competitorRows = Object.entries(byCompetitor)
+        .sort(([, a], [, b]) => (b.mentions || 0) - (a.mentions || 0))
+        .map(([name, cdata]) => {
+          const sources = Object.keys(cdata.bySource || {});
+          return `
+            <tr class="comp-row">
+              <td class="comp-name">${esc(name)}</td>
+              <td class="comp-mentions">${cdata.mentions || 0}</td>
+              <td class="comp-sentiment">${sentimentBar(cdata.sentiments)}</td>
+              <td class="comp-sources hint">${esc(sources.join(', '))}</td>
+            </tr>`;
+        })
+        .join('');
+
+      const failureBanner = failures.length
+        ? `<p class="hint comp-partial-warning">\u26a0\ufe0f Partial coverage \u2014 ${failures.length} source${failures.length === 1 ? '' : 's'} unavailable (${esc(failures.map((f) => f.source).join(', '))})</p>`
+        : '';
+
+      const staleBanner = isStale
+        ? `<p class="hint comp-stale-warning">Showing competitor data from an earlier scan (${esc(g.reportName)})</p>`
+        : '';
+
+      const linkBtn = `<button type="button" class="link-btn comp-open-btn" data-report="${esc(g.reportName)}">Open report \u2192</button>`;
+
+      return `
+        <section class="comp-group">
+          <header class="comp-group-head">
+            <code class="comp-slug">${esc(g.slug)}</code>
+            <span class="hint">${agg.mentions || 0} mention${(agg.mentions || 0) === 1 ? '' : 's'}</span>
+            ${linkBtn}
+          </header>
+          ${staleBanner}
+          ${failureBanner}
+          <table class="comp-table">
+            <thead>
+              <tr>
+                <th>Competitor</th>
+                <th>Mentions</th>
+                <th>Sentiment</th>
+                <th>Sources</th>
+              </tr>
+            </thead>
+            <tbody>${competitorRows}</tbody>
+          </table>
+        </section>`;
+    });
+
+    host.innerHTML = sections.join('');
+
+    // Wire the "Open report →" buttons to the Reports → Competitors tab.
+    host.querySelectorAll('.comp-open-btn[data-report]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        openCompetitorsTab(btn.dataset.report);
+      });
+    });
+  }
+
+
   function renderSuggestions({ configs, reports, social }) {
     const ul = $('dash-suggestions');
     if (!ul) return;

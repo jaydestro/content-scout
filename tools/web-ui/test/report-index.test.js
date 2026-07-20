@@ -312,3 +312,195 @@ test('loadReport backfills empty conversation summaries from .cached-bodies.json
     await fs.rm(tmp, { recursive: true, force: true });
   }
 });
+test('parseReportFromJson: competitor mentions do not affect primary sentiment totals (reconciliation)', () => {
+  // A conversation item that belongs to the primary product should count in
+  // sentimentTotals; a competitor mention row must not.
+  const parsed = parseReportFromJson({
+    generated_at: '2026-07-20',
+    items: [],
+    // One community conversation — positive sentiment.
+    conversations: [
+      {
+        section: 'conversations',
+        date: '2026-07-20',
+        title: 'Azure Cosmos DB rocks',
+        url: 'https://reddit.com/r/databases/comments/2/primary',
+        author: { display_name: 'CommunityUser', platform: 'reddit' },
+        sentiment: 'positive',
+        sentiment_confidence: 'high',
+      },
+    ],
+    // One competitor mention with negative sentiment toward the competitor.
+    competitor_mentions: [
+      {
+        competitor: 'Amazon DynamoDB',
+        competitorSentiment: 'negative',
+        competitorSentimentConfidence: 'high',
+        platform: 'reddit',
+        timestamp: '2026-07-20T12:00:00Z',
+        url: 'https://reddit.com/r/databases/comments/3/comp',
+        switchingDirection: 'competitor_to_primary',
+      },
+    ],
+    competitor_aggregates: {
+      mentions: 1,
+      byCompetitor: {
+        'Amazon DynamoDB': {
+          mentions: 1,
+          sentiments: { positive: 0, neutral: 0, negative: 1, mixed: 0, unknown: 0 },
+          bySource: { reddit: 1 },
+        },
+      },
+      bySource: { reddit: { mentions: 1 } },
+    },
+  }, '2026-07-20-1200-test-product-content.md');
+
+  // Primary sentiment totals should only count the community conversation.
+  assert.deepEqual(parsed.sentimentTotals, {
+    positive: 1,
+    neutral: 0,
+    negative: 0,
+    mixed: 0,
+    unknown: 0,
+  });
+  // Competitor aggregates are exposed but do not leak into primary totals.
+  assert.equal(parsed.competitorAggregates.mentions, 1);
+  assert.equal(
+    parsed.competitorAggregates.byCompetitor['Amazon DynamoDB'].sentiments.negative,
+    1
+  );
+});
+
+test('parseReportFromJson: partial competitor source failures are exposed', () => {
+  const parsed = parseReportFromJson({
+    generated_at: '2026-07-20',
+    items: [],
+    competitor_mentions: [],
+    competitor_aggregates: { mentions: 0, byCompetitor: {}, bySource: {} },
+    competitor_source_failures: [
+      { source: 'x', error: 'rate limited' },
+      { source: 'linkedin', error: 'login required' },
+    ],
+  }, '2026-07-20-1200-test-product-content.md');
+
+  assert.equal(parsed.competitorSourceFailures.length, 2);
+  assert.equal(parsed.competitorSourceFailures[0].source, 'x');
+  assert.equal(parsed.competitorSourceFailures[1].source, 'linkedin');
+  // Despite source failures, primary sentiment totals are zero (no conversations).
+  assert.deepEqual(parsed.sentimentTotals, {
+    positive: 0,
+    neutral: 0,
+    negative: 0,
+    mixed: 0,
+    unknown: 0,
+  });
+});
+
+test('parseReportFromJson: multiple competitors aggregated independently', () => {
+  const parsed = parseReportFromJson({
+    generated_at: '2026-07-20',
+    items: [],
+    competitor_mentions: [
+      {
+        competitor: 'Amazon DynamoDB',
+        competitorSentiment: 'negative',
+        platform: 'reddit',
+        url: 'https://reddit.com/r/databases/comments/1/a',
+      },
+      {
+        competitor: 'MongoDB Atlas',
+        competitorSentiment: 'positive',
+        platform: 'hackernews',
+        url: 'https://news.ycombinator.com/item?id=1',
+      },
+    ],
+    competitor_aggregates: {
+      mentions: 2,
+      byCompetitor: {
+        'Amazon DynamoDB': {
+          mentions: 1,
+          sentiments: { positive: 0, neutral: 0, negative: 1, mixed: 0, unknown: 0 },
+          bySource: { reddit: 1 },
+        },
+        'MongoDB Atlas': {
+          mentions: 1,
+          sentiments: { positive: 1, neutral: 0, negative: 0, mixed: 0, unknown: 0 },
+          bySource: { hackernews: 1 },
+        },
+      },
+      bySource: {
+        reddit: { mentions: 1 },
+        hackernews: { mentions: 1 },
+      },
+    },
+  }, '2026-07-20-1200-test-product-content.md');
+
+  const byComp = parsed.competitorAggregates.byCompetitor;
+  assert.equal(parsed.competitorAggregates.mentions, 2);
+  assert.equal(byComp['Amazon DynamoDB'].sentiments.negative, 1);
+  assert.equal(byComp['MongoDB Atlas'].sentiments.positive, 1);
+  // Each competitor's data is independent.
+  assert.equal(byComp['Amazon DynamoDB'].mentions, 1);
+  assert.equal(byComp['MongoDB Atlas'].mentions, 1);
+  // Primary sentiment totals are still empty (no conversations).
+  assert.deepEqual(parsed.sentimentTotals, {
+    positive: 0,
+    neutral: 0,
+    negative: 0,
+    mixed: 0,
+    unknown: 0,
+  });
+});
+
+test('loadReport: competitor aggregates survive round-trip through JSON sidecar', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cs-comp-agg-'));
+  try {
+    const json = {
+      generated_at: '2026-07-20',
+      items: [],
+      competitor_mentions: [
+        {
+          competitor: 'Amazon DynamoDB',
+          competitorSentiment: 'mixed',
+          competitorSentimentConfidence: 'high',
+          platform: 'reddit',
+          url: 'https://reddit.com/r/databases/comments/4/roundtrip',
+          switchingDirection: 'none',
+        },
+      ],
+      competitor_aggregates: {
+        mentions: 1,
+        byCompetitor: {
+          'Amazon DynamoDB': {
+            mentions: 1,
+            sentiments: { positive: 0, neutral: 0, negative: 0, mixed: 1, unknown: 0 },
+            bySource: { reddit: 1 },
+          },
+        },
+        bySource: { reddit: { mentions: 1 } },
+      },
+      competitor_source_failures: [{ source: 'x', error: 'unavailable' }],
+    };
+    const fileName = '2026-07-20-1400-test-product-content.md';
+    await fs.writeFile(path.join(tmp, fileName.replace(/\.md$/, '.json')), JSON.stringify(json));
+
+    const parsed = await loadReport(tmp, fileName);
+    assert.equal(parsed.competitorMentions.length, 1);
+    assert.equal(parsed.competitorMentions[0].competitor, 'Amazon DynamoDB');
+    assert.equal(parsed.competitorMentions[0].competitorSentiment, 'mixed');
+    assert.equal(parsed.competitorAggregates.mentions, 1);
+    assert.equal(parsed.competitorAggregates.byCompetitor['Amazon DynamoDB'].sentiments.mixed, 1);
+    assert.equal(parsed.competitorSourceFailures.length, 1);
+    assert.equal(parsed.competitorSourceFailures[0].source, 'x');
+    // Primary product sentiment totals must be unaffected.
+    assert.deepEqual(parsed.sentimentTotals, {
+      positive: 0,
+      neutral: 0,
+      negative: 0,
+      mixed: 0,
+      unknown: 0,
+    });
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
