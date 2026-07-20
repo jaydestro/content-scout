@@ -447,9 +447,9 @@ export class SqliteArtifactStore {
     for (const name of names) {
       const fullPath = path.join(absoluteDirectory, name);
       const relativePath = posixPath(path.relative(this.repoRoot, fullPath));
-      seen.add(relativePath);
       const file = readTextFile(fullPath);
       if (!file) continue;
+      seen.add(relativePath);
       const { stat, content } = file;
       const prior = existing.get(relativePath);
       if (prior && Number(prior.mtime_ms) === Math.trunc(stat.mtimeMs) && Number(prior.size_bytes) === stat.size) {
@@ -565,9 +565,9 @@ export class SqliteArtifactStore {
     let unchanged = 0;
     for (const name of names) {
       const fullPath = path.join(absoluteDirectory, name);
-      seen.add(name);
       const file = readTextFile(fullPath);
       if (!file) continue;
+      seen.add(name);
       const { stat, content } = file;
       const prior = existing.get(name);
       if (prior && Number(prior.mtime_ms) === Math.trunc(stat.mtimeMs) && Number(prior.size_bytes) === stat.size) {

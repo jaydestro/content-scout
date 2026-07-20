@@ -117,26 +117,33 @@ test('reconciliation updates changed files and removes deleted artifacts', () =>
 
 test('reconcileWorkspace skips unreadable markdown and sidecars without aborting', () => {
   const dirs = fixture();
+  const reportName = '2026-07-20-1200-demo-content.md';
+  const sidecarName = '2026-07-20-1200-demo-content.json';
   writeFileSync(
-    path.join(dirs.reportsDir, '2026-07-20-1200-demo-content.md'),
+    path.join(dirs.reportsDir, reportName),
     '# Demo report\n\nStored content.\n',
   );
   writeFileSync(
-    path.join(dirs.reportsDir, '2026-07-20-1200-demo-content.json'),
+    path.join(dirs.reportsDir, sidecarName),
     JSON.stringify({ generated_at: '2026-07-20T12:00:00.000Z', competitor_aggregates: { mentions: 1 } }),
   );
-  mkdirSync(path.join(dirs.reportsDir, 'broken.md'));
-  mkdirSync(path.join(dirs.reportsDir, 'broken.json'));
   const store = new SqliteArtifactStore({ repoRoot: dirs.root, dbPath: dirs.dbPath });
   cleanups.push(() => store.close());
 
+  const initial = store.reconcileWorkspace(dirs);
+  unlinkSync(path.join(dirs.reportsDir, reportName));
+  unlinkSync(path.join(dirs.reportsDir, sidecarName));
+  mkdirSync(path.join(dirs.reportsDir, reportName));
+  mkdirSync(path.join(dirs.reportsDir, sidecarName));
   const result = store.reconcileWorkspace(dirs);
 
-  assert.equal(result.reports.imported, 1);
-  assert.equal(result.reportSidecars.imported, 1);
-  assert.equal(store.listArtifacts('reports').length, 1);
-  assert.match(store.readArtifact('reports', '2026-07-20-1200-demo-content.md').content, /Stored content/);
-  assert.equal(store.readReportSidecar('2026-07-20-1200-demo-content.json')?.content != null, true);
+  assert.equal(initial.reports.imported, 1);
+  assert.equal(initial.reportSidecars.imported, 1);
+  assert.equal(result.reports.imported, 0);
+  assert.equal(result.reports.removed, 1);
+  assert.equal(result.reportSidecars.removed, 1);
+  assert.equal(store.listArtifacts('reports').length, 0);
+  assert.equal(store.readReportSidecar(sidecarName), null);
 });
 
 test('persists parsed index snapshots by content signature', () => {
