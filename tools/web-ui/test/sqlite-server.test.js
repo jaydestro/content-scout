@@ -25,7 +25,9 @@ async function availablePort() {
 async function waitForServer(url, child) {
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
-    if (child.exitCode != null) throw new Error(`Server exited with ${child.exitCode}`);
+    if (child.exitCode != null) {
+      throw new Error(`Server exited with ${child.exitCode}\n${child.output || ''}`);
+    }
     try {
       const response = await fetch(`${url}/api/storage/status`);
       if (response.ok) return;
@@ -125,7 +127,13 @@ test('Express server initializes SQLite, serves normalized data, and hydrates af
     SCOUT_LOCAL_ROOT: path.join(root, '.local'),
     SCOUT_RUNNER: '',
   };
-  const start = () => spawn(process.execPath, [serverFile], { env, stdio: 'ignore' });
+  const start = () => {
+    const child = spawn(process.execPath, [serverFile], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    child.output = '';
+    child.stdout.on('data', (chunk) => { child.output += chunk.toString(); });
+    child.stderr.on('data', (chunk) => { child.output += chunk.toString(); });
+    return child;
+  };
   let child = start();
   try {
     await waitForServer(url, child);
