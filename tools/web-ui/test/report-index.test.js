@@ -175,6 +175,46 @@ test('parseReportFromJson exposes competitor aggregates without changing primary
   });
 });
 
+test('parseReportFromJson normalizes malformed competitor metadata to stable defaults', () => {
+  const parsed = parseReportFromJson({
+    generated_at: '2026-07-20',
+    items: [],
+    competitor_mentions: {},
+    competitor_aggregates: 'broken',
+    competitor_source_failures: { source: 'x', error: 'unavailable' },
+  }, '2026-07-20-1200-test-product-content.md');
+
+  assert.deepEqual(parsed.competitorMentions, []);
+  assert.deepEqual(parsed.competitorAggregates, {
+    mentions: 0,
+    byCompetitor: {},
+    bySource: {},
+  });
+  assert.deepEqual(parsed.competitorSourceFailures, []);
+});
+
+test('parseReport exposes default competitor fields for legacy markdown reports', () => {
+  const report = `
+**Generated:** 2026-07-20
+
+## Official Content
+
+| # | Date | Title | Channel | Tags | EP | Link |
+|---|------|-------|---------|------|----|------|
+| 1 | 2026-07-20 | Example post | Blog | \`#tag\` | 5 | [link](https://example.com/post) |
+`;
+
+  const parsed = parseReport(report, '2026-07-20-1200-test-product-content.md');
+
+  assert.deepEqual(parsed.competitorMentions, []);
+  assert.deepEqual(parsed.competitorAggregates, {
+    mentions: 0,
+    byCompetitor: {},
+    bySource: {},
+  });
+  assert.deepEqual(parsed.competitorSourceFailures, []);
+});
+
 test('parseReport marks official account conversation rows as product-side', () => {
   const report = `
 **Generated:** 2026-05-08

@@ -40,6 +40,27 @@ function emptySentimentTotals() {
   return { positive: 0, neutral: 0, negative: 0, mixed: 0, unknown: 0 };
 }
 
+function emptyCompetitorAggregates() {
+  return { mentions: 0, byCompetitor: {}, bySource: {} };
+}
+
+function normalizeCompetitorAggregates(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return emptyCompetitorAggregates();
+  }
+  return {
+    mentions: Number.isFinite(value.mentions) ? value.mentions : 0,
+    byCompetitor:
+      value.byCompetitor && typeof value.byCompetitor === 'object' && !Array.isArray(value.byCompetitor)
+        ? value.byCompetitor
+        : {},
+    bySource:
+      value.bySource && typeof value.bySource === 'object' && !Array.isArray(value.bySource)
+        ? value.bySource
+        : {},
+  };
+}
+
 function normalizeName(name) {
   return String(name || '')
     .toLowerCase()
@@ -636,10 +657,8 @@ export function parseReportFromJson(rawOrObj, fileName, options = {}) {
     sentimentTotals: sentimentTotalsFor(filteredConversations),
     skippedSources,
     competitorMentions: Array.isArray(data.competitor_mentions) ? data.competitor_mentions : [],
-    competitorAggregates: data.competitor_aggregates || { mentions: 0, byCompetitor: {}, bySource: {} },
-    competitorSourceFailures: Array.isArray(data.competitor_source_failures)
-      ? data.competitor_source_failures
-      : [],
+    competitorAggregates: normalizeCompetitorAggregates(data.competitor_aggregates),
+    competitorSourceFailures: Array.isArray(data.competitor_source_failures) ? data.competitor_source_failures : [],
   };
 }
 
@@ -839,6 +858,9 @@ export function parseReport(raw, fileName, options = {}) {
     conversations: filteredConversations,
     sentimentTotals: sentimentTotalsFor(filteredConversations),
     skippedSources,
+    competitorMentions: [],
+    competitorAggregates: emptyCompetitorAggregates(),
+    competitorSourceFailures: [],
   };
 }
 
