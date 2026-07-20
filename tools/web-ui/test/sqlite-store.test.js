@@ -115,6 +115,30 @@ test('reconciliation updates changed files and removes deleted artifacts', () =>
   assert.equal(store.listArtifacts('reports').length, 0);
 });
 
+test('reconcileWorkspace skips unreadable markdown and sidecars without aborting', () => {
+  const dirs = fixture();
+  writeFileSync(
+    path.join(dirs.reportsDir, '2026-07-20-1200-demo-content.md'),
+    '# Demo report\n\nStored content.\n',
+  );
+  writeFileSync(
+    path.join(dirs.reportsDir, '2026-07-20-1200-demo-content.json'),
+    JSON.stringify({ generated_at: '2026-07-20T12:00:00.000Z', competitor_aggregates: { mentions: 1 } }),
+  );
+  mkdirSync(path.join(dirs.reportsDir, 'broken.md'));
+  mkdirSync(path.join(dirs.reportsDir, 'broken.json'));
+  const store = new SqliteArtifactStore({ repoRoot: dirs.root, dbPath: dirs.dbPath });
+  cleanups.push(() => store.close());
+
+  const result = store.reconcileWorkspace(dirs);
+
+  assert.equal(result.reports.imported, 1);
+  assert.equal(result.reportSidecars.imported, 1);
+  assert.equal(store.listArtifacts('reports').length, 1);
+  assert.match(store.readArtifact('reports', '2026-07-20-1200-demo-content.md').content, /Stored content/);
+  assert.equal(store.readReportSidecar('2026-07-20-1200-demo-content.json')?.content != null, true);
+});
+
 test('persists parsed index snapshots by content signature', () => {
   const dirs = fixture();
   const store = new SqliteArtifactStore({ repoRoot: dirs.root, dbPath: dirs.dbPath });

@@ -26,7 +26,7 @@ SQLite becomes the automatic local operational store.
 ### Validation
 
 - Full Express integration covers automatic setup, reports, search, normalized dashboard endpoints, persisted run history, and restart hydration.
-- Schema 1–4 upgrade fixtures verify migration to schema 7 plus pre-migration backup.
+- Schema 1–4 upgrade fixtures verify migration to schema 8 plus pre-migration backup.
 - Forced WAL contention verifies concurrent reads and bounded competing writes.
 - Measured SQLite search: 85 ms vs. 245 ms file search on the current corpus; 2.4 ms vs. 403 ms at 500 artifacts; 30 ms vs. 1,985 ms at 5,000 artifacts. See `docs/SQLITE-BENCHMARKS.md`.
 

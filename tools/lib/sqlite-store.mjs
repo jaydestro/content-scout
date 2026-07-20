@@ -81,6 +81,17 @@ function snippet(line, hit) {
   return `${start > 0 ? '…' : ''}${line.slice(start, end)}${end < line.length ? '…' : ''}`;
 }
 
+function readTextFile(fullPath) {
+  try {
+    return {
+      stat: statSync(fullPath),
+      content: readFileSync(fullPath, 'utf8'),
+    };
+  } catch {
+    return null;
+  }
+}
+
 function imageDimensions(buffer, extension) {
   const ext = String(extension || '').toLowerCase();
   if (ext === '.png' && buffer.length >= 24 && buffer.toString('ascii', 1, 4) === 'PNG') {
@@ -435,15 +446,16 @@ export class SqliteArtifactStore {
 
     for (const name of names) {
       const fullPath = path.join(absoluteDirectory, name);
-      const stat = statSync(fullPath);
       const relativePath = posixPath(path.relative(this.repoRoot, fullPath));
       seen.add(relativePath);
+      const file = readTextFile(fullPath);
+      if (!file) continue;
+      const { stat, content } = file;
       const prior = existing.get(relativePath);
       if (prior && Number(prior.mtime_ms) === Math.trunc(stat.mtimeMs) && Number(prior.size_bytes) === stat.size) {
         unchanged++;
         continue;
       }
-      const content = readFileSync(fullPath, 'utf8');
       const meta = extractDocMeta(content, name);
       changes.push({
         relativePath,
@@ -553,14 +565,15 @@ export class SqliteArtifactStore {
     let unchanged = 0;
     for (const name of names) {
       const fullPath = path.join(absoluteDirectory, name);
-      const stat = statSync(fullPath);
       seen.add(name);
+      const file = readTextFile(fullPath);
+      if (!file) continue;
+      const { stat, content } = file;
       const prior = existing.get(name);
       if (prior && Number(prior.mtime_ms) === Math.trunc(stat.mtimeMs) && Number(prior.size_bytes) === stat.size) {
         unchanged++;
         continue;
       }
-      const content = readFileSync(fullPath, 'utf8');
       changes.push({
         name,
         path: posixPath(path.relative(this.repoRoot, fullPath)),
@@ -1324,12 +1337,14 @@ export class SqliteArtifactStore {
       : DEFAULT_MAX_SNIPPETS;
     const placeholders = kinds.map(() => '?').join(', ');
     const useFts = !options.regex && this.fts5Enabled;
-    const parameters = options.regex || !useFts
-      ? kinds
-      : [quotedFtsQuery(value), value, ...kinds];
-    const sql = options.regex || !useFts
-      ? `SELECT kind, name, path, mtime_ms, content FROM artifacts WHERE kind IN (${placeholders}) ORDER BY mtime_ms DESC`
-      : `
+    let parameters;
+    let sql;
+    if (options.regex) {
+      parameters = kinds;
+      sql = `SELECT kind, name, path, mtime_ms, content FROM artifacts WHERE kind IN (${placeholders}) ORDER BY mtime_ms DESC`;
+    } else if (useFts) {
+      parameters = [quotedFtsQuery(value), value, ...kinds];
+      sql = `
           WITH candidates(id) AS (
             SELECT rowid FROM artifacts_fts WHERE artifacts_fts MATCH ?
             UNION
@@ -1340,6 +1355,15 @@ export class SqliteArtifactStore {
           WHERE id IN (SELECT id FROM candidates) AND kind IN (${placeholders})
           ORDER BY mtime_ms DESC
         `;
+    } else {
+      parameters = [...kinds, value];
+      sql = `
+          SELECT kind, name, path, mtime_ms, content
+          FROM artifacts
+          WHERE kind IN (${placeholders}) AND instr(lower(content), lower(?)) > 0
+          ORDER BY mtime_ms DESC
+        `;
+    }
     const rows = this.db.prepare(sql).all(...parameters);
     const matcher = buildMatcher(value, !!options.regex);
     const perKind = new Map(kinds.map((kind) => [kind, 0]));

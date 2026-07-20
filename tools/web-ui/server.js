@@ -843,11 +843,18 @@ async function readMarkdown(dir, name) {
   // so the Reports → Competitors tab shows structured data even when the
   // agent wrote the sidecar but didn't embed the section in the markdown.
   const hasCompetitorSection = /^#{2,3}\s+(competitor|competitive)\b/im.test(raw);
-  if (!hasCompetitorSection) {
+  if (!hasCompetitorSection && kind === 'reports') {
     try {
-      const jsonPath = safeJoin(dir, name.replace(/\.md$/, '.json'));
-      const jsonRaw = await fs.readFile(jsonPath, 'utf8');
-      const sidecar = JSON.parse(jsonRaw);
+      const sidecarName = name.replace(/\.md$/, '.json');
+      let sidecar = null;
+      const storedSidecar = artifactStore.readReportSidecar(sidecarName)?.content;
+      if (storedSidecar) {
+        try { sidecar = JSON.parse(storedSidecar); } catch {}
+      }
+      if (!sidecar) {
+        const jsonPath = safeJoin(dir, sidecarName);
+        sidecar = JSON.parse(await fs.readFile(jsonPath, 'utf8'));
+      }
       const agg = sidecar && sidecar.competitor_aggregates;
       if (agg && (agg.mentions || 0) > 0) {
         const appendix = buildCompetitorSectionMd(agg, sidecar.competitor_source_failures || []);

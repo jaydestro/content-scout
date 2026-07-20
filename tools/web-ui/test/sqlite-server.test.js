@@ -172,6 +172,7 @@ test('Express server initializes SQLite, serves normalized data, and hydrates af
       const offlineItems = await fetch(`${url}/api/items`).then((response) => response.json());
       assert.equal(offlineReports.reports.length, 1);
       assert.match(offlineReport.raw, /Vector search shipped/);
+      assert.match(offlineReport.html, /Amazon DynamoDB/);
       assert.equal(offlineSearch.files.length, 2);
       assert.equal(offlineItems.total, 1);
     } finally {
