@@ -8,10 +8,11 @@ node tools/benchmark-storage.mjs --sizes 500,5000
 node tools/benchmark-storage.mjs --include-50k
 ```
 
-The benchmark compares the legacy full-file corpus search with SQLite FTS5,
-and records database open/migration, initial import, artifact listing, reopen,
-and unchanged reconciliation time. Synthetic corpora split artifacts evenly
-between reports and social-post drafts.
+The benchmark compares the legacy full-file corpus search with SQLite search
+(FTS5 on the measured Windows bundle; portable literal fallback is used when a
+platform's bundled SQLite omits FTS5). It also records database open/migration,
+initial import, artifact listing, reopen, and unchanged reconciliation time.
+Synthetic corpora split artifacts evenly between reports and social-post drafts.
 
 | Corpus | Legacy file search | SQLite search | SQLite list | DB reopen | Unchanged reconcile | Initial import |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |

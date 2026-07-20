@@ -89,6 +89,11 @@ test('serves compatible search results from SQLite FTS content', () => {
   assert.equal(result.results[0].path, 'reports/2026-07-20-1200-demo-content.md');
   assert.equal(result.results[0].snippets[0].line, 4);
   assert.match(result.results[0].snippets[0].text, /Vector search shipped/);
+
+  store.fts5Enabled = false;
+  const fallback = store.search('vector search');
+  assert.equal(fallback.totals.files, 1);
+  assert.equal(fallback.results[0].snippets[0].line, 4);
 });
 
 test('reconciliation updates changed files and removes deleted artifacts', () => {

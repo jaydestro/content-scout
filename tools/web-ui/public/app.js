@@ -184,7 +184,7 @@ function renderStorageStatus(storage) {
     ? `<div class="warn-text">Recovered a damaged database. The original was quarantined at <code>${escape(storage.recovery.quarantinePath)}</code>.</div>`
     : '';
   target.innerHTML = `
-    <div><span class="ok">SQLite ready</span> · schema ${escape(storage.schemaVersion)} · ${escape(storage.journalMode || '')}</div>
+    <div><span class="ok">SQLite ready</span> · schema ${escape(storage.schemaVersion)} · ${escape(storage.journalMode || '')} · ${storage.fts5 ? 'FTS5 search' : 'portable search'}</div>
     <div>${escape(importSummary)}</div>
     <div>Database: <code>${escape(storage.dbPath)}</code></div>
     <div>${changed ? `${changed} file${changed === 1 ? '' : 's'} imported during this startup.` : 'Existing workspace is synchronized.'}</div>

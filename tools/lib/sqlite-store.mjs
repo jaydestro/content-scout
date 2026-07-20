@@ -131,6 +131,7 @@ export class SqliteArtifactStore {
     try {
       this.configure();
       this.migrate();
+      this.configureSearch();
     } catch (error) {
       try { this.db.close(); } catch {}
       throw error;
@@ -142,6 +143,42 @@ export class SqliteArtifactStore {
     this.db.exec('PRAGMA journal_mode = WAL');
     this.db.exec('PRAGMA synchronous = NORMAL');
     this.db.exec('PRAGMA busy_timeout = 5000');
+  }
+
+  configureSearch() {
+    const existed = Boolean(
+      this.db.prepare("SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = 'artifacts_fts'").get(),
+    );
+    try {
+      this.db.exec(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS artifacts_fts USING fts5(
+          title,
+          summary,
+          content,
+          content='artifacts',
+          content_rowid='id'
+        );
+        CREATE TRIGGER IF NOT EXISTS artifacts_ai AFTER INSERT ON artifacts BEGIN
+          INSERT INTO artifacts_fts(rowid, title, summary, content)
+          VALUES (new.id, new.title, new.summary, new.content);
+        END;
+        CREATE TRIGGER IF NOT EXISTS artifacts_ad AFTER DELETE ON artifacts BEGIN
+          INSERT INTO artifacts_fts(artifacts_fts, rowid, title, summary, content)
+          VALUES ('delete', old.id, old.title, old.summary, old.content);
+        END;
+        CREATE TRIGGER IF NOT EXISTS artifacts_au AFTER UPDATE ON artifacts BEGIN
+          INSERT INTO artifacts_fts(artifacts_fts, rowid, title, summary, content)
+          VALUES ('delete', old.id, old.title, old.summary, old.content);
+          INSERT INTO artifacts_fts(rowid, title, summary, content)
+          VALUES (new.id, new.title, new.summary, new.content);
+        END;
+      `);
+      if (!existed) this.db.exec("INSERT INTO artifacts_fts(artifacts_fts) VALUES ('rebuild')");
+      this.fts5Enabled = true;
+    } catch (error) {
+      if (!/fts5|no such module/i.test(error.message)) throw error;
+      this.fts5Enabled = false;
+    }
   }
 
   migrate() {
@@ -176,28 +213,6 @@ export class SqliteArtifactStore {
         CREATE INDEX artifacts_slug_mtime_idx
           ON artifacts(slug, mtime_ms DESC);
 
-        CREATE VIRTUAL TABLE artifacts_fts USING fts5(
-          title,
-          summary,
-          content,
-          content='artifacts',
-          content_rowid='id'
-        );
-
-        CREATE TRIGGER artifacts_ai AFTER INSERT ON artifacts BEGIN
-          INSERT INTO artifacts_fts(rowid, title, summary, content)
-          VALUES (new.id, new.title, new.summary, new.content);
-        END;
-        CREATE TRIGGER artifacts_ad AFTER DELETE ON artifacts BEGIN
-          INSERT INTO artifacts_fts(artifacts_fts, rowid, title, summary, content)
-          VALUES ('delete', old.id, old.title, old.summary, old.content);
-        END;
-        CREATE TRIGGER artifacts_au AFTER UPDATE ON artifacts BEGIN
-          INSERT INTO artifacts_fts(artifacts_fts, rowid, title, summary, content)
-          VALUES ('delete', old.id, old.title, old.summary, old.content);
-          INSERT INTO artifacts_fts(rowid, title, summary, content)
-          VALUES (new.id, new.title, new.summary, new.content);
-        END;
       `);
       version = 1;
     }
@@ -1308,10 +1323,11 @@ export class SqliteArtifactStore {
       ? options.maxSnippetsPerFile
       : DEFAULT_MAX_SNIPPETS;
     const placeholders = kinds.map(() => '?').join(', ');
-    const parameters = options.regex
+    const useFts = !options.regex && this.fts5Enabled;
+    const parameters = options.regex || !useFts
       ? kinds
       : [quotedFtsQuery(value), value, ...kinds];
-    const sql = options.regex
+    const sql = options.regex || !useFts
       ? `SELECT kind, name, path, mtime_ms, content FROM artifacts WHERE kind IN (${placeholders}) ORDER BY mtime_ms DESC`
       : `
           WITH candidates(id) AS (
@@ -1375,6 +1391,7 @@ export class SqliteArtifactStore {
       dbPath: this.dbPath,
       schemaVersion: Number(this.db.prepare('PRAGMA user_version').get().user_version),
       journalMode: this.db.prepare('PRAGMA journal_mode').get().journal_mode,
+      fts5: this.fts5Enabled,
       artifacts: Number(row.artifacts || 0),
       reports: Number(row.reports || 0),
       socialPosts: Number(row.social_posts || 0),

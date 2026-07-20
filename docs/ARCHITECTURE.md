@@ -33,8 +33,10 @@ migrations, and idempotently imports existing reports, social-post drafts, and
 subject configs. SQLite runs in WAL mode with foreign keys and a busy timeout;
 it requires no server, connection string, or credentials.
 
-The database stores artifact metadata and content, subject references, FTS5
-search data, and durable parsed-index snapshots. Generated images and large raw
+The database stores artifact metadata and content, subject references, and
+durable parsed-index snapshots. Search uses FTS5 when Node's bundled SQLite
+provides it and automatically uses a portable literal fallback otherwise, with
+the same API result shape. Generated images and large raw
 browser captures remain files; SQLite stores their metadata rather than binary
 blobs. Markdown and JSON remain portable import/export and archive formats,
 not the normal dashboard/search query path.
