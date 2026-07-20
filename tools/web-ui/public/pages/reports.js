@@ -2,10 +2,11 @@ import { $, api, escape, escapeAttr } from '../lib/core.js';
 import { wireListFilter, renderDocListItem, renderDocBody } from '../lib/doc-list.js';
 import { setReportsPayload } from './report-state.js';
 
-const REPORTS_TABS = ['content', 'mindshare', 'cfp', 'roundup'];
+const REPORTS_TABS = ['content', 'mindshare', 'cfp', 'roundup', 'competitors'];
 const TAB_SECTION_MATCH = {
   mindshare: /^mindshare\b/i,
   cfp: /^(open calls for papers|cfps?\b|calls? for papers\b|conferences?\b)/i,
+  competitors: /^(competitor|competitive)\b/i,
 };
 const REPORT_SECTIONS = [
   { key: 'all', label: 'All', match: null },
@@ -28,6 +29,9 @@ function rowMatchesTab(li, tab) {
         || (kind === 'content' && li.dataset.hasCfp === '1');
     case 'roundup':
       return kind === 'roundup';
+    case 'competitors':
+      return kind === 'competitors'
+        || (kind === 'content' && li.dataset.hasCompetitors === '1');
     default:
       return false;
   }
@@ -56,6 +60,9 @@ function setReportsRowTabBadge(li, tab, match) {
   } else if (tab === 'roundup' && li.dataset.kind === 'roundup') {
     label = 'Roundup';
     kindClass = 'kind-roundup';
+  } else if (tab === 'competitors' && ['content', 'competitors'].includes(li.dataset.kind || '')) {
+    label = 'Competitors';
+    kindClass = 'kind-competitors';
   }
   badge.textContent = label;
   for (const cls of [...badge.classList]) {
@@ -157,14 +164,16 @@ async function openReportRow(li) {
   if (sectionRe && kind === 'content') {
     const sliced = extractSectionsHtml(report.html, sectionRe);
     if (sliced) {
-      const label = reportsActiveTab === 'cfp' ? 'CFPs & Events' : 'Mindshare';
+      const label = reportsActiveTab === 'cfp' ? 'CFPs & Events'
+        : reportsActiveTab === 'competitors' ? 'Competitor & Market Signals'
+        : 'Mindshare';
       renderDocBody(body, {
         name,
         html: `<p class="hint">${escape(label)} section of <code>${escape(name)}</code> — open the <strong>Full Report</strong> tab for the full report.</p>${sliced}`,
         kind: 'reports',
       });
     } else {
-      body.innerHTML = `<p class="hint">This scan report has no ${reportsActiveTab === 'cfp' ? 'CFP/Conferences' : 'Mindshare'} section. Open the <strong>Full Report</strong> tab for the full report.</p>`;
+      body.innerHTML = `<p class="hint">This scan report has no ${reportsActiveTab === 'cfp' ? 'CFP/Conferences' : reportsActiveTab === 'competitors' ? 'Competitor' : 'Mindshare'} section. Open the <strong>Full Report</strong> tab for the full report.</p>`;
     }
   } else {
     renderDocBody(body, { name, html: report.html, kind: 'reports' });
@@ -239,6 +248,8 @@ function renderReportsActionBar(tab) {
     bar.innerHTML = `<span class="hint">CFPs &amp; Events only — the Calls for Papers and Conferences sections of each scan report.</span>`;
   } else if (tab === 'roundup') {
     renderRoundupActionBar(bar);
+  } else if (tab === 'competitors') {
+    bar.innerHTML = `<span class="hint">Competitor signals only — the Competitor &amp; Market Signals section of each scan report, plus any standalone competitor reports. Tracks the products listed under <code>## Competitors</code> in your config.</span>`;
   } else {
     bar.innerHTML = '';
   }
@@ -350,6 +361,7 @@ export async function loadReports() {
     const sections = meta.sections || {};
     li.dataset.hasMindshare = sections.mindshare ? '1' : '';
     li.dataset.hasCfp = sections.cfp ? '1' : '';
+    li.dataset.hasCompetitors = sections.competitors ? '1' : '';
     li.addEventListener('click', (event) => {
       if (event.target.closest('.entry-open')) return;
       openReportRow(li);

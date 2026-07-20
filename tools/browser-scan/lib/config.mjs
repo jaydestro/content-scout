@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { CONFIGS_DIR } from '../../lib/paths.mjs';
+import { parseCompetitors } from '../../lib/competitors.mjs';
 
 export function loadConfig(root, slug) {
   // Config moved from .github/prompts/scout-config-{slug}.prompt.md to the
@@ -34,6 +35,7 @@ export function loadConfig(root, slug) {
     path: configPath,
     raw,
     searchTerms,
+    competitors: parseCompetitors(raw),
   };
 }
 

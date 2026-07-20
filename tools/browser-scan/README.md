@@ -220,6 +220,29 @@ Community needs you signed in (see setup); the other three need only a real
 browser. Hashnode posts on fully custom domains can't be pattern-matched
 here — the open-web Brave layer already covers those.
 
+### Competitor pass (one sidecar, tagged by competitor)
+
+When the loaded config has a `## Competitors` section, the scanner runs an
+extra **competitor pass** over Reddit and X after the main passes. It queries
+the configured competitor names + aliases (built by `competitorQueryTerms` in
+`tools/lib/competitors.mjs`), keeps only items that actually name a tracked
+competitor, and tags each with the matched competitor. Results merge into one
+`*-competitors.json` sidecar, shaped like the platform items above plus two
+fields:
+
+| Field | Meaning |
+|---|---|
+| `competitor` | The primary tracked competitor the item mentions (canonical name from config) |
+| `competitorMatches` | All tracked competitors the item mentions |
+
+The `{stamp}-meta.json` sidecar also gains a `competitors` block —
+`{ names, queryTerms, platforms, mentions, byCompetitor }` — for at-a-glance
+counts. The agent folds these into the report's **Competitor & Market
+Signals** section (never the content sections or Mindshare). Disable with
+`--no-competitors`; cap the query set with `--max-competitor-terms N`
+(default 12). Hacker News / Stack Overflow / Bluesky competitor coverage runs
+in the agent's API layer, not here.
+
 ## Rate-limit hygiene
 
 - One in-flight tab per platform; ≥3s between page loads.

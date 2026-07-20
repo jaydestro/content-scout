@@ -1245,6 +1245,23 @@ Where the platform exposes them, also include engagement metrics (likes/upvotes/
 |------------|---------------|-----------|-------------------|---------------|
 <!-- Switching signals: posts about migrating to/from this competitor -->
 
+<!--
+How to populate (when Competitor tracking is on): the competitors come from the config's `## Competitors`
+section. Match each competitor by name AND its listed aliases across the scanned conversation sources
+(Reddit / X / LinkedIn / Bluesky / HN / Stack Overflow) plus the competitor's own blog / release-notes.
+Reddit + X mentions come pre-matched from the browser-scan `{stamp}-competitors.json` sidecar (each item
+carries `.competitor` + `.platform`); HN / Stack Overflow / Bluesky come from per-alias API queries.
+- Content Volume: rough count of in-window mentions (High / Medium / Low or a number).
+- Sentiment: community stance TOWARD THAT COMPETITOR (🟢 favorable / ⚪ mixed / 🔴 unfavorable) — this is the
+  one place sentiment is about a competitor rather than our product.
+- Switching Signals: migration posts, scored from OUR product's perspective per the Directional rule
+  (FROM competitor → us = 🟢 win; FROM us → competitor = 🔴 loss; competitor↔competitor = ⚪).
+- Notable Items: 1–3 announcements / GA launches / outages / pricing changes, each with a validated link.
+This section lives INLINE in the one content report (never a separate file during a scan). The web UI's
+Reports → Competitors tab slices this section out and also lists any standalone on-demand `-competitors.md`
+deep-dive reports.
+-->
+
 ## Launch Coverage Tracker
 <!-- Include for: Product Marketer. Only generated when Events from config have dates in the scan window. -->
 <!-- Groups content by event, shows coverage angles and gaps. -->

@@ -3445,3 +3445,4 @@ a.help-dot {
 /* Kind-badge colors for new doc kinds */
 aside li[data-name] .entry-kind.kind-cfp        { background: rgba(14,165,233,0.16); color: #bae6fd; border-color: rgba(14,165,233,0.35); }
 aside li[data-name] .entry-kind.kind-conference { background: rgba(217,70,239,0.16); color: #f5d0fe; border-color: rgba(217,70,239,0.35); }
+aside li[data-name] .entry-kind.kind-competitors { background: rgba(245,158,11,0.16); color: #fde68a; border-color: rgba(245,158,11,0.35); }
