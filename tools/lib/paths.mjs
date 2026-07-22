@@ -41,7 +41,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // tools/lib/paths.mjs → repo root is two levels up
-export const REPO_ROOT = path.resolve(__dirname, '..', '..');
+export const REPO_ROOT =
+  process.env.SCOUT_REPO_ROOT && process.env.SCOUT_REPO_ROOT.trim()
+    ? path.resolve(process.env.SCOUT_REPO_ROOT)
+    : path.resolve(__dirname, '..', '..');
 
 export const LOCAL_ROOT =
   process.env.SCOUT_LOCAL_ROOT && process.env.SCOUT_LOCAL_ROOT.trim()
@@ -65,6 +68,7 @@ export const MUTED_ACCOUNTS_FILE = 'muted-accounts.json';
 export const SENTIMENT_OVERRIDES_FILE = 'sentiment-overrides.json';
 export const CACHED_BODIES_FILE = 'cached-bodies.json';
 export const WEB_SETTINGS_FILE = 'web-settings.json';
+export const CONTENT_SCOUT_DB_FILE = 'content-scout.db';
 
 // Legacy file names (used by back-compat shim — these were dotfiles
 // inside reports/).

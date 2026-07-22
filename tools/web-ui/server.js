@@ -16,9 +16,8 @@ import { describeImage, formatVisionReport, probeVision, getVisionProvider } fro
 import { reviewSentiment, probeSentiment, getSentimentProvider } from './lib/sentiment-review.js';
 import { getSeoRewriteProvider, generateSeoRewrites, hasAnyRewrite } from './lib/seo-rewrite.js';
 import { suggestReply, getReplyProvider } from './lib/reply-suggest.js';
-import { searchCorpus } from '../lib/corpus-search.mjs';
-import { extractDocMeta } from '../lib/doc-meta.mjs';
 import { responseCache } from '../lib/response-cache.mjs';
+import { openArtifactStore } from '../lib/sqlite-store.mjs';
 import { getCopilotModels, warmCopilotModels } from './lib/copilot-models.mjs';
 import { probeUrl } from '../lib/url-validate.mjs';
 import {
@@ -95,7 +94,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 marked.setOptions({ breaks: true, gfm: true });
 
 // Repo root = tools/web-ui/../..
-const REPO_ROOT = path.resolve(__dirname, '..', '..');
+const REPO_ROOT =
+  process.env.SCOUT_REPO_ROOT && process.env.SCOUT_REPO_ROOT.trim()
+    ? path.resolve(process.env.SCOUT_REPO_ROOT)
+    : path.resolve(__dirname, '..', '..');
 const PROMPTS_DIR = path.join(REPO_ROOT, '.github', 'prompts');
 // Personal product configs live in the gitignored .local/configs/ dir
 // (standard location: scout-config-{slug}.md). Legacy installs kept them in
@@ -108,6 +110,11 @@ const ENV_FILE = path.join(REPO_ROOT, '.env');
 const ENV_EXAMPLE = path.join(REPO_ROOT, '.env.example');
 const SETTINGS_FILE = path.join(__dirname, '.scout-web-settings.json');
 const SETTINGS_FILE_NEW = stateFilePath(WEB_SETTINGS_FILE);
+const artifactStore = openArtifactStore({ repoRoot: REPO_ROOT });
+const initialArtifactImport = artifactStore.reconcileWorkspace({
+  reportsDir: REPORTS_DIR,
+  socialDir: SOCIAL_DIR,
+});
 
 const PORT = Number(process.env.PORT || 4477);
 // Bind to loopback by default. Set SCOUT_HOST=0.0.0.0 to expose on the LAN
@@ -499,6 +506,8 @@ async function writeBulkSummaryOnce(bulk, bulkId) {
   try {
     await fs.mkdir(SOCIAL_DIR, { recursive: true });
     await fs.writeFile(fpath, lines.join('\n'), 'utf8');
+    artifactStore.reconcileDirectory(SOCIAL_DIR, 'social-posts');
+    clearArtifactResponseCaches();
     bulk.summaryFile = `social-posts/${fname}`;
   } catch (err) {
     bulk.summaryError = err.message;
@@ -587,6 +596,11 @@ function closeRun(run, status) {
     } catch {}
   }
   run.listeners.clear();
+  artifactStore.saveRun({
+    ...run,
+    command: redactSecrets(run.command),
+    output: safeRunOutput(run),
+  });
   // A finished scan/post run has (likely) written new reports or social-posts
   // to disk. Proactively drop the TTL response caches and the parsed index so
   // the dashboard, Conversations, and Reports reflect the new artifacts on the
@@ -594,6 +608,11 @@ function closeRun(run, status) {
   // self-invalidates via its content signature, but clearing here removes the
   // directory-cache lag so a just-completed scan shows up immediately.
   if (status === 'success') {
+    artifactStore.reconcileWorkspace({
+      reportsDir: REPORTS_DIR,
+      socialDir: SOCIAL_DIR,
+      assetRunId: run.id,
+    });
     clearArtifactResponseCaches();
     _indexCache = null;
     // Rebuild the index in the background with the now-fresh directory
@@ -688,6 +707,9 @@ async function autoRenderThumbnails(run) {
       resolve();
     });
   });
+  artifactStore.reconcileDirectory(SOCIAL_DIR, 'social-posts');
+  artifactStore.reconcileAssets({ runId: run.id });
+  clearArtifactResponseCaches();
 }
 
 // --- helpers -------------------------------------------------------
@@ -766,6 +788,7 @@ async function writeConfig(slug, raw) {
   try {
     await fs.unlink(legacyConfigPath(slug));
   } catch {}
+  artifactStore.reconcileConfigs({ configsDir: CONFIGS_DIR, legacyConfigsDir: PROMPTS_DIR });
 }
 
 app.get('/api/role-presets', (_req, res) => {
@@ -788,12 +811,6 @@ app.use(createSuggestionsRouter({ repoRoot: REPO_ROOT }));
 // (see top-of-file imports). Users can enrich the resulting markdown via the
 // Configs editor or by running /scout-onboard in a chat agent.
 
-// In-memory cache for the parsed doc-meta blob attached to each list entry.
-// Reports/social markdown can be 5–50 KB; parsing every file on every
-// dashboard refresh would dominate cold-load time. Key by full path + mtimeMs
-// so any save invalidates the entry automatically.
-const docMetaCache = new Map();
-
 function clearArtifactResponseCaches() {
   responseCache.clear('reports:');
   responseCache.clear('activity:');
@@ -802,87 +819,42 @@ function clearArtifactResponseCaches() {
   responseCache.clear('search:');
 }
 
-async function readDocMeta(fullPath, mtimeMs, name) {
-  const key = `${fullPath}:${mtimeMs}`;
-  const hit = docMetaCache.get(key);
-  if (hit) return hit;
-  try {
-    // Only the first ~8 KB is needed for H1 + summary + date-range metadata.
-    const fh = await fs.open(fullPath, 'r');
-    try {
-      const buf = Buffer.alloc(8192);
-      const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
-      const raw = buf.slice(0, bytesRead).toString('utf8');
-      const meta = extractDocMeta(raw, name);
-      docMetaCache.set(key, meta);
-      // Soft cap so a noisy workspace doesn't grow the cache unbounded.
-      if (docMetaCache.size > 2000) {
-        const firstKey = docMetaCache.keys().next().value;
-        if (firstKey) docMetaCache.delete(firstKey);
-      }
-      return meta;
-    } finally {
-      await fh.close();
-    }
-  } catch {
-    return extractDocMeta('', name);
-  }
-}
-
 async function listMarkdownFiles(dir) {
   const cacheKey = `markdown:${dir}`;
   const cached = responseCache.get(cacheKey);
   if (cached) return cached;
-  try {
-    const files = (await fs.readdir(dir)).filter((f) => f.endsWith('.md'));
-    // Stat + meta-parse in parallel — directory may have 100+ entries and a
-    // sequential await per-file was a measurable chunk of the dashboard's
-    // cold load. Meta is cached by (path, mtimeMs) so steady-state refreshes
-    // hit RAM.
-    const stats = await Promise.all(
-      files.map(async (f) => {
-        try {
-          const full = path.join(dir, f);
-          const stat = await fs.stat(full);
-          const meta = await readDocMeta(full, stat.mtimeMs, f);
-          return {
-            name: f,
-            mtime: stat.mtime.toISOString(),
-            size: stat.size,
-            meta,
-          };
-        } catch {
-          return null;
-        }
-      })
-    );
-    const out = stats
-      .filter(Boolean)
-      .sort((a, b) => b.mtime.localeCompare(a.mtime));
-    responseCache.set(cacheKey, out, 30_000);
-    return out;
-  } catch {
-    return [];
-  }
+  const kind = path.resolve(dir) === path.resolve(SOCIAL_DIR) ? 'social-posts' : 'reports';
+  const out = artifactStore.listArtifacts(kind);
+  responseCache.set(cacheKey, out, 30_000);
+  return out;
 }
 
 async function readMarkdown(dir, name) {
   if (!isValidFilename(name) || !name.endsWith('.md')) {
     throw new Error('invalid filename');
   }
-  const file = safeJoin(dir, name);
-  const raw = await fs.readFile(file, 'utf8');
+  const kind = path.resolve(dir) === path.resolve(SOCIAL_DIR) ? 'social-posts' : 'reports';
+  const stored = artifactStore.readArtifact(kind, name);
+  if (!stored) throw new Error('not found');
+  const raw = stored.content;
 
   // If the markdown already has a Competitor & Market Signals section, return
   // it as-is. Otherwise, try to synthesise that section from the JSON sidecar
   // so the Reports → Competitors tab shows structured data even when the
   // agent wrote the sidecar but didn't embed the section in the markdown.
   const hasCompetitorSection = /^#{2,3}\s+(competitor|competitive)\b/im.test(raw);
-  if (!hasCompetitorSection) {
+  if (!hasCompetitorSection && kind === 'reports') {
     try {
-      const jsonPath = safeJoin(dir, name.replace(/\.md$/, '.json'));
-      const jsonRaw = await fs.readFile(jsonPath, 'utf8');
-      const sidecar = JSON.parse(jsonRaw);
+      const sidecarName = name.replace(/\.md$/, '.json');
+      let sidecar = null;
+      const storedSidecar = artifactStore.readReportSidecar(sidecarName)?.content;
+      if (storedSidecar) {
+        try { sidecar = JSON.parse(storedSidecar); } catch {}
+      }
+      if (!sidecar) {
+        const jsonPath = safeJoin(dir, sidecarName);
+        sidecar = JSON.parse(await fs.readFile(jsonPath, 'utf8'));
+      }
       const agg = sidecar && sidecar.competitor_aggregates;
       if (agg && (agg.mentions || 0) > 0) {
         const appendix = buildCompetitorSectionMd(agg, sidecar.competitor_source_failures || []);
@@ -1462,6 +1434,7 @@ app.delete('/api/configs/:slug', async (req, res) => {
       }
     }
     if (!removed) return res.status(404).json({ error: 'not found' });
+    artifactStore.reconcileConfigs({ configsDir: CONFIGS_DIR, legacyConfigsDir: PROMPTS_DIR });
     res.json({ ok: true, slug });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
@@ -1477,6 +1450,14 @@ app.get('/api/reports', async (_req, res) => {
   };
   responseCache.set('reports:all', payload, 30_000);
   res.json(payload);
+});
+
+app.get('/api/storage/status', (_req, res) => {
+  res.json({
+    ...artifactStore.health(),
+    initialImport: initialArtifactImport,
+    recovery: artifactStore.recovery || null,
+  });
 });
 
 // Convenience alias: just the social-posts/ markdown files.
@@ -2249,6 +2230,8 @@ app.post('/api/roundup/generate', async (req, res) => {
       topicName,
       officialFeedUrl,
     });
+    artifactStore.reconcileDirectory(REPORTS_DIR, 'reports');
+    clearArtifactResponseCaches();
     res.json({
       ok: true,
       fileName: result.fileName,
@@ -2734,27 +2717,18 @@ async function _buildIndex() {
   }
   // Cache signature also hashes sidecar mtime so a fresh JSON write (e.g. an
   // agent rerun that updates sentiment without touching the .md) invalidates.
-  const [sidecarMtimes, sentimentOverridesMtime, browserSidecars] = await Promise.all([
-    Promise.all(
-      reports.map(async (r) => {
-        try {
-          const st = await fs.stat(path.join(REPORTS_DIR, r.name.replace(/\.md$/, '.json')));
-          return st.mtimeMs;
-        } catch {
-          return '';
-        }
-      })
-    ),
-    // Sentiment overrides alter parsed conversation labels and totals even
-    // though the report markdown/JSON files are untouched.
-    stateFileMtime(SENTIMENT_OVERRIDES_FILE),
-    collectBrowserSocialSidecars(),
-  ]);
+  const browserSidecars = await collectBrowserSocialSidecars();
+  const sidecarSignatures = artifactStore.reportSidecarSignatures(reports.map((report) => report.name));
+  const sentimentOverrides = new Map();
+  for (const override of artifactStore.listSentimentOverrides()) {
+    const key = canonicalUrlKey(override.url);
+    if (key) sentimentOverrides.set(key, override.value);
+  }
   const signature = reports
-    .map((r, idx) => `${r.name}@${r.mtime || ''}#${sidecarMtimes[idx] || ''}`)
+    .map((r) => `${r.name}@${r.mtime || ''}#${sidecarSignatures.get(r.name) || ''}`)
     .sort()
     .join('|') +
-    `|sentiment-overrides@${sentimentOverridesMtime || ''}` +
+    `|sentiment-overrides@${artifactStore.sentimentOverrideSignature()}` +
     `|browser-social-sidecars@${browserSidecars.signature || ''}`;
   // Validate the cache by content fingerprint, not by wall-clock age. The
   // signature already captures every input that can change the parsed index
@@ -2767,6 +2741,21 @@ async function _buildIndex() {
   // index reuse). Freshness is unchanged: any real file change flips a
   // mtime, the signature differs, and the index rebuilds on the next call.
   if (_indexCache && _indexCache.signature === signature) {
+    return _indexCache;
+  }
+  const normalizedIndex = artifactStore.loadNormalizedIndex(signature);
+  if (normalizedIndex) {
+    _indexCache = {
+      ...normalizedIndex,
+      builtAt: Date.now(),
+      signature,
+    };
+    return _indexCache;
+  }
+  const storedIndex = artifactStore.loadIndexSnapshot(signature);
+  if (storedIndex) {
+    _indexCache = { ...storedIndex, signature };
+    artifactStore.replaceNormalizedIndex(signature, _indexCache);
     return _indexCache;
   }
 
@@ -2792,7 +2781,8 @@ async function _buildIndex() {
   // to markdown for legacy reports.
   const parsedReports = await Promise.all(
     reports.map(async (r) => {
-      const parsed = await loadReport(REPORTS_DIR, r.name);
+      const reportJson = artifactStore.readReportSidecar(r.name.replace(/\.md$/, '.json'))?.content;
+      const parsed = await loadReport(REPORTS_DIR, r.name, { sentimentOverrides, reportJson });
       return parsed ? { r, parsed } : null;
     })
   );
@@ -2936,6 +2926,8 @@ async function _buildIndex() {
     sources: [...sources.values()],
     reports: reportsMeta,
   };
+  artifactStore.replaceNormalizedIndex(signature, _indexCache);
+  artifactStore.saveIndexSnapshot(signature, _indexCache);
   return _indexCache;
 }
 
@@ -3692,20 +3684,12 @@ app.get('/api/search', async (req, res) => {
     const authorHits = idx.authors
       .filter((a) => a.name.toLowerCase().includes(needle))
       .slice(0, 10);
-    // Full-text grep over reports/*.md + social-posts/*.md so the search
-    // also surfaces matches that live in item bodies, blockquotes, social
-    // post drafts, and posting-calendar files. Shared with tools/search.mjs.
-    let fileHits = [];
-    try {
-      const corpus = await searchCorpus({
-        repoRoot: REPO_ROOT,
-        query: q,
-        options: { maxFiles: 50, maxSnippetsPerFile: 3 },
-      });
-      fileHits = corpus.results;
-    } catch {
-      fileHits = [];
-    }
+    // SQLite FTS + literal fallback covers report bodies, blockquotes,
+    // social drafts, and calendars without reopening the Markdown corpus.
+    const fileHits = artifactStore.search(q, {
+      maxFiles: 50,
+      maxSnippetsPerFile: 3,
+    }).results;
     const payload = {
       q,
       items: itemHits,
@@ -3723,7 +3707,10 @@ app.get('/api/search', async (req, res) => {
 });
 
 app.get('/api/runs', (_req, res) => {
-  const list = [...runs.values()]
+  const persistedRuns = artifactStore.listRuns(100);
+  const combinedRuns = new Map(persistedRuns.map((run) => [run.id, run]));
+  for (const run of runs.values()) combinedRuns.set(run.id, run);
+  const list = [...combinedRuns.values()]
     .map((r) => ({
       id: r.id,
       status: r.status,
@@ -3767,7 +3754,7 @@ app.get('/api/runs', (_req, res) => {
 });
 
 app.get('/api/runs/:id', (req, res) => {
-  const run = runs.get(req.params.id);
+  const run = runs.get(req.params.id) || artifactStore.getRun(req.params.id);
   if (!run) return res.status(404).json({ error: 'not found' });
   res.json({
     id: run.id,
@@ -4258,16 +4245,9 @@ app.post('/api/sentiment/review-bulk', express.json({ limit: '2mb' }), async (re
       ? String(body.productName).trim()
       : await resolveProductName(body.slug || '');
     const { runner } = await getRunner();
-    // Sentiment overrides live at .local/state/sentiment-overrides.json;
-    // the resolver auto-migrates from the legacy reports/.sentiment-overrides.json
-    // on first read.
-    const overridesReadPath = await resolveStateRead(SENTIMENT_OVERRIDES_FILE, REPORTS_DIR);
-    let overrides = {};
-    try {
-      if (overridesReadPath) {
-        overrides = JSON.parse(await fs.readFile(overridesReadPath, 'utf8')) || {};
-      }
-    } catch {}
+    const overrides = Object.fromEntries(
+      artifactStore.listSentimentOverrides().map(({ url, value }) => [url, value]),
+    );
     const results = [];
     for (const raw of limited) {
       const summary = String(raw?.summary || '').trim();
@@ -4309,6 +4289,7 @@ app.post('/api/sentiment/review-bulk', express.json({ limit: '2mb' }), async (re
       }
     }
     try {
+      artifactStore.upsertSentimentOverrides(overrides);
       const overridesWritePath = await resolveStateWrite(SENTIMENT_OVERRIDES_FILE);
       await fs.writeFile(overridesWritePath, JSON.stringify(overrides, null, 2));
       // Overrides affect parsed conversation labels and sentiment totals, but
@@ -4381,6 +4362,7 @@ async function startRunInternal(command, args, opts = {}) {
     options: opts.options || {},
   };
   runs.set(id, run);
+  artifactStore.saveRun({ ...run, command: redactSecrets(run.command) });
   if (usedStdin) {
     pushRunOutput(run, `[scout-web] Prompt is ${prompt.length} chars (>${MAX_INLINE_CMD}) — piping via the child process's stdin to avoid the OS command-line length limit.\n[scout-web] Spawning: ${commandLine}\n`);
   }
@@ -5250,6 +5232,7 @@ app.post('/api/browser-scan/scan', async (req, res) => {
     child,
   };
   runs.set(id, run);
+  artifactStore.saveRun({ ...run, command: redactSecrets(run.command) });
   // Capture the spawn time so the close handler can tell whether THIS run
   // wrote fresh social sidecars (used to gate auto-ingest — see below).
   const runStartMs = Date.now();
@@ -5386,6 +5369,8 @@ app.post('/api/analytics/seo', express.json(), async (req, res) => {
     }
     const result = runSeoAudit({ pages, slug: isValidSlug(slug) ? slug : '', rewritesByUrl });
     await fs.writeFile(path.join(REPORTS_DIR, result.fileName), result.markdown, 'utf8');
+    artifactStore.reconcileDirectory(REPORTS_DIR, 'reports');
+    clearArtifactResponseCaches();
     const rewriteCount = Object.values(rewritesByUrl).filter((r) => hasAnyRewrite(r)).length;
     res.json({ ok: true, fileName: result.fileName, data: result.data, rewriteProvider, rewriteCount });
   } catch (err) {
@@ -5510,6 +5495,8 @@ app.post('/api/analytics/originality', express.json(), async (req, res) => {
 
     await fs.mkdir(REPORTS_DIR, { recursive: true });
     await fs.writeFile(path.join(REPORTS_DIR, fileName), md.join('\n'), 'utf8');
+    artifactStore.reconcileDirectory(REPORTS_DIR, 'reports');
+    clearArtifactResponseCaches();
     res.json({ ok: true, fileName, counts, reviewed: items.length });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
@@ -5523,6 +5510,8 @@ app.listen(PORT, HOST, async () => {
   console.log(`Repo root: ${REPO_ROOT}`);
   console.log(`Bind: ${HOST}${HOST === '0.0.0.0' ? ' (LAN-exposed — set SCOUT_HOST=127.0.0.1 to restrict)' : ' (loopback only)'}`);
   console.log(`Runner: ${runner || '(none — pick an agent on the Setup view)'}${source !== 'none' ? ` [${source}]` : ''}`);
+  const storage = artifactStore.health();
+  console.log(`Storage: SQLite schema ${storage.schemaVersion}, ${storage.artifacts} artifacts (${storage.journalMode})`);
   // Warm the live Copilot model list (ACP handshake takes ~10s) so the Setup
   // picker inherits the agent's real models without blocking the first request.
   warmCopilotModels().catch(() => {});

@@ -39,13 +39,13 @@ function toSuggestion(m) {
 }
 
 // Run the ACP handshake once and resolve the mapped suggestion list (or null).
-function fetchViaAcp() {
+export function fetchViaAcp({ spawnImpl = spawn, timeoutMs = HANDSHAKE_TIMEOUT_MS } = {}) {
   return new Promise((resolve) => {
     let child;
     try {
       // Static args only — no user input — so shell:true is safe here and lets
       // the platform resolve the `copilot` shim (e.g. WinGet .cmd on Windows).
-      child = spawn('copilot', ['--acp'], { stdio: ['pipe', 'pipe', 'ignore'], shell: true });
+      child = spawnImpl('copilot', ['--acp'], { stdio: ['pipe', 'pipe', 'ignore'], shell: true });
     } catch {
       resolve(null);
       return;
@@ -63,9 +63,10 @@ function fetchViaAcp() {
       resolve(result);
     };
 
-    const timer = setTimeout(() => finish(null), HANDSHAKE_TIMEOUT_MS);
+    const timer = setTimeout(() => finish(null), timeoutMs);
 
     child.on('error', () => finish(null));
+    child.stdin.on('error', () => finish(null));
 
     child.stdout.on('data', (d) => {
       buf += d.toString();

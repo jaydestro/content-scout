@@ -1012,7 +1012,7 @@ function enrichConversationsWithBodies(parsed, bodyMap) {
 // structured output) when present and parseable; falls back to the markdown
 // parser otherwise. `fileName` is the *.md basename — the sidecar is the
 // same basename with `.json`.
-export async function loadReport(reportsDir, fileName) {
+export async function loadReport(reportsDir, fileName, runtimeOptions = {}) {
   const slugMatch = fileName.match(/^\d{4}-\d{2}-\d{2}-\d{4}-(.+)-content\.md$/);
   const slug = slugMatch ? slugMatch[1] : '';
   // Config resolution mirrors the web server: the standard home is
@@ -1040,7 +1040,9 @@ export async function loadReport(reportsDir, fileName) {
   const [browserBodyMap, cachedBodyMap, overrides] = await Promise.all([
     loadBrowserScanBodies(reportsDir, slug),
     loadCachedBodies(reportsDir),
-    loadSentimentOverrides(reportsDir),
+    runtimeOptions.sentimentOverrides
+      ? Promise.resolve(runtimeOptions.sentimentOverrides)
+      : loadSentimentOverrides(reportsDir),
   ]);
   // Browser-scan sidecars take priority over the API-fetched cache when
   // both have a body for the same URL — the scraped LinkedIn body is
@@ -1050,7 +1052,7 @@ export async function loadReport(reportsDir, fileName) {
   const jsonName = fileName.replace(/\.md$/, '.json');
   const jsonPath = path.join(reportsDir, jsonName);
   try {
-    const rawJson = await fs.readFile(jsonPath, 'utf8');
+    const rawJson = runtimeOptions.reportJson ?? await fs.readFile(jsonPath, 'utf8');
     const parsed = { source: 'json', ...parseReportFromJson(rawJson, fileName, parseOptions) };
     enrichConversationsWithBodies(parsed, bodyMap);
     applySentimentOverrides(parsed, overrides);
